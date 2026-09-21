@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "transit-detection"
+version = "0.1.0"
+description = "Machine learning for exoplanet transit detection in TESS-like light curves"
+requires-python = ">=3.10"
+
+[tool.setuptools.packages.find]
+include = ["transitml*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+filterwarnings = ["error::RuntimeWarning:transitml.*"]

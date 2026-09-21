@@ -1,0 +1,81 @@
+========================================================================
+HELD-OUT TEST SET RESULTS
+========================================================================
+test curves: 840   planets: 34   positive rate: 4.048%
+
+Average precision (headline metric; chance = positive rate)
+------------------------------------------------------------------------
+  random ranking (chance)            AP = 0.0405
+  baseline: depth_threshold          AP = 0.097  [0.080, 0.128]   (ROC-AUC 0.751)
+  baseline: bls_snr                  AP = 0.180  [0.149, 0.231]   (ROC-AUC 0.830)
+  model: gradient boosting           AP = 0.730  [0.659, 0.799]   (ROC-AUC 0.933)
+  (brackets are 68% bootstrap intervals over 2000 test-set resamples)
+
+  lift over chance:            18.0x
+  lift over best baseline:     4.05x  (best baseline: bls_snr)
+  the model beats that baseline in 100.0% of paired bootstrap resamples
+
+Operating point (threshold chosen by CV on the TRAINING split only)
+------------------------------------------------------------------------
+  rule:      max recall subject to CV precision >= 0.50
+  threshold: 0.1628
+  CV on train:  precision = 0.500   recall = 0.726
+  HELD-OUT:     precision = 0.407   recall = 0.706   F1 = 0.516
+
+  Confusion matrix (rows = truth, cols = prediction)
+                    pred: no planet    pred: planet
+    truth: no planet          771              35
+    truth: planet              10              24
+    false positives by true object type -> eclipsing_binary: 8, noise: 27
+
+Precision@k (what a k-night follow-up programme would actually get)
+------------------------------------------------------------------------
+  model_top20                        0.950
+  depth_threshold_top20              0.000
+  bls_snr_top20                      0.100
+
+Completeness vs injected transit SNR (held-out planets)
+------------------------------------------------------------------------
+  recall = P(search finds the period) x P(classifier keeps it | found)
+  SNR bin            n   recall   search  classifier
+  0 - 7              4     0.00     0.00         nan
+  7 - 12             4     0.25     0.50        0.50
+  12 - 20            1     1.00     1.00        1.00
+  20 - 40            8     0.88     0.88        1.00
+  40 - inf          17     0.88     1.00        0.88
+  overall search recovery on held-out planets: 0.79
+
+Top features (permutation importance in average precision, on test)
+------------------------------------------------------------------------
+  power_contrast               +0.2956 +/- 0.0812
+  secondary_sigma              +0.1723 +/- 0.0387
+  odd_even_sigma               +0.0812 +/- 0.0204
+  log_duration_ratio           +0.0669 +/- 0.0250
+  flux_skew                    +0.0382 +/- 0.0246
+  max_single_event_fraction    +0.0327 +/- 0.0133
+  log_depth                    +0.0186 +/- 0.0123
+  harmonic_delta_loglike       +0.0173 +/- 0.0085
+
+Missed planets (false negatives at the operating threshold)
+------------------------------------------------------------------------
+  SYN-001633   SNR    3.3  depth    1774 ppm  P   5.31 d  T14  1.25 h  b 0.94  n_tr 5
+               -> search did not recover the period
+  SYN-002253   SNR    4.9  depth    1709 ppm  P   5.51 d  T14  1.91 h  b 0.55  n_tr 5
+               -> search did not recover the period
+  SYN-000420   SNR    5.2  depth     547 ppm  P   5.28 d  T14  1.65 h  b 0.77  n_tr 4
+               -> search did not recover the period
+  SYN-002073   SNR    5.3  depth     572 ppm  P   9.80 d  T14  2.31 h  b 0.66  n_tr 3
+               -> search did not recover the period
+  SYN-000250   SNR    7.6  depth    1128 ppm  P   3.81 d  T14  1.45 h  b 0.92  n_tr 6
+               -> period recovered; classifier rejected it  (odd/even 0.3 sigma, secondary -1.4 sigma, red-noise beta 1.04)
+  SYN-000629   SNR    7.8  depth     553 ppm  P   3.80 d  T14  1.65 h  b 0.71  n_tr 6
+               -> search did not recover the period
+  SYN-000935   SNR   10.7  depth    1302 ppm  P   9.02 d  T14  3.08 h  b 0.74  n_tr 3
+               -> search did not recover the period
+  SYN-001786   SNR   35.3  depth     656 ppm  P   3.53 d  T14  2.05 h  b 0.46  n_tr 8
+               -> search did not recover the period
+  SYN-001624   SNR   62.3  depth    1896 ppm  P   2.87 d  T14  2.60 h  b 0.74  n_tr 8
+               -> period recovered; classifier rejected it  (odd/even 3.7 sigma, secondary 2.4 sigma, red-noise beta 1.50)
+  SYN-001838   SNR  107.9  depth    3461 ppm  P   4.88 d  T14  4.10 h  b 0.30  n_tr 6
+               -> period recovered; classifier rejected it  (odd/even 5.0 sigma, secondary 4.1 sigma, red-noise beta 2.31)
+========================================================================

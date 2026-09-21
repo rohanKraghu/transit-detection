@@ -1,0 +1,27 @@
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Testing / tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Generated data.  figures/ and results/metrics.json ARE committed, so the
+# README renders and the reported numbers can be checked without a re-run;
+# the feature matrix is a build artefact and is not.
+results/dataset.npz
+
+# OS noise
+.DS_Store
