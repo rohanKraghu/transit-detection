@@ -69,6 +69,10 @@ class MASTLightCurveSource(LightCurveSource):
     quality_bitmask:
         Passed straight to ``lightkurve``; ``"default"`` drops the cadences the
         mission flagged as bad.
+    sector:
+        Restrict to one TESS sector (or Kepler quarter).  Injection-recovery
+        uses one sector per star so the same star cannot land in both the
+        training and the test split.  ``None`` yields every sector found.
     """
 
     def __init__(
@@ -80,6 +84,7 @@ class MASTLightCurveSource(LightCurveSource):
         exposure_time: int | None = 1800,
         quality_bitmask: str = "default",
         flux_column: str = "pdcsap_flux",
+        sector: int | None = None,
     ) -> None:
         self.targets = list(targets)
         self.mission = mission
@@ -87,6 +92,7 @@ class MASTLightCurveSource(LightCurveSource):
         self.exposure_time = exposure_time
         self.quality_bitmask = quality_bitmask
         self.flux_column = flux_column
+        self.sector = sector
 
     def __len__(self) -> int:
         return len(self.targets)
@@ -99,6 +105,7 @@ class MASTLightCurveSource(LightCurveSource):
                 mission=self.mission,
                 author=self.author,
                 exptime=self.exposure_time,
+                sector=self.sector,
             )
             if len(search) == 0:
                 continue
