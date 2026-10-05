@@ -22,6 +22,10 @@ htmlcov/
 # README renders and the reported numbers can be checked without a re-run;
 # the feature matrix is a build artefact and is not.
 results/dataset.npz
+results/real_injection/dataset.npz
+# Downloaded MAST light curves (~60 MB); data/real_injection/ lists the
+# targets, so the cache can be rebuilt with one run.
+results/real_injection/base_curves.npz
 
 # OS noise
 .DS_Store
