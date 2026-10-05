@@ -125,6 +125,7 @@ def main(argv: list[str] | None = None) -> int:
         n_folds=config.dataset.n_cv_folds,
         seed=config.seed,
         target_precision=config.evaluation.target_precision,
+        precision_lcb_z=config.evaluation.precision_lcb_z,
     )
     print(
         f"trained; operating threshold {trained.threshold:.4f} "

@@ -32,6 +32,7 @@ from numpy.typing import NDArray
 from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.model_selection import StratifiedKFold, train_test_split
 
+from .config import EvalConfig
 from .data.loader import Dataset
 from .features import FEATURE_NAMES
 
@@ -203,12 +204,46 @@ class TrainedModel:
         return self.estimator.predict_proba(X)[:, 1]
 
 
+def wilson_lower_bound(
+    successes: NDArray[np.float64], trials: NDArray[np.float64], z: float
+) -> NDArray[np.float64]:
+    """One-sided Wilson score lower bound on a binomial proportion.
+
+    Here the proportion is precision, ``TP / (TP + FP)``, at each candidate
+    threshold.  Wilson rather than the normal approximation because the
+    interesting operating points sit at small ``TP + FP`` and at precisions near
+    0 or 1, where the Wald interval collapses to zero width.  ``z = 0`` returns
+    the point estimate.
+    """
+    n = np.asarray(trials, dtype=float)
+    p = np.asarray(successes, dtype=float) / n
+    if z <= 0:
+        return p
+    z2 = z * z
+    centre = p + z2 / (2.0 * n)
+    half = z * np.sqrt(p * (1.0 - p) / n + z2 / (4.0 * n * n))
+    return (centre - half) / (1.0 + z2 / n)
+
+
 def select_threshold(
-    y: NDArray[np.int_], scores: NDArray[np.float64], target_precision: float
+    y: NDArray[np.int_],
+    scores: NDArray[np.float64],
+    target_precision: float,
+    precision_lcb_z: float = EvalConfig.precision_lcb_z,
 ) -> tuple[float, str, float, float]:
     """Pick the operating point: highest recall subject to precision >= target.
 
-    Returns ``(threshold, rule, precision, recall)``.
+    The floor is applied to a one-sided Wilson lower confidence bound on the
+    out-of-fold precision (``precision_lcb_z`` sigma), not to the point
+    estimate.  Choosing the deepest point that just clears a floor selects for
+    points whose precision fluctuated upward, so the point estimate there is
+    biased high; requiring the *lower bound* to clear the floor is the
+    standard correction.  Because the bound never exceeds the point estimate,
+    this rule never picks a lower threshold than the point-estimate rule on the
+    same scores.  ``precision_lcb_z = 0`` recovers the point-estimate rule.
+
+    Returns ``(threshold, rule, precision, recall)``, where ``precision`` is the
+    CV point estimate at the chosen threshold (the bound is in ``rule``).
 
     Why a precision floor rather than "maximise F1" or "0.5"?  Because the cost
     structure is asymmetric and known.  Each candidate above the threshold buys
@@ -232,11 +267,26 @@ def select_threshold(
     n_pos = int(y.sum())
     recall = tp / n_pos if n_pos else np.zeros_like(tp, dtype=float)
 
+    lower = wilson_lower_bound(tp, k, precision_lcb_z)
+    ok_lcb = lower >= target_precision
     ok = precision >= target_precision
-    if ok.any():
+    if precision_lcb_z > 0 and ok_lcb.any():
+        # Deepest point down the ranked list whose lower bound clears the floor.
+        best = int(np.flatnonzero(ok_lcb)[-1])
+        rule = (
+            f"max recall subject to Wilson {precision_lcb_z:g}-sigma lower bound on "
+            f"CV precision >= {target_precision:.2f} "
+            f"(bound {lower[best]:.3f} at {int(k[best])} candidates)"
+        )
+    elif ok.any():
         # Deepest point down the ranked list that still satisfies the floor.
         best = int(np.flatnonzero(ok)[-1])
         rule = f"max recall subject to CV precision >= {target_precision:.2f}"
+        if precision_lcb_z > 0:
+            rule += (
+                f" (Wilson {precision_lcb_z:g}-sigma lower bound unreachable; "
+                "fell back to the point estimate)"
+            )
     else:
         # Unreachable target: fall back to the most precise point that still
         # returns a usable number of candidates, and say so loudly.
@@ -251,7 +301,12 @@ def select_threshold(
 
 
 def train(
-    split: Split, *, n_folds: int, seed: int, target_precision: float
+    split: Split,
+    *,
+    n_folds: int,
+    seed: int,
+    target_precision: float,
+    precision_lcb_z: float = EvalConfig.precision_lcb_z,
 ) -> TrainedModel:
     """Cross-validate on train, choose the threshold, then refit on all of train.
 
@@ -259,7 +314,7 @@ def train(
     """
     oof = cross_val_scores(split.X_train, split.y_train, n_folds=n_folds, seed=seed)
     threshold, rule, precision, recall = select_threshold(
-        split.y_train, oof, target_precision
+        split.y_train, oof, target_precision, precision_lcb_z
     )
     estimator = build_model(seed)
     estimator.fit(split.X_train, split.y_train)
