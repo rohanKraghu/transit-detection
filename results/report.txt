@@ -8,29 +8,29 @@ Average precision (headline metric; chance = positive rate)
   random ranking (chance)            AP = 0.0405
   baseline: depth_threshold          AP = 0.097  [0.080, 0.128]   (ROC-AUC 0.751)
   baseline: bls_snr                  AP = 0.180  [0.149, 0.231]   (ROC-AUC 0.830)
-  model: gradient boosting           AP = 0.730  [0.659, 0.799]   (ROC-AUC 0.933)
+  model: gradient boosting           AP = 0.799  [0.732, 0.862]   (ROC-AUC 0.939)
   (brackets are 68% bootstrap intervals over 2000 test-set resamples)
 
-  lift over chance:            18.0x
-  lift over best baseline:     4.05x  (best baseline: bls_snr)
+  lift over chance:            19.7x
+  lift over best baseline:     4.43x  (best baseline: bls_snr)
   the model beats that baseline in 100.0% of paired bootstrap resamples
 
 Operating point (threshold chosen by CV on the TRAINING split only)
 ------------------------------------------------------------------------
-  rule:      max recall subject to CV precision >= 0.50
-  threshold: 0.1628
-  CV on train:  precision = 0.500   recall = 0.726
-  HELD-OUT:     precision = 0.407   recall = 0.706   F1 = 0.516
+  rule:      max recall subject to Wilson 1-sigma lower bound on CV precision >= 0.50 (bound 0.506 at 82 candidates)
+  threshold: 0.1999
+  CV on train:  precision = 0.561   recall = 0.742
+  HELD-OUT:     precision = 0.481   recall = 0.765   F1 = 0.591
 
   Confusion matrix (rows = truth, cols = prediction)
                     pred: no planet    pred: planet
-    truth: no planet          771              35
-    truth: planet              10              24
-    false positives by true object type -> eclipsing_binary: 8, noise: 27
+    truth: no planet          778              28
+    truth: planet               8              26
+    false positives by true object type -> eclipsing_binary: 8, noise: 20
 
 Precision@k (what a k-night follow-up programme would actually get)
 ------------------------------------------------------------------------
-  model_top20                        0.950
+  model_top20                        1.000
   depth_threshold_top20              0.000
   bls_snr_top20                      0.100
 
@@ -42,19 +42,19 @@ Completeness vs injected transit SNR (held-out planets)
   7 - 12             4     0.25     0.50        0.50
   12 - 20            1     1.00     1.00        1.00
   20 - 40            8     0.88     0.88        1.00
-  40 - inf          17     0.88     1.00        0.88
+  40 - inf          17     1.00     1.00        1.00
   overall search recovery on held-out planets: 0.79
 
 Top features (permutation importance in average precision, on test)
 ------------------------------------------------------------------------
-  power_contrast               +0.2956 +/- 0.0812
-  secondary_sigma              +0.1723 +/- 0.0387
-  odd_even_sigma               +0.0812 +/- 0.0204
-  log_duration_ratio           +0.0669 +/- 0.0250
-  flux_skew                    +0.0382 +/- 0.0246
-  max_single_event_fraction    +0.0327 +/- 0.0133
-  log_depth                    +0.0186 +/- 0.0123
-  harmonic_delta_loglike       +0.0173 +/- 0.0085
+  power_contrast               +0.2408 +/- 0.0679
+  secondary_sigma              +0.2097 +/- 0.0264
+  odd_even_sigma               +0.1035 +/- 0.0218
+  log_duration_ratio           +0.0729 +/- 0.0285
+  flux_skew                    +0.0420 +/- 0.0260
+  max_single_event_fraction    +0.0357 +/- 0.0143
+  harmonic_delta_loglike       +0.0252 +/- 0.0141
+  log_depth                    +0.0227 +/- 0.0108
 
 Missed planets (false negatives at the operating threshold)
 ------------------------------------------------------------------------
@@ -74,8 +74,4 @@ Missed planets (false negatives at the operating threshold)
                -> search did not recover the period
   SYN-001786   SNR   35.3  depth     656 ppm  P   3.53 d  T14  2.05 h  b 0.46  n_tr 8
                -> search did not recover the period
-  SYN-001624   SNR   62.3  depth    1896 ppm  P   2.87 d  T14  2.60 h  b 0.74  n_tr 8
-               -> period recovered; classifier rejected it  (odd/even 3.7 sigma, secondary 2.4 sigma, red-noise beta 1.50)
-  SYN-001838   SNR  107.9  depth    3461 ppm  P   4.88 d  T14  4.10 h  b 0.30  n_tr 6
-               -> period recovered; classifier rejected it  (odd/even 5.0 sigma, secondary 4.1 sigma, red-noise beta 2.31)
 ========================================================================
