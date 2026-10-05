@@ -219,6 +219,9 @@ def _curve_caption(lc: LightCurve) -> str:
             f"depth {lc.meta['depth'] * 1e6:.0f} ppm, {shape}, "
             f"secondary {secondary * 1e6:.0f} ppm"
         )
+    if "variability_period" not in lc.meta:
+        # A real light curve with nothing injected: its variability is unknown.
+        return "real TESS star, nothing injected"
     return (
         f"rotational modulation {lc.meta['variability_amplitude'] * 1e6:.0f} ppm at "
         f"P = {lc.meta['variability_period']:.2f} d"

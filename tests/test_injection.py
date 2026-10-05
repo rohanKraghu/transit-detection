@@ -179,3 +179,9 @@ def test_run_pipeline_real_mode_runs_offline_from_a_curve_cache(
     assert metrics["dataset"]["source"] == "InjectionSource"
     assert metrics["dataset"]["n_curves"] == len(base_curves)
     assert metrics["dataset"]["n_planets"] == 10
+
+
+def test_figure_caption_handles_a_real_curve_with_nothing_injected(base_curves):
+    from transitml.plots import _curve_caption
+
+    assert _curve_caption(base_curves[0]) == "real TESS star, nothing injected"
