@@ -363,38 +363,7 @@ class SyntheticTESSSource(LightCurveSource):
         period_rng: np.random.Generator,
         rho_star: float,
     ) -> tuple[NDArray[np.float64], dict[str, Any]]:
-        rng = period_rng
-        cfg = self.planet
-        period = float(10 ** rng.uniform(*np.log10(cfg.period_range_days)))
-        k = float(10 ** rng.uniform(*np.log10(cfg.radius_ratio_range)))
-        impact = float(rng.uniform(0.0, cfg.impact_parameter_max))
-        a_rs = scaled_semi_major_axis(period, rho_star)
-        t14, t23 = transit_durations(period, a_rs, k, impact)
-        depth = k**2 * cfg.limb_darkening_boost
-        epoch = float(time[0] + rng.uniform(0.0, period))
-
-        dip = trapezoid_transit(time, period, epoch, depth, t14, t23)
-        meta = {
-            "period": period,
-            "epoch": epoch,
-            "depth": depth,
-            "duration_t14": t14,
-            "duration_t23": t23,
-            "radius_ratio": k,
-            "impact_parameter": impact,
-            "a_over_rs": a_rs,
-            "n_transits_in_window": int(
-                np.count_nonzero(np.unique(np.round((time - epoch) / period)) * 0 + 1)
-                if t14 > 0
-                else 0
-            ),
-        }
-        # Count transits that actually have in-window coverage.
-        if t14 > 0:
-            epochs = np.round((time - epoch) / period)
-            covered = np.unique(epochs[np.abs(time - epoch - epochs * period) < t14 / 2.0])
-            meta["n_transits_in_window"] = int(covered.size)
-        return dip, meta
+        return planet_signal(time, period_rng, rho_star, self.planet)
 
     def _binary_signal(
         self,
@@ -402,49 +371,106 @@ class SyntheticTESSSource(LightCurveSource):
         rng: np.random.Generator,
         rho_star: float,
     ) -> tuple[NDArray[np.float64], dict[str, Any]]:
-        cfg = self.eb
-        period = float(10 ** rng.uniform(*np.log10(cfg.period_range_days)))
-        depth = float(10 ** rng.uniform(*np.log10(cfg.primary_depth_range)))
-        grazing = bool(rng.random() < cfg.grazing_probability)
+        return binary_signal(time, rng, rho_star, self.eb)
 
-        a_rs = scaled_semi_major_axis(period, rho_star)
-        # Effective radius ratio implied by the eclipse depth, for the geometry.
-        k = float(np.sqrt(min(depth, 0.9)))
-        impact = float(rng.uniform(1.0 - k, 1.0 + k * 0.9)) if grazing else float(
-            rng.uniform(0.0, max(1.0 - k, 0.05))
-        )
+
+# --------------------------------------------------------------------------
+# Eclipse signals.  Module-level so injection into real photometry
+# (transitml.data.injection) draws from exactly the same populations.
+# --------------------------------------------------------------------------
+def planet_signal(
+    time: NDArray[np.float64],
+    rng: np.random.Generator,
+    rho_star: float,
+    cfg: PlanetConfig,
+) -> tuple[NDArray[np.float64], dict[str, Any]]:
+    """Draw one planet from ``cfg`` around a star of density ``rho_star``.
+
+    Returns the dip profile on ``time`` (non-negative, to be subtracted from
+    or multiplied into the flux) and the injected parameters.  Shared by the
+    synthetic generator and by injection into real photometry, so both
+    populations follow exactly the same physics.
+    """
+    period = float(10 ** rng.uniform(*np.log10(cfg.period_range_days)))
+    k = float(10 ** rng.uniform(*np.log10(cfg.radius_ratio_range)))
+    impact = float(rng.uniform(0.0, cfg.impact_parameter_max))
+    a_rs = scaled_semi_major_axis(period, rho_star)
+    t14, t23 = transit_durations(period, a_rs, k, impact)
+    depth = k**2 * cfg.limb_darkening_boost
+    epoch = float(time[0] + rng.uniform(0.0, period))
+
+    dip = trapezoid_transit(time, period, epoch, depth, t14, t23)
+    meta = {
+        "period": period,
+        "epoch": epoch,
+        "depth": depth,
+        "duration_t14": t14,
+        "duration_t23": t23,
+        "radius_ratio": k,
+        "impact_parameter": impact,
+        "a_over_rs": a_rs,
+        "n_transits_in_window": int(
+            np.count_nonzero(np.unique(np.round((time - epoch) / period)) * 0 + 1)
+            if t14 > 0
+            else 0
+        ),
+    }
+    # Count transits that actually have in-window coverage.
+    if t14 > 0:
+        epochs = np.round((time - epoch) / period)
+        covered = np.unique(epochs[np.abs(time - epoch - epochs * period) < t14 / 2.0])
+        meta["n_transits_in_window"] = int(covered.size)
+    return dip, meta
+
+def binary_signal(
+    time: NDArray[np.float64],
+    rng: np.random.Generator,
+    rho_star: float,
+    cfg: EclipsingBinaryConfig,
+) -> tuple[NDArray[np.float64], dict[str, Any]]:
+    """Draw one eclipsing binary from ``cfg``; same contract as :func:`planet_signal`."""
+    period = float(10 ** rng.uniform(*np.log10(cfg.period_range_days)))
+    depth = float(10 ** rng.uniform(*np.log10(cfg.primary_depth_range)))
+    grazing = bool(rng.random() < cfg.grazing_probability)
+
+    a_rs = scaled_semi_major_axis(period, rho_star)
+    # Effective radius ratio implied by the eclipse depth, for the geometry.
+    k = float(np.sqrt(min(depth, 0.9)))
+    impact = float(rng.uniform(1.0 - k, 1.0 + k * 0.9)) if grazing else float(
+        rng.uniform(0.0, max(1.0 - k, 0.05))
+    )
+    t14, t23 = transit_durations(period, a_rs, k, impact)
+    if t14 <= 0:  # geometry closed off; fall back to a shallow central event
+        impact, grazing = 0.3, False
         t14, t23 = transit_durations(period, a_rs, k, impact)
-        if t14 <= 0:  # geometry closed off; fall back to a shallow central event
-            impact, grazing = 0.3, False
-            t14, t23 = transit_durations(period, a_rs, k, impact)
 
-        # Grazing eclipses are shallower than the nominal (R2/R1)^2.
-        if grazing:
-            depth *= float(rng.uniform(0.15, 0.8))
+    # Grazing eclipses are shallower than the nominal (R2/R1)^2.
+    if grazing:
+        depth *= float(rng.uniform(0.15, 0.8))
 
-        secondary = depth * float(rng.uniform(*cfg.secondary_depth_fraction_range))
-        odd_even = float(rng.uniform(*cfg.odd_even_fraction_range))
-        epoch = float(time[0] + rng.uniform(0.0, period))
+    secondary = depth * float(rng.uniform(*cfg.secondary_depth_fraction_range))
+    odd_even = float(rng.uniform(*cfg.odd_even_fraction_range))
+    epoch = float(time[0] + rng.uniform(0.0, period))
 
-        dip = trapezoid_transit(
-            time,
-            period,
-            epoch,
-            depth,
-            t14,
-            t23,
-            secondary_depth=secondary,
-            odd_even_fraction=odd_even,
-        )
-        meta = {
-            "period": period,
-            "epoch": epoch,
-            "depth": depth,
-            "duration_t14": t14,
-            "duration_t23": t23,
-            "impact_parameter": impact,
-            "grazing": grazing,
-            "secondary_depth": secondary,
-            "odd_even_fraction": odd_even,
-        }
-        return dip, meta
+    dip = trapezoid_transit(
+        time,
+        period,
+        epoch,
+        depth,
+        t14,
+        t23,
+        secondary_depth=secondary,
+        odd_even_fraction=odd_even,
+    )
+    meta = {
+        "period": period,
+        "epoch": epoch,
+        "depth": depth,
+        "duration_t14": t14,
+        "duration_t23": t23,
+        "impact_parameter": impact,
+        "grazing": grazing,
+        "secondary_depth": secondary,
+        "odd_even_fraction": odd_even,
+    }
+    return dip, meta
