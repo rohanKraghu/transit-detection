@@ -118,6 +118,10 @@ def test_target_lists_and_toi_exclusion(tmp_path):
     as_csv.write_text("TIC ID,Tmag\n300,9.1\n400,10.2\n")
     assert read_target_list(as_csv) == ["TIC 300", "TIC 400"]
 
+    spoc = tmp_path / "s0014.csv"  # MAST TESS-SPOC target list layout
+    spoc.write_text("#TIC_ID,RA,DEC\n0000000007547522,272.19,47.85\n")
+    assert read_target_list(spoc) == ["TIC 7547522"]
+
     toi = tmp_path / "toi.csv"
     toi.write_text("# ExoFOP export\nTIC ID,TOI,Disposition\n200,101.01,PC\n999,102.01,KP\n")
     excluded = load_excluded_tic_ids(toi)

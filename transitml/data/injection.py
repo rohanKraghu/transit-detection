@@ -195,8 +195,11 @@ class InjectionSource(LightCurveSource):
 
 
 def _tic_column(fieldnames: Sequence[str] | None) -> str | None:
+    # MAST's TESS-SPOC target lists comment their header: ``#TIC_ID,RA,DEC``.
     names = ("tic id", "tic", "tic_id", "ticid")
-    return next((c for c in fieldnames or [] if c.strip().lower() in names), None)
+    return next(
+        (c for c in fieldnames or [] if c.strip().lstrip("#").strip().lower() in names), None
+    )
 
 
 def read_target_list(path: str | Path) -> list[str]:
