@@ -10,8 +10,8 @@ switching the demo to real photometry is a one-line change in ``run_pipeline.py`
         author="SPOC",
     )
 
-**It is not exercised by the demo**, because the environment this project was
-built in has no outbound network access, and because ``lightkurve`` is
+**It is not exercised by the demo**, because labelled real data requires
+injection-recovery (see below), and because ``lightkurve`` is
 deliberately kept out of ``requirements.txt`` so that ``pip install -r`` stays
 small and fast.  ``pip install lightkurve`` and the class below works as written.
 

@@ -106,8 +106,8 @@ the honest number is reported instead of a tuned one.
 
 ## The data
 
-**There is no network access in the environment this was built in, so the demo
-runs on synthetic photometry.** The generator is astrophysically motivated
+**The demo runs on synthetic photometry, because labelled real data requires
+injection-recovery.** The generator is astrophysically motivated
 rather than decorative — each light curve is built from the components that
 appear in a real one:
 
@@ -148,8 +148,9 @@ implementations:
 - `transitml/data/synthetic.py` — `SyntheticTESSSource`, used by the demo.
 - `transitml/data/mast.py` — `MASTLightCurveSource`, which pulls real TESS or
   Kepler photometry from MAST through `lightkurve`. It is fully written and
-  implements the same interface; it is not exercised here because the sandbox
-  has no outbound network. Switching is one line in `run_pipeline.py`:
+  implements the same interface; it is not exercised by the demo because real
+  light curves need labels from injection-recovery (see below). Switching is
+  one line in `run_pipeline.py`:
 
 ```python
 source = MASTLightCurveSource(
