@@ -213,11 +213,32 @@ python run_pipeline.py --inject-into targets.txt --exclude-tois toi.csv --sector
 - Results and figures go to `results/real_injection/` and
   `figures/real_injection/`, never over the synthetic headline.
 
-**No real-data numbers are reported here yet.** The machinery is tested
-offline (`tests/test_injection.py` runs the real mode end to end from a curve
-cache), but it has not yet been run against MAST. This README predicts above
-that average precision will drop on real photometry, mostly on the
-false-positive side; that run is the test of the prediction.
+**Result on real photometry (TESS sector 14).** 2,800 TESS-SPOC 30-minute
+FFI curves, drawn at random from the sector's target list after removing every
+TOI host (`data/real_injection/`), with 112 planets and 168 eclipsing binaries
+injected. Held-out set: 980 curves, 39 planets. Full report in
+[`results/real_injection/report.txt`](results/real_injection/report.txt).
+
+| | Synthetic | Real sector 14 |
+|---|---|---|
+| Model average precision | 0.80 | **0.51** [0.44, 0.60] |
+| Best baseline (BLS SNR) | | 0.10 |
+| Held-out precision / recall | | 0.48 / 0.54 |
+| Precision of top 20 | | 0.75 |
+
+The prediction held: real noise costs a lot of average precision. Most of
+the loss is at low SNR, where the search itself stops finding the period
+(30% recovered below SNR 7, 83% at SNR 7 to 12, 16 of 17 above 12), and on the
+false-positive side, where 15 of the 23 false positives at the operating
+point are real stars with nothing injected rather than binaries.
+
+To reproduce (the TOI table is the NASA Exoplanet Archive `toi` table, the
+same list ExoFOP serves):
+
+```bash
+python run_pipeline.py --inject-into data/real_injection/targets_s0014.txt \
+    --exclude-tois data/real_injection/toi.csv --sector 14 --download-workers 16
+```
 
 ---
 
