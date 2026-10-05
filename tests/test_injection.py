@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 
 import numpy as np
@@ -133,3 +134,40 @@ def test_curves_round_trip_through_npz(tmp_path, base_curves):
     assert [c.target_id for c in back] == [c.target_id for c in base_curves[:3]]
     assert all(np.array_equal(a.flux, b.flux) for a, b in zip(back, base_curves))
     assert back[0].label is None and back[0].meta["sector"] == 14
+
+
+def test_run_pipeline_real_mode_runs_offline_from_a_curve_cache(
+    base_curves, config, tmp_path, monkeypatch
+):
+    """The documented real-data command, minus the download, end to end."""
+    import run_pipeline
+
+    small = replace(
+        config,
+        dataset=replace(config.dataset, positive_rate=0.2, eclipsing_binary_rate=0.1),
+        bls=replace(config.bls, n_periods=300),
+    )
+    monkeypatch.setattr(run_pipeline, "default_config", lambda: small)
+    cache = tmp_path / "base.npz"
+    save_curves(base_curves, cache)
+    targets = tmp_path / "targets.txt"
+    targets.write_text("TIC 1000\n")
+
+    code = run_pipeline.main(
+        [
+            "--inject-into",
+            str(targets),
+            "--curve-cache",
+            str(cache),
+            "--results-dir",
+            str(tmp_path / "out"),
+            "--n-jobs",
+            "1",
+            "--no-figures",
+        ]
+    )
+    assert code == 0
+    metrics = json.loads((tmp_path / "out" / "metrics.json").read_text())
+    assert metrics["dataset"]["source"] == "InjectionSource"
+    assert metrics["dataset"]["n_curves"] == len(base_curves)
+    assert metrics["dataset"]["n_planets"] == 10
