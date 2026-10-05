@@ -15,7 +15,9 @@ The features fall into four groups:
 
 **False-positive discriminants** -- the eclipsing-binary tests
     ``odd_even_sigma``, ``secondary_sigma``, ``half_period_depth_ratio``,
-    ``flat_bottom_fraction`` (V-shaped or not), ``harmonic_delta_loglike``
+    ``flat_bottom_fraction`` (V-shaped or not), ``harmonic_delta_loglike``.
+    The two significances are divided by the red-noise ``beta`` (floored at 1),
+    so correlated noise cannot masquerade as a binary signature.
 
 **Noise characterisation** -- is the "detection" just correlated noise?
     ``red_noise_beta`` (Pont, Zucker & Queloz 2006), ``log_scatter``,
@@ -246,6 +248,25 @@ def _pair_sigma(a: tuple[float, float], b: tuple[float, float]) -> float:
     return float(abs(va - vb) / denom) if denom > 0 else float("nan")
 
 
+def beta_inflation(beta: float) -> float:
+    """Error-bar inflation factor for the binary tests: ``max(beta, 1)``.
+
+    The odd/even and secondary statistics astropy returns are significances
+    against *white-noise* error bars.  When the residuals are correlated on the
+    transit timescale, a transit-length average scatters ``beta`` times more
+    than white noise predicts (Pont, Zucker & Queloz 2006), so those error bars
+    are too small by that factor and the significances too large by it.
+
+    The factor is floored at 1: a measured ``beta < 1`` is sampling scatter on
+    a white-noise light curve, not evidence that the noise is better than
+    white, and must not *inflate* a binary signature.  An undefined ``beta``
+    (too few out-of-transit bins) leaves the statistic unscaled.
+    """
+    if not np.isfinite(beta):
+        return 1.0
+    return float(max(beta, 1.0))
+
+
 def extract_features(
     lc: FlattenedLightCurve, config: BLSConfig | None = None
 ) -> dict[str, float]:
@@ -287,6 +308,25 @@ def extract_features(
     harmonic_amp = float(np.ravel(stats_dict["harmonic_amplitude"])[0])
     harmonic_dll = float(np.ravel(stats_dict["harmonic_delta_log_likelihood"])[0])
 
+    # The binary tests are judged against the empirical noise on the transit
+    # timescale, not the white-noise error bars: divide by beta (>= 1).
+    # NaN in stays NaN out.
+    #
+    # The beta used for this is measured with a wider mask than the
+    # ``red_noise_beta`` feature: both the primary and the phase-0.5 window are
+    # excluded, each two box-widths wide.  With the feature's exact-box mask,
+    # ingress/egress cadences of a slightly mis-fitted period or duration leak
+    # into the "out-of-transit" bins, and a single leaked cadence of a deep
+    # event dominates the binned scatter: on a pure white-noise planet light
+    # curve that mask returns beta ~ 1.5-2.4.  Excluding the secondary window
+    # stops a real secondary eclipse from inflating the beta that is then used
+    # to discount it.
+    beta = red_noise_beta(lc, duration, in_transit)
+    noise_mask = (np.abs(phase) < duration) | (np.abs(np.abs(phase) - 0.5 * period) < duration)
+    inflation = beta_inflation(red_noise_beta(lc, duration, noise_mask))
+    odd_even_raw = _pair_sigma(stats_dict["depth_odd"], stats_dict["depth_even"])
+    secondary_raw = float(sec_value / sec_err) if sec_err > 0 else np.nan
+
     total_ll = float(np.sum(np.abs(per_transit_ll[observed]))) if n_transits else 0.0
     max_single = (
         float(np.max(np.abs(per_transit_ll[observed])) / total_ll)
@@ -314,14 +354,14 @@ def extract_features(
         if n_transits
         else np.nan,
         # --- false-positive discriminants ---
-        "odd_even_sigma": _pair_sigma(stats_dict["depth_odd"], stats_dict["depth_even"]),
-        "secondary_sigma": float(sec_value / sec_err) if sec_err > 0 else np.nan,
+        "odd_even_sigma": odd_even_raw / inflation,
+        "secondary_sigma": secondary_raw / inflation,
         "half_period_depth_ratio": float(half_depth / depth) if depth != 0 else np.nan,
         "flat_bottom_fraction": flat_bottom_fraction(lc, period, duration, transit_time),
         "harmonic_delta_loglike": harmonic_dll,
         "harmonic_amp_over_depth": float(harmonic_amp / depth) if depth > 0 else np.nan,
         # --- noise characterisation ---
-        "red_noise_beta": red_noise_beta(lc, duration, in_transit),
+        "red_noise_beta": beta,
         "log_scatter": float(np.log10(max(scatter, 1e-9))),
         "max_single_event_fraction": max_single,
         "flux_skew": float(stats.skew(lc.flux)),
