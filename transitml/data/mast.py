@@ -37,6 +37,8 @@ the honest options are:
 
 from __future__ import annotations
 
+import warnings
+from concurrent.futures import ProcessPoolExecutor
 from typing import Iterator, Sequence
 
 import numpy as np
@@ -85,6 +87,7 @@ class MASTLightCurveSource(LightCurveSource):
         quality_bitmask: str = "default",
         flux_column: str = "pdcsap_flux",
         sector: int | None = None,
+        n_workers: int = 1,
     ) -> None:
         self.targets = list(targets)
         self.mission = mission
@@ -93,13 +96,34 @@ class MASTLightCurveSource(LightCurveSource):
         self.quality_bitmask = quality_bitmask
         self.flux_column = flux_column
         self.sector = sector
+        self.n_workers = n_workers
 
     def __len__(self) -> int:
         return len(self.targets)
 
     def __iter__(self) -> Iterator[LightCurve]:
+        self._import_lightkurve()  # fail fast, before spawning workers
+        if self.n_workers <= 1:
+            for target_id, label in self.targets:
+                yield from self._fetch(target_id, label)
+            return
+        # Each target is an independent search + download that spends most of
+        # its time waiting on MAST, so parallel workers give a near-linear
+        # speed-up.  They are processes, not threads: lightkurve's FITS
+        # reading is not thread-safe.  ``map`` keeps the output in target order.
+        ids, labels = zip(*self.targets) if self.targets else ((), ())
+        with ProcessPoolExecutor(max_workers=self.n_workers) as pool:
+            for curves in pool.map(self._fetch, ids, labels, chunksize=4):
+                yield from curves
+
+    def _fetch(self, target_id: str, label: int | None) -> list[LightCurve]:
+        """Every matching curve for one target; ``[]`` if MAST has none or fails.
+
+        One bad target (a timeout, a corrupt file) is skipped with a warning
+        rather than aborting a download of thousands.
+        """
         lk = self._import_lightkurve()
-        for target_id, label in self.targets:
+        try:
             search = lk.search_lightcurve(
                 target_id,
                 mission=self.mission,
@@ -108,10 +132,12 @@ class MASTLightCurveSource(LightCurveSource):
                 sector=self.sector,
             )
             if len(search) == 0:
-                continue
+                return []
             collection = search.download_all(quality_bitmask=self.quality_bitmask)
-            for lc in collection:
-                yield self._to_lightcurve(lc, target_id, label)
+            return [self._to_lightcurve(lc, target_id, label) for lc in collection]
+        except Exception as exc:  # noqa: BLE001 - network and FITS errors vary
+            warnings.warn(f"{target_id}: skipped ({type(exc).__name__}: {exc})", stacklevel=2)
+            return []
 
     def _to_lightcurve(self, lc, target_id: str, label: int | None) -> LightCurve:
         """Convert one ``lightkurve.LightCurve`` into our container.

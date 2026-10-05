@@ -101,6 +101,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--exposure-time", type=int, default=1800, help="Cadence in seconds."
     )
     real.add_argument(
+        "--download-workers",
+        type=int,
+        default=8,
+        help="Targets fetched from MAST concurrently.",
+    )
+    real.add_argument(
         "--curve-cache",
         type=Path,
         default=None,
@@ -164,6 +170,7 @@ def build_source(config: Config, args: argparse.Namespace) -> LightCurveSource:
             author=args.author,
             exposure_time=args.exposure_time,
             sector=args.sector,
+            n_workers=args.download_workers,
         )
         curves, seen = [], set()
         for lc in mast:
