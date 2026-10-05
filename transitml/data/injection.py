@@ -209,6 +209,10 @@ def read_target_list(path: str | Path) -> list[str]:
     """
     path = Path(path)
     text = path.read_text().splitlines()
+    # Drop leading comments, except a commented header that names the TIC
+    # column (MAST's ``#TIC_ID,RA,DEC``).
+    while text and text[0].startswith("#") and _tic_column(text[0].split(",")) is None:
+        text = text[1:]
     rows: list[str]
     first = text[0] if text else ""
     if "," in first:

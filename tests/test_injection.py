@@ -122,6 +122,10 @@ def test_target_lists_and_toi_exclusion(tmp_path):
     spoc.write_text("#TIC_ID,RA,DEC\n0000000007547522,272.19,47.85\n")
     assert read_target_list(spoc) == ["TIC 7547522"]
 
+    noted = tmp_path / "sample.txt"  # a comment with a comma is not a CSV header
+    noted.write_text("# 2,800 stars, seeded\nTIC 500\n600\n")
+    assert read_target_list(noted) == ["TIC 500", "TIC 600"]
+
     toi = tmp_path / "toi.csv"
     toi.write_text("# ExoFOP export\nTIC ID,TOI,Disposition\n200,101.01,PC\n999,102.01,KP\n")
     excluded = load_excluded_tic_ids(toi)
