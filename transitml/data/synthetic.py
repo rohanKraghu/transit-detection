@@ -222,6 +222,7 @@ class SectorSystematics:
         # TESS downlinks at perigee, so the mid-sector gap *is* a perigee and
         # the others are one orbit either side of it.
         self.gap_centre = float(survey.baseline_days * rng.uniform(0.45, 0.55))
+        self.gap_days = survey.downlink_gap_days
         self.perigees = self.gap_centre + config.orbit_days * np.arange(-2, 3)
 
         # Momentum dumps: spacecraft-wide, at a fixed interval.

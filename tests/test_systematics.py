@@ -182,3 +182,10 @@ def test_the_pipeline_flags_keep_the_headline_apart():
     assert not plain.systematics.enabled
     with pytest.raises(SystemExit):
         run_pipeline.parse_args(["--systematics", "--inject-into", "targets.txt"])
+
+
+def test_the_sector_figure_is_written(tmp_path):
+    from transitml.plots import plot_sector_systematics
+
+    path = plot_sector_systematics(_source().sector, tmp_path / "sector.png")
+    assert path.exists() and path.stat().st_size > 10_000

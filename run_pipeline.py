@@ -54,7 +54,7 @@ from transitml.data.loader import Dataset, build_dataset
 from transitml.data.synthetic import SYSTEMATIC_COMPONENTS, SyntheticTESSSource
 from transitml.evaluate import evaluate, format_report
 from transitml.model import make_split, save_model, train
-from transitml.plots import plot_all
+from transitml.plots import plot_all, plot_sector_systematics
 
 ROOT = Path(__file__).resolve().parent
 
@@ -343,6 +343,13 @@ def main(argv: list[str] | None = None) -> int:
         paths = plot_all(
             dataset, split, trained, result, curves, config, Path(args.figures_dir)
         )
+        sector = getattr(source, "sector", None)
+        if sector is not None:
+            paths.append(
+                plot_sector_systematics(
+                    sector, Path(args.figures_dir) / "05_sector_systematics.png"
+                )
+            )
         payload["figures"] = [_display_path(p) for p in paths]
         print("figures: " + ", ".join(_display_path(p) for p in paths))
 
