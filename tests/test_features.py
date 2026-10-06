@@ -6,11 +6,14 @@ import numpy as np
 import pytest
 
 from transitml.config import PreprocessConfig
+from transitml.data.base import LightCurve
 from transitml.data.synthetic import trapezoid_transit
 from transitml.features import (
     FEATURE_NAMES,
     _pair_sigma,
     beta_inflation,
+    depth_scatter_ratio,
+    event_depths,
     extract_features,
     flat_bottom_fraction,
     period_grid,
@@ -181,22 +184,30 @@ def test_red_noise_beta_responds_to_correlated_noise(config, fast_bls):
 
 def _raw_binary_sigmas(flat, bls_config):
     """The odd/even and secondary significances against white-noise error bars,
-    plus the noise beta (primary and secondary windows masked) used to scale them.
+    plus the two things that scale them: the noise beta (primary and secondary
+    windows masked) and the event-to-event depth scatter ratios.
 
     Recomputed here, independently of ``extract_features``, from the same BLS
-    solution, so the tests can compare the shipped (beta-scaled) values to the
-    unscaled ones.
+    solution, so the tests can compare the shipped (scaled) values to the
+    unscaled ones.  Returns ``(odd_even, secondary, beta, primary_ratio,
+    secondary_ratio)``.
     """
     res = run_bls(flat, bls_config)
     st = res["bls"].compute_stats(res["period"], res["duration"], res["transit_time"])
     odd_even = _pair_sigma(st["depth_odd"], st["depth_even"])
     sec_value, sec_err = (float(v) for v in np.ravel(st["depth_phased"])[:2])
     secondary = sec_value / sec_err if sec_err > 0 else float("nan")
-    period, duration = res["period"], res["duration"]
-    phase = (flat.time - res["transit_time"] + 0.5 * period) % period - 0.5 * period
+    period, duration, epoch = res["period"], res["duration"], res["transit_time"]
+    phase = (flat.time - epoch + 0.5 * period) % period - 0.5 * period
     mask = (np.abs(phase) < duration) | (np.abs(np.abs(phase) - 0.5 * period) < duration)
     beta = red_noise_beta(flat, duration, mask)
-    return odd_even, secondary, beta
+    primary_ratio = depth_scatter_ratio(
+        *event_depths(flat, period, duration, epoch), by_parity=True
+    )
+    secondary_ratio = depth_scatter_ratio(
+        *event_depths(flat, period, duration, epoch + 0.5 * period), by_parity=False
+    )
+    return odd_even, secondary, beta, primary_ratio, secondary_ratio
 
 
 def test_feature_beta_is_inflated_by_transit_leakage_but_vetting_beta_is_not(config, fast_bls):
@@ -209,7 +220,7 @@ def test_feature_beta_is_inflated_by_transit_leakage_but_vetting_beta_is_not(con
     lc, _ = clean_transit_curve(period=3.4, depth=3e-3, duration=0.16, sigma=2e-4, seed=11)
     flat = flatten(lc, config.preprocess)
     features = extract_features(flat, fast_bls)
-    _, _, vetting_beta = _raw_binary_sigmas(flat, fast_bls)
+    _, _, vetting_beta, _, _ = _raw_binary_sigmas(flat, fast_bls)
     assert features["red_noise_beta"] > 1.5
     assert vetting_beta == pytest.approx(1.0, abs=0.2)
 
@@ -221,21 +232,46 @@ def test_beta_inflation_is_floored_at_one_and_ignores_nan():
     assert beta_inflation(float("nan")) == 1.0
 
 
-def test_binary_tests_are_unchanged_on_white_noise(config, fast_bls):
-    """With white noise beta ~ 1, so the beta scaling must be (nearly) a no-op."""
+def test_binary_tests_are_scaled_by_the_larger_of_beta_and_event_scatter(config, fast_bls):
+    """Each binary test is divided by max(beta, its event scatter ratio, 1)."""
     lc, _ = clean_transit_curve(period=3.4, depth=3e-3, duration=0.12, sigma=2e-4, seed=11)
     flat = flatten(lc, config.preprocess)
     features = extract_features(flat, fast_bls)
-    odd_even_raw, secondary_raw, beta = _raw_binary_sigmas(flat, fast_bls)
+    odd_even_raw, secondary_raw, beta, primary_ratio, secondary_ratio = _raw_binary_sigmas(
+        flat, fast_bls
+    )
 
-    assert beta == pytest.approx(1.0, abs=0.2)
-    inflation = beta_inflation(beta)
-    assert inflation < 1.2
-    assert features["odd_even_sigma"] == pytest.approx(odd_even_raw / inflation, rel=1e-9)
-    assert features["secondary_sigma"] == pytest.approx(secondary_raw / inflation, rel=1e-9)
-    # i.e. within the white-noise sampling scatter of beta, unchanged.
-    assert features["odd_even_sigma"] == pytest.approx(odd_even_raw, rel=0.2)
-    assert abs(features["secondary_sigma"]) == pytest.approx(abs(secondary_raw), rel=0.2)
+    odd_even_scale = max(beta_inflation(beta), beta_inflation(primary_ratio))
+    secondary_scale = max(beta_inflation(beta), beta_inflation(secondary_ratio))
+    assert features["odd_even_sigma"] == pytest.approx(odd_even_raw / odd_even_scale, rel=1e-9)
+    assert features["secondary_sigma"] == pytest.approx(
+        secondary_raw / secondary_scale, rel=1e-9
+    )
+
+
+def test_binary_tests_are_nearly_unchanged_on_white_noise(config, fast_bls):
+    """On white noise beta and both scatter ratios sit near 1, so the scaling is small.
+
+    The ratios are sample statistics over a handful of events, so this is
+    checked over many noise draws rather than one: their mean square is 1 when
+    the events agree to within their errors.
+    """
+    betas, primary, secondary = [], [], []
+    for seed in range(12):
+        lc, _ = clean_transit_curve(period=3.4, depth=3e-3, duration=0.12, sigma=2e-4, seed=seed)
+        _, _, beta, primary_ratio, secondary_ratio = _raw_binary_sigmas(
+            flatten(lc, config.preprocess), fast_bls
+        )
+        betas.append(beta)
+        primary.append(primary_ratio)
+        secondary.append(secondary_ratio)
+
+    assert np.median(betas) == pytest.approx(1.0, abs=0.2)
+    # The primary events scatter a little more than white noise: the trend
+    # under each transit is interpolated, and its error is the event's own.
+    assert 0.7 < np.mean(np.square(primary)) < 1.6
+    assert 0.6 < np.mean(np.square(secondary)) < 1.4
+    assert np.median([max(b, p, 1.0) for b, p in zip(betas, primary)]) < 1.3
 
 
 def test_binary_tests_are_deflated_by_beta_under_red_noise(config, fast_bls):
@@ -253,13 +289,103 @@ def test_binary_tests_are_deflated_by_beta_under_red_noise(config, fast_bls):
     noisy = LightCurve(lc.target_id, lc.time, lc.flux + red, lc.flux_err, 1, dict(lc.meta))
     flat = flatten(noisy, config.preprocess)
     features = extract_features(flat, fast_bls)
-    odd_even_raw, secondary_raw, beta = _raw_binary_sigmas(flat, fast_bls)
+    odd_even_raw, secondary_raw, beta, primary_ratio, secondary_ratio = _raw_binary_sigmas(
+        flat, fast_bls
+    )
 
     assert beta > 1.3, f"injected red noise should give beta > 1.3, got {beta:.2f}"
-    assert features["odd_even_sigma"] == pytest.approx(odd_even_raw / beta, rel=1e-9)
-    assert features["secondary_sigma"] == pytest.approx(secondary_raw / beta, rel=1e-9)
+    odd_even_scale = max(beta, beta_inflation(primary_ratio))
+    secondary_scale = max(beta, beta_inflation(secondary_ratio))
+    assert features["odd_even_sigma"] == pytest.approx(odd_even_raw / odd_even_scale, rel=1e-9)
+    assert features["secondary_sigma"] == pytest.approx(
+        secondary_raw / secondary_scale, rel=1e-9
+    )
     assert features["odd_even_sigma"] < odd_even_raw
     assert abs(features["secondary_sigma"]) < abs(secondary_raw)
+
+
+def test_depth_scatter_ratio_is_one_for_consistent_events():
+    """Depths that agree to within their errors give a ratio near 1.
+
+    An alternating depth is not scatter when odd and even events are compared
+    with their own means, and one missing event is a lot of it.
+    """
+    rng = np.random.default_rng(2)
+    epochs = np.arange(400)
+    errors = np.full(epochs.size, 1e-4)
+    depths = 5e-3 + rng.normal(0.0, 1e-4, epochs.size)
+    assert depth_scatter_ratio(epochs, depths, errors, by_parity=False) == pytest.approx(
+        1.0, abs=0.08
+    )
+
+    alternating = depths + np.where(epochs % 2 == 0, 1e-3, -1e-3)
+    assert depth_scatter_ratio(epochs, alternating, errors, by_parity=True) == pytest.approx(
+        1.0, abs=0.08
+    )
+    assert depth_scatter_ratio(epochs, alternating, errors, by_parity=False) > 9.0
+
+    erased = depths.copy()
+    erased[7] = 0.0
+    assert depth_scatter_ratio(epochs, erased, errors, by_parity=True) > 2.0
+
+
+def test_depth_scatter_ratio_needs_two_degrees_of_freedom():
+    epochs, depths, errors = np.array([0, 1, 2]), np.array([1.0, 2.0, 1.5]), np.ones(3)
+    # Odd and even means use up two of three events: one degree of freedom.
+    assert np.isnan(depth_scatter_ratio(epochs, depths, errors, by_parity=True))
+    assert np.isfinite(depth_scatter_ratio(epochs, depths, errors, by_parity=False))
+
+
+def test_event_depths_measure_each_event_on_its_own():
+    """A noiseless box transit whose depth changes every event, read back exactly."""
+    time = np.arange(0.0, 27.4, 1 / 48)
+    period, epoch, duration = 3.1, 1.0, 0.12
+    number = np.round((time - epoch) / period).astype(int)
+    inside = np.abs(time - epoch - number * period) < duration / 2
+    truth = 4e-3 + 1e-4 * np.arange(number.max() + 1)
+    flux = 1.0 - inside * truth[number]
+    flat = flatten(LightCurve("box", time, flux, np.full(time.size, 1e-4), 1, {}))
+
+    epochs, depths, errors = event_depths(flat, period, duration, epoch)
+    np.testing.assert_array_equal(epochs, np.unique(number[inside]))
+    np.testing.assert_allclose(depths, truth[epochs], atol=2e-6)
+    counts = np.array([np.sum(inside & (number == k)) for k in epochs])
+    np.testing.assert_allclose(errors, 1e-4 / np.sqrt(counts), rtol=1e-9)
+
+
+def _wandering_depths(alternation: float, seed: int = 4) -> LightCurve:
+    """A deep transit whose depth wanders 5% from event to event, as a
+    pulsating star or residual systematics make it, optionally also
+    alternating between odd and even events by ``alternation``."""
+    rng = np.random.default_rng(seed)
+    time = np.arange(0.0, 27.4, 1 / 48)
+    period, epoch, depth, duration = 2.3, 0.9, 8e-3, 0.12
+    number = np.round((time - epoch) / period).astype(int)
+    inside = np.abs(time - epoch - number * period) < duration / 2
+    wander = 1.0 + 0.05 * rng.normal(size=number.max() + 1)
+    parity = np.where(number % 2 == 0, 1.0 + alternation / 2, 1.0 - alternation / 2)
+    flux = 1.0 - inside * depth * wander[number] * parity + rng.normal(0.0, 1e-4, time.size)
+    return LightCurve("wander", time, flux, np.full(time.size, 1e-4), 1, {})
+
+
+def test_wandering_depths_are_not_a_binary_but_alternating_ones_are(config, fast_bls):
+    """The high-SNR failure on real TOIs, and the binary signature it must not hide.
+
+    Against white-noise errors, 5% event-to-event depth scatter on an 8000 ppm
+    transit is a many-sigma odd/even difference.  Scaled by the scatter ratio
+    it is not; a 30% alternation on top of the same scatter still is.
+    """
+    flat_planet = flatten(_wandering_depths(0.0), config.preprocess)
+    flat_binary = flatten(_wandering_depths(0.3), config.preprocess)
+    raw_planet, _, _, ratio_planet, _ = _raw_binary_sigmas(flat_planet, fast_bls)
+    _, _, _, ratio_binary, _ = _raw_binary_sigmas(flat_binary, fast_bls)
+    planet = extract_features(flat_planet, fast_bls)
+    binary = extract_features(flat_binary, fast_bls)
+
+    assert raw_planet > 5.0, "what the unscaled statistic used to report"
+    assert ratio_planet > 3.0 and ratio_binary > 3.0
+    assert planet["odd_even_sigma"] < 3.0
+    assert binary["odd_even_sigma"] > 5.0
 
 
 def test_period_grid_is_log_spaced_and_bounded(config):
