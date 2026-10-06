@@ -8,7 +8,7 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
-from transitml.data.base import LightCurve
+from transitml.data.base import LightCurve, LightCurveSource
 from transitml.data.injection import (
     InjectionSource,
     exclude_known_hosts,
@@ -185,3 +185,18 @@ def test_figure_caption_handles_a_real_curve_with_nothing_injected(base_curves):
     from transitml.plots import _curve_caption
 
     assert _curve_caption(base_curves[0]) == "real TESS star, nothing injected"
+
+
+def test_curve_labels_reach_the_dataset(base_curves, config):
+    """A labelled real curve (no ``kind == "planet"`` in its meta) keeps its label."""
+    labelled = [replace(lc, label=i % 2) for i, lc in enumerate(base_curves[:4])]
+
+    class Listed(LightCurveSource):
+        def __len__(self):
+            return len(labelled)
+
+        def __iter__(self):
+            return iter(labelled)
+
+    dataset = build_dataset(Listed(), preprocess=config.preprocess, bls=config.bls, n_jobs=1)
+    assert dataset.y.tolist() == [0, 1, 0, 1]
