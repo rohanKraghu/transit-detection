@@ -17,6 +17,14 @@ downloads one sector of real light curves for every target that is not a known
 TOI host, injects the same planet and binary population as the synthetic run,
 and writes everything to ``results/real_injection/`` and
 ``figures/real_injection/`` so the synthetic headline is never overwritten.
+
+Structured spacecraft systematics in the synthetic sector (scattered light on
+the 13.7-day orbit, camera-wide pointing jitter and momentum dumps, focus
+drift)::
+
+    python run_pipeline.py --systematics
+
+writes to ``results/systematics/`` and ``figures/systematics/``.
 """
 
 from __future__ import annotations
@@ -43,7 +51,7 @@ from transitml.data.injection import (
     save_curves,
 )
 from transitml.data.loader import Dataset, build_dataset
-from transitml.data.synthetic import SyntheticTESSSource
+from transitml.data.synthetic import SYSTEMATIC_COMPONENTS, SyntheticTESSSource
 from transitml.evaluate import evaluate, format_report
 from transitml.model import make_split, save_model, train
 from transitml.plots import plot_all
@@ -80,6 +88,24 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--no-figures", action="store_true", help="Skip plotting (useful in CI)."
     )
+    parser.add_argument(
+        "--systematics",
+        action="store_true",
+        help="Add structured spacecraft systematics shared across the sector "
+        "(synthetic data only); writes to results/systematics/.",
+    )
+    parser.add_argument(
+        "--systematics-scale",
+        type=float,
+        default=1.0,
+        help="With --systematics: multiply every coupling (0 adds the sector's "
+        "gap and dropped cadences but no signal).",
+    )
+    parser.add_argument(
+        "--systematics-components",
+        default=",".join(SYSTEMATIC_COMPONENTS),
+        help="With --systematics: comma-separated components to add.",
+    )
     real = parser.add_argument_group(
         "injection-recovery on real photometry",
         "Inject the synthetic planet/binary population into real MAST light curves.",
@@ -114,6 +140,21 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="npz of downloaded curves; read if present, written after a download.",
     )
     args = parser.parse_args(argv)
+    components = tuple(c.strip() for c in args.systematics_components.split(",") if c.strip())
+    unknown = set(components) - set(SYSTEMATIC_COMPONENTS)
+    if unknown:
+        parser.error(
+            f"unknown --systematics-components {sorted(unknown)}; "
+            f"choose from {', '.join(SYSTEMATIC_COMPONENTS)}"
+        )
+    args.systematics_components = components
+    if args.systematics:
+        if args.inject_into is not None:
+            parser.error("--systematics is for synthetic data; real light curves have their own")
+        if args.results_dir == ROOT / "results":
+            args.results_dir = ROOT / "results" / "systematics"
+        if args.figures_dir == ROOT / "figures":
+            args.figures_dir = ROOT / "figures" / "systematics"
     if args.inject_into is not None:
         if args.results_dir == ROOT / "results":
             args.results_dir = ROOT / "results" / "real_injection"
@@ -130,6 +171,16 @@ def apply_overrides(config: Config, args: argparse.Namespace) -> Config:
         config = replace(config, seed=args.seed)
     if args.n_curves is not None:
         config = replace(config, dataset=replace(config.dataset, n_curves=args.n_curves))
+    if args.systematics:
+        config = replace(
+            config,
+            systematics=replace(
+                config.systematics,
+                enabled=True,
+                scale=args.systematics_scale,
+                components=args.systematics_components,
+            ),
+        )
     return config
 
 
@@ -146,6 +197,7 @@ def build_source(config: Config, args: argparse.Namespace) -> LightCurveSource:
             star=config.star,
             planet=config.planet,
             eb=config.eb,
+            systematics=config.systematics,
         )
 
     cache = Path(args.curve_cache)

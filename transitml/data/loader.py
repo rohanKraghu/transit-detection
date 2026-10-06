@@ -119,6 +119,8 @@ _META_COLUMNS: tuple[str, ...] = (
     "variability_period",
     "red_rms",
     "red_alpha",
+    "camera",
+    "momentum_dump_interval",
     "n_cadences",
 )
 
@@ -178,6 +180,7 @@ def build_default_dataset(config: Config, n_jobs: int = -1, verbose: int = 0) ->
         star=config.star,
         planet=config.planet,
         eb=config.eb,
+        systematics=config.systematics,
     )
     return build_dataset(
         source, preprocess=config.preprocess, bls=config.bls, n_jobs=n_jobs, verbose=verbose
@@ -196,5 +199,6 @@ def sample_light_curves(config: Config, indices: Sequence[int]) -> list[LightCur
         star=config.star,
         planet=config.planet,
         eb=config.eb,
+        systematics=config.systematics,
     )
     return [source.generate(i) for i in indices]
