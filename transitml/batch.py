@@ -19,6 +19,12 @@ The batch writes, to ``--out-dir``:
                     server, open it from disk);
 ``reports/``        the full one-page ``vet`` report for the top candidates.
 
+With ``--fit N`` the ``N`` best-ranked flagged stars are also fitted with a
+limb-darkened transit model and MCMC (:mod:`transitml.fit`); the radius
+ratio, impact parameter, duration, depth and implied stellar density, with
+intervals, go into the CSV, the summary and the dashboard.  Fits are cached
+in ``cache/fits.jsonl`` the same way, keyed by the star and the fit settings.
+
 **Caching.**  Two layers, so a sector can be stopped and resumed and a rerun
 does only what changed.  Downloaded light curves are saved in chunks as they
 arrive (``curves/``), with the targets MAST had nothing for remembered, so an
@@ -49,14 +55,21 @@ import numpy as np
 from joblib import Parallel, delayed
 from scipy.special import expit, logit
 
-from .config import MultiPlanetConfig, default_config
+from .config import MultiPlanetConfig, PreprocessConfig, default_config
 from .data.base import LightCurve
 from .data.files import read_light_curves
 from .data.injection import load_curves, read_target_list, save_curves
+from .fit import FitConfig
 from .model import SavedModel, load_model
 
 #: Bumped when a cached row's layout changes, so old rows are recomputed.
 BATCH_FORMAT_VERSION = 1
+#: The same for cached fits.
+FIT_FORMAT_VERSION = 1
+#: Fitted quantities kept per star, as (median, lower, upper) of the 68% interval.
+FIT_KEPT: tuple[str, ...] = (
+    "period", "t0", "k", "b", "rho_star", "t14_hours", "depth_ppm", "rp_earth",
+)
 
 #: Bins in the folded light curve kept per star for the dashboard thumbnail.
 FOLD_BINS = 40
@@ -215,6 +228,115 @@ def _work(lc: LightCurve, key: str, model_path: str, fingerprint: str, multi) ->
 
 
 # --------------------------------------------------------------------------
+# Transit fits for the top candidates
+# --------------------------------------------------------------------------
+def fit_key(star_key: str, config: FitConfig) -> str:
+    """Cache key of one star's fit: the star's result key plus every fit setting."""
+    settings = {"format": FIT_FORMAT_VERSION, **{k: v for k, v in vars(config).items()}}
+    blob = star_key + json.dumps(settings, sort_keys=True, default=str)
+    return hashlib.sha256(blob.encode()).hexdigest()[:20]
+
+
+def fit_row(
+    lc: LightCurve, row: dict[str, Any], preprocess: PreprocessConfig, config: FitConfig
+) -> dict[str, Any]:
+    """Fit one star's primary signal; a failure is recorded, never raised."""
+    from .fit import default_exposure_minutes, fit_transit, stellar_priors_from_meta
+    from .preprocess import flatten
+
+    out: dict[str, Any] = {"key": fit_key(row["key"], config), "star_key": row["key"], "status": "ok"}
+    started = time.perf_counter()
+    try:
+        if config.exposure_minutes is None:
+            config = replace(config, exposure_minutes=default_exposure_minutes(lc.meta))
+        density, radius = stellar_priors_from_meta(lc.meta)
+        fit = fit_transit(
+            flatten(lc.finite(), preprocess),
+            row["period_days"], row["epoch"], row["duration_hours"] / 24.0,
+            row["depth_ppm"] / 1e6, config,
+            stellar_density=density, stellar_radius=radius,
+        )
+    except Exception as exc:  # noqa: BLE001 - one star's failure stays with that star
+        out.update(status="error", error=f"{type(exc).__name__}: {exc}")
+        out["seconds"] = round(time.perf_counter() - started, 2)
+        return out
+    out["parameters"] = {
+        name: [_finite_or_none(fit.parameters[name][q], 7) for q in ("median", "lower", "upper")]
+        for name in FIT_KEPT
+        if name in fit.parameters
+    }
+    out["converged"] = fit.converged
+    out["autocorr_time"] = _finite_or_none(fit.sampler["autocorr_time_max"], 4)
+    out["beta"] = _finite_or_none(fit.noise["beta"], 4)
+    out["warnings"] = list(fit.warnings)
+    check = fit.density_check
+    if check is not None:
+        out["density_ratio"] = [
+            _finite_or_none(check["ratio"][q], 5) for q in ("median", "lower", "upper")
+        ]
+        out["density_consistent"] = bool(check["consistent"])
+    out["seconds"] = round(time.perf_counter() - started, 2)
+    return out
+
+
+def _fit_candidates(
+    rows: list[dict[str, Any]],
+    curves: Sequence[LightCurve],
+    keys: Sequence[str],
+    model: SavedModel,
+    out_dir: Path,
+    n_fits: int,
+    config: FitConfig,
+    n_jobs: int,
+    progress: bool,
+) -> dict[str, Any] | None:
+    """Fit the ``n_fits`` best-ranked flagged stars, reusing cached fits; sets ``row["fit"]``."""
+    if n_fits <= 0:
+        return None
+    targets = [r for r in rows if r["status"] == "ok" and r["flagged"]][:n_fits]
+    by_key = dict(zip(keys, curves))
+    cache = ResultCache(out_dir / "cache" / "fits.jsonl")
+    wanted = {r["key"]: fit_key(r["key"], config) for r in targets}
+    todo = [r for r in targets if wanted[r["key"]] not in cache]
+    if progress and targets:
+        print(f"  fitting {len(targets)} candidates: {len(targets) - len(todo)} from the cache, "
+              f"{len(todo)} to fit")
+    try:
+        if todo:
+            jobs = (delayed(fit_row)(by_key[r["key"]], r, model.preprocess, config) for r in todo)
+            stream = Parallel(n_jobs=n_jobs, return_as="generator_unordered")(jobs)
+            for done, fitted in enumerate(stream, start=1):
+                cache.add(fitted)
+                if progress and (done % 5 == 0 or done == len(todo)):
+                    print(f"  fitted {done}/{len(todo)}")
+        current = set(keys)
+        cache.compact([k for k, row in cache.rows.items() if row.get("star_key") in current])
+    finally:
+        cache.close()
+    for row in targets:
+        row["fit"] = cache.get(wanted[row["key"]])
+    fits = [r["fit"] for r in targets]
+    ok = [f for f in fits if f["status"] == "ok"]
+    by_star = {r["key"]: r["id"] for r in targets}
+    return {
+        "requested": n_fits,
+        "fitted": len(ok),
+        "errors": len(fits) - len(ok),
+        "computed": len(todo),
+        "from_cache": len(targets) - len(todo),
+        "converged": sum(bool(f.get("converged")) for f in ok),
+        "density_inconsistent": [
+            by_star[f["star_key"]] for f in ok if f.get("density_consistent") is False
+        ],
+        "settings": {
+            "max_steps": config.max_steps,
+            "n_walkers": config.n_walkers,
+            "exposure_minutes": config.exposure_minutes,
+        },
+    }
+
+
+# --------------------------------------------------------------------------
 # The result cache
 # --------------------------------------------------------------------------
 class ResultCache:
@@ -307,6 +429,8 @@ def run_batch(
     n_reports: int = 10,
     force: bool = False,
     progress: bool = True,
+    n_fits: int = 0,
+    fit_config: FitConfig | None = None,
 ) -> BatchResult:
     """Vet ``curves``, reusing cached results, and write every output."""
     started = time.time()
@@ -349,6 +473,9 @@ def run_batch(
         row["id"] = uid
         rows.append(row)
     rows = rank_rows(rows, model, planet_rate)
+    fits = _fit_candidates(
+        rows, curves, keys, model, out_dir, n_fits, fit_config or FitConfig(), n_jobs, progress
+    )
 
     report_paths = _write_reports(rows, curves, keys, model, multi, out_dir, n_reports)
     summary = summarise(
@@ -364,6 +491,8 @@ def run_batch(
         runtime=time.time() - started,
         reports=report_paths,
     )
+    if fits is not None:
+        summary["fits"] = fits
     write_candidates_csv(rows, out_dir / "candidates.csv")
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2, allow_nan=False) + "\n")
     from .dashboard import write_dashboard
@@ -486,6 +615,11 @@ def write_candidates_csv(rows: list[dict[str, Any]], path: Path) -> Path:
     has_truth = any("truth" in r for r in rows)
     if has_truth:
         columns += ["truth_label", "truth_kind"]
+    has_fit = any("fit" in r for r in rows)
+    if has_fit:
+        for name in _FIT_COLUMNS:
+            columns += [f"fit_{_FIT_COLUMNS[name]}", f"fit_{_FIT_COLUMNS[name]}_err"]
+        columns += ["fit_density_ratio", "fit_density_consistent", "fit_converged", "fit_status"]
     with open(path, "w", newline="") as handle:
         writer = csv.writer(handle)
         writer.writerow(columns)
@@ -505,8 +639,36 @@ def write_candidates_csv(rows: list[dict[str, Any]], path: Path) -> Path:
                 truth = row.get("truth", {})
                 values["truth_label"] = truth.get("label", "")
                 values["truth_kind"] = truth.get("kind", "")
+            if has_fit and "fit" in row:
+                values.update(_fit_csv_values(row["fit"]))
             writer.writerow(["" if values.get(c) is None else values.get(c, "") for c in columns])
     return path
+
+
+#: Fitted quantities in candidates.csv, and their column names.
+_FIT_COLUMNS = {
+    "k": "rp_rs", "b": "b", "rho_star": "rho_star", "t14_hours": "t14_hours",
+    "depth_ppm": "depth_ppm", "rp_earth": "rp_earth",
+}
+
+
+def _fit_csv_values(fit: dict[str, Any]) -> dict[str, Any]:
+    """A fit as CSV cells: the median and half the 68% interval of each quantity."""
+    out: dict[str, Any] = {"fit_status": fit["status"]}
+    if fit["status"] != "ok":
+        return out
+    for name, column in _FIT_COLUMNS.items():
+        value = fit["parameters"].get(name)
+        if value is None or None in value:
+            continue
+        median, lower, upper = value
+        out[f"fit_{column}"] = median
+        out[f"fit_{column}_err"] = float(f"{(upper - lower) / 2.0:.4g}")
+    if "density_ratio" in fit:
+        out["fit_density_ratio"] = fit["density_ratio"][0]
+        out["fit_density_consistent"] = fit["density_consistent"]
+    out["fit_converged"] = fit["converged"]
+    return out
 
 
 def _write_reports(
@@ -684,6 +846,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--force", action="store_true", help="Ignore cached results.")
     parser.add_argument(
+        "--fit", type=int, default=0, metavar="N",
+        help="Fit a transit model (batman + emcee) to the N best-ranked flagged stars.",
+    )
+    parser.add_argument(
+        "--fit-max-steps", type=int, default=FitConfig.max_steps,
+        help="Longest MCMC chain per fit before giving up on convergence.",
+    )
+    parser.add_argument(
         "--max-signals", type=int, default=MultiPlanetConfig.max_signals,
         help="Most signals the iterative search reports per star.",
     )
@@ -751,6 +921,10 @@ def main(argv: list[str] | None = None) -> int:
         planet_rate=args.planet_rate,
         n_reports=args.reports,
         force=args.force,
+        n_fits=args.fit,
+        fit_config=FitConfig(
+            min_steps=min(FitConfig.min_steps, args.fit_max_steps), max_steps=args.fit_max_steps
+        ),
     )
     s = result.summary
     print(
@@ -765,6 +939,15 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"  against ground truth: {t['flagged_planets']} of {s['n_flagged']} flagged are "
             f"planets (precision {precision}, recall {recall})"
+        )
+    if "fits" in s:
+        f = s["fits"]
+        print(
+            f"  fitted {f['fitted']} candidates ({f['converged']} converged, {f['errors']} failed)"
+            + (
+                f"; density inconsistent with the star: {', '.join(f['density_inconsistent'])}"
+                if f["density_inconsistent"] else ""
+            )
         )
     for name in ("candidates.csv", "summary.json", "dashboard.html"):
         print(f"  wrote {out_dir / name}")

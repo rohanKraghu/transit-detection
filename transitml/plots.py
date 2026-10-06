@@ -1124,3 +1124,154 @@ def _plot_centroid_row(fig, grid, row: int, result, centroid) -> None:
             fontweight="bold",
             color=SERIES[1],
         )
+
+
+# --------------------------------------------------------------------------
+# Planet parameter fit
+# --------------------------------------------------------------------------
+#: Quantities shown in the fit's corner plot, with axis labels.
+_FIT_CORNER: tuple[tuple[str, str], ...] = (
+    ("k", "Rp/R*"),
+    ("b", "b"),
+    ("log10_rho_star", "log10 density"),
+    ("t14_hours", "T14 (h)"),
+)
+
+
+def _interval_text(summary: dict[str, float], digits: int) -> str:
+    m, lo, hi = summary["median"], summary["lower"], summary["upper"]
+    return f"{m:.{digits}f} (+{hi - m:.{digits}f} / -{m - lo:.{digits}f})"
+
+
+def plot_fit(fit, path: Path, n_draws: int = 150) -> Path:
+    """The transit fit for one star: data, model and posterior on one page.
+
+    ``fit`` is a :class:`~transitml.fit.FitResult`.  Left: the fitted cadences
+    folded on the posterior median ephemeris, binned, with the posterior
+    median model and its 68% band from ``n_draws`` draws, and the residuals.
+    Right: the joint posterior of the radius ratio, impact parameter,
+    stellar density and duration.
+    """
+    from .fit import PARAMETERS, TransitModel, _derived
+
+    _style()
+    data = fit.data
+    samples = fit.samples
+    period = fit.value("period")
+    t0 = fit.value("t0")
+    f0 = fit.value("f0")
+    hours = ((data["time"] - t0 + 0.5 * period) % period - 0.5 * period) * 24.0
+    order = np.argsort(hours)
+    ppm = (data["flux"] / f0 - 1.0) * 1e6
+    t14_h = fit.value("t14_hours")
+    span = max(float(np.max(np.abs(hours))), 1.5 * t14_h)
+    grid_h = np.linspace(-span, span, 400)
+
+    rng = np.random.default_rng(0)
+    draws = samples[rng.choice(len(samples), size=min(n_draws, len(samples)), replace=False)]
+    model = TransitModel(grid_h / 24.0, fit.exposure_minutes / 1440.0, 3.0 / 1440.0)
+    curves = np.array([
+        (model.flux(np.r_[0.0, theta[1:7], 1.0]) - 1.0) * 1e6 for theta in draws
+    ])
+    median_curve = np.median(curves, axis=0)
+    band_lo, band_hi = np.percentile(curves, [16.0, 84.0], axis=0)
+    data_model = TransitModel(data["time"], fit.exposure_minutes / 1440.0, 3.0 / 1440.0)
+    best = np.array([fit.map_parameters[name] for name in PARAMETERS])
+    resid_ppm = (data["flux"] - data_model.flux(best)) / f0 * 1e6
+    bin_h = max(t14_h / 8.0, 0.25)
+
+    fig = plt.figure(figsize=(13.5, 7.4))
+    outer = fig.add_gridspec(1, 2, width_ratios=(1.25, 1.0), wspace=0.18)
+    left = outer[0].subgridspec(2, 1, height_ratios=(2.3, 1.0), hspace=0.08)
+    ax_fold = fig.add_subplot(left[0])
+    ax_res = fig.add_subplot(left[1], sharex=ax_fold)
+
+    ax_fold.plot(hours, ppm, ".", ms=2.6, color=NEUTRAL, alpha=0.55, label="detrended flux")
+    centres, means = _bin_means(hours[order], ppm[order], bin_h)
+    ax_fold.plot(centres, means, "o", ms=4.2, color=INK, label=f"binned ({bin_h * 60:.0f} min)")
+    ax_fold.fill_between(grid_h, band_lo, band_hi, color=SERIES[0], alpha=0.25, lw=0,
+                         label="68% of posterior models")
+    ax_fold.plot(grid_h, median_curve, "-", lw=1.8, color=SERIES[0], label="posterior median model")
+    ax_fold.set_ylabel("flux - 1 (ppm)")
+    lo, hi = _robust_limits(ppm, pad=0.1)
+    ax_fold.set_ylim(min(lo, float(median_curve.min()) * 1.25), hi)
+    ax_fold.legend(loc="lower left", ncol=2)
+    ax_fold.set_title("Folded on the fitted ephemeris", loc="left")
+    ax_fold.tick_params(labelbottom=False)
+
+    ax_res.plot(hours, resid_ppm, ".", ms=2.6, color=NEUTRAL, alpha=0.55)
+    rc, rm = _bin_means(hours[order], resid_ppm[order], bin_h)
+    ax_res.plot(rc, rm, "o", ms=4.2, color=INK)
+    ax_res.axhline(0.0, color=SERIES[0], lw=1.2)
+    ax_res.set_ylim(*_robust_limits(resid_ppm, pad=0.1))
+    ax_res.set_ylabel("residual (ppm)")
+    ax_res.set_xlabel("hours from mid-transit")
+    ax_res.set_xlim(-span, span)
+
+    # Corner plot of the geometry.
+    derived = _derived(samples)
+    names = [name for name, _ in _FIT_CORNER]
+    labels = [label for _, label in _FIT_CORNER]
+    n = len(names)
+    corner = outer[1].subgridspec(n, n, hspace=0.08, wspace=0.08)
+    limits = {
+        name: tuple(np.percentile(derived[name], [0.5, 99.5])) for name in names
+    }
+    for i in range(n):
+        for j in range(i + 1):
+            ax = fig.add_subplot(corner[i, j])
+            x = derived[names[j]]
+            if i == j:
+                ax.hist(x, bins=40, range=limits[names[j]], color=SERIES[0], alpha=0.75)
+                lo68, hi68 = np.percentile(x, [16.0, 84.0])
+                for v in (lo68, np.median(x), hi68):
+                    ax.axvline(v, color=INK, lw=0.9, ls="-" if v == np.median(x) else ":")
+                ax.set_yticks([])
+                ax.grid(False)
+            else:
+                y = derived[names[i]]
+                ax.hist2d(x, y, bins=36, range=(limits[names[j]], limits[names[i]]),
+                          cmap=_two_hue_map("fitdensity", SURFACE, "#9cc1ee", SERIES[0]),
+                          rasterized=True)
+                ax.grid(False)
+            ax.set_xlim(*limits[names[j]])
+            if i < n - 1:
+                ax.tick_params(labelbottom=False)
+            else:
+                ax.set_xlabel(labels[j], fontsize=8.5)
+                ax.tick_params(axis="x", labelsize=7.5, rotation=40)
+            if j > 0 or i == 0:
+                ax.tick_params(labelleft=False)
+            else:
+                ax.set_ylabel(labels[i], fontsize=8.5)
+                ax.tick_params(axis="y", labelsize=7.5)
+
+    p = fit.parameters
+    lines = [
+        f"P = {_interval_text(p['period'], 5)} d    Rp/R* = {_interval_text(p['k'], 4)}"
+        f"    b = {_interval_text(p['b'], 2)}",
+        f"T14 = {_interval_text(p['t14_hours'], 2)} h    depth = "
+        f"{_interval_text(p['depth_ppm'], 0)} ppm    density = {_interval_text(p['rho_star'], 2)} g/cm3",
+    ]
+    if "rp_earth" in p:
+        lines[0] += f"    Rp = {_interval_text(p['rp_earth'], 2)} Earth radii"
+    check = fit.density_check
+    if check is not None:
+        ratio = check["ratio"]
+        lines.append(
+            f"fitted / stellar density = {_interval_text(ratio, 2)}: "
+            + ("consistent with the star" if check["consistent"] else "INCONSISTENT with the star")
+        )
+    sampler = fit.sampler
+    lines.append(
+        f"{sampler['n_walkers']} walkers x {sampler['n_steps']} steps, autocorrelation time "
+        f"{sampler['autocorr_time_max']:.0f}, noise {fit.noise['sigma_ppm']:.0f} ppm x beta "
+        f"{fit.noise['beta']:.2f}" + ("" if fit.converged else "  (NOT CONVERGED)")
+    )
+    fig.suptitle(f"{fit.target_id}: batman transit fit, emcee posterior", x=0.06, ha="left",
+                 y=1.06, fontsize=13, fontweight="bold")
+    fig.text(0.06, 1.035, "\n".join(lines), ha="left", va="top", fontsize=9.5, color=INK_SOFT)
+    if fit.warnings:
+        fig.text(0.06, -0.02, "Warnings: " + "; ".join(fit.warnings), ha="left", va="top",
+                 fontsize=9, color=SERIES[1])
+    return _save(fig, path)
