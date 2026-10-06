@@ -18,8 +18,13 @@ from transitml.single import (
 GAP = (13.2, 14.2)
 
 
-def box_events(events, *, sigma=5e-4, seed=0, red=0.0, flares=(), gap=GAP):
-    """White (plus optional red) noise, a mid-sector gap and exact box dips."""
+def box_events(events, *, sigma=5e-4, seed=0, red=0.0, flares=(), ramps=(), gap=GAP):
+    """White (plus optional red) noise, a mid-sector gap and exact box dips.
+
+    ``ramps`` are ``(t0, amplitude, tau)``: a sharp drop at ``t0`` recovering
+    exponentially, the shape of a momentum-dump ramp; a negative ``tau``
+    reverses it in time (a slow decline ending in a sharp recovery).
+    """
     rng = np.random.default_rng(seed)
     time = np.arange(0.0, 27.4, 30.0 / 1440.0)
     time = time[(time < gap[0]) | (time > gap[1])]
@@ -32,6 +37,9 @@ def box_events(events, *, sigma=5e-4, seed=0, red=0.0, flares=(), gap=GAP):
     for t0, amp in flares:
         after = time >= t0
         flux[after] += amp * np.exp(-(time[after] - t0) / 0.03)
+    for t0, amp, tau in ramps:
+        side = (time >= t0) if tau > 0 else (time <= t0)
+        flux[side] -= amp * np.exp(-(time[side] - t0) / tau)
     return flatten(LightCurve("TEST-SINGLE", time, flux, np.full(time.size, sigma)))
 
 
@@ -87,6 +95,30 @@ def test_noise_alone_raises_no_event(seed):
 def test_flares_are_not_events():
     flares = [(3.0, 8e-3), (17.5, 1.2e-2)]
     assert search_single_events(box_events([], flares=flares)).events == ()
+
+
+@pytest.mark.parametrize("tau", [0.08, 0.2, -0.15])
+def test_ramps_are_set_aside_not_reported(tau):
+    """A sharp drop with an exponential recovery is a systematic, not a transit."""
+    result = search_single_events(box_events([], ramps=[(9.0, 6e-3, tau)]))
+    assert result.events == ()
+    assert len(result.ramps) >= 1 and abs(result.ramps[0] - 9.0) < 0.5
+
+
+def test_a_transit_beside_a_ramp_is_still_found():
+    result = search_single_events(
+        box_events([(20.0, 0.25, 3e-3)], ramps=[(6.0, 6e-3, 0.15)])
+    )
+    assert [round(e.time) for e in result.events] == [20]
+    assert result.ramps
+
+
+def test_deep_transits_of_one_planet_pair_despite_tiny_errors():
+    """At SNR ~100 the depth errors are tiny; 10% apart is still one planet."""
+    result = search_single_events(
+        box_events([(4.1, 0.2, 1.0e-2), (22.1, 0.2, 1.1e-2)], sigma=3e-4)
+    )
+    assert len(result.duos) == 1
 
 
 def test_red_noise_is_charged_for():

@@ -18,7 +18,11 @@ This module searches for individual box-shaped dips instead:
    gap does not count.
 2. **Events.**  The highest-SNR box is an event if its SNR reaches
    ``min_snr``; every box overlapping it is then removed and the next highest
-   is taken, up to ``max_events``.
+   is taken, up to ``max_events``.  A dip with one sharp edge and an
+   exponential recovery on the other side (the shape of an instrumental
+   ramp after a momentum dump) is fitted both ways, and if the ramp fits
+   better than any box by ``ramp_delta_chi2`` it is set aside as a ramp
+   rather than reported.
 3. **Periods.**  For a single event the period is unknown, but not
    unconstrained: any period that would put another transit on observed data
    that shows no such dip is ruled out, which gives a minimum period, and the
@@ -104,11 +108,15 @@ class SingleEventSearch:
 
     events: tuple[SingleEvent, ...]
     duos: tuple[DuoCandidate, ...]
+    #: Mid-times of dips that cleared ``min_snr`` but are ramp-shaped, so
+    #: they were not reported as events.
+    ramps: tuple[float, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "events": [e.to_dict() for e in self.events],
             "duos": [d.to_dict() for d in self.duos],
+            "ramps": [float(t) for t in self.ramps],
         }
 
 
@@ -278,6 +286,58 @@ def duo_periods(
 
 
 # --------------------------------------------------------------------------
+# Ramps
+# --------------------------------------------------------------------------
+_RAMP_TAUS_DAYS = np.geomspace(0.02, 0.6, 14)
+
+
+def _best_chi2(y: NDArray, templates: NDArray) -> float:
+    """Smallest residual sum of squares of ``y ~ c + a * template`` over the rows."""
+    yc = y - y.mean()
+    tc = templates - templates.mean(axis=1, keepdims=True)
+    norm = np.einsum("ij,ij->i", tc, tc)
+    proj = tc @ yc
+    with np.errstate(invalid="ignore", divide="ignore"):
+        explained = np.where(norm > 0, proj**2 / norm, 0.0)
+    return float(yc @ yc - explained.max())
+
+
+def ramp_preference(lc: FlattenedLightCurve, event: SingleEvent, beta: float) -> float:
+    """How much better a ramp fits ``event`` than a box does, in chi-squared.
+
+    Both models are fitted to the data within ``duration / 2 + max(duration,
+    0.3 d)`` of the event, each with its own baseline and amplitude.  The box
+    has free centre (within half a duration) and width (half to one and a
+    half durations).  The ramp is a sharp step at a free time followed by an
+    exponential recovery (time constant 0.02 to 0.6 d), or the same reversed
+    in time.  The result is ``(chi2_box - chi2_ramp) / (scatter * beta)^2``:
+    positive when the ramp is the better description.  A transit has two
+    sharp edges and a ramp has one, so on real transits this is strongly
+    negative.
+    """
+    d = event.duration
+    near = np.abs(lc.time - event.time) < d / 2.0 + max(d, 0.3)
+    t, y = lc.time[near], lc.flux[near]
+    if t.size < 8:
+        return float("-inf")
+    cadence = _cadence(lc.time)
+    centres = np.arange(event.time - d / 2.0, event.time + d / 2.0 + cadence, cadence / 2.0)
+    widths = d * np.linspace(0.5, 1.5, 11)
+    boxes = -(
+        np.abs(t[None, None, :] - centres[None, :, None]) < widths[:, None, None] / 2.0
+    ).reshape(-1, t.size).astype(float)
+    starts = np.arange(event.time - d, event.time + d, cadence / 2.0)
+    x = (t[None, None, :] - starts[None, :, None]) / _RAMP_TAUS_DAYS[:, None, None]
+    after = -np.where(x >= 0.0, np.exp(-np.clip(x, 0.0, 50.0)), 0.0)
+    before = -np.where(x <= 0.0, np.exp(np.clip(x, -50.0, 0.0)), 0.0)
+    ramps = np.concatenate([after.reshape(-1, t.size), before.reshape(-1, t.size)])
+    sigma2 = (lc.scatter * beta) ** 2
+    if not np.isfinite(sigma2) or sigma2 <= 0:
+        return float("-inf")
+    return (_best_chi2(y, boxes) - _best_chi2(y, ramps)) / sigma2
+
+
+# --------------------------------------------------------------------------
 # The search
 # --------------------------------------------------------------------------
 def _near_gap(time: NDArray, centre: float, duration: float, cadence: float) -> bool:
@@ -310,8 +370,9 @@ def search_single_events(
         table.append((duration, depth, err, n_in, snr))
 
     events: list[SingleEvent] = []
+    ramps: list[float] = []
     taken: list[tuple[float, float]] = []
-    while len(events) < config.max_events:
+    while len(events) < config.max_events and len(taken) < 3 * config.max_events:
         best = None
         for duration, depth, err, n_in, snr in table:
             blocked = np.zeros(centres.size, dtype=bool)
@@ -338,9 +399,11 @@ def search_single_events(
             min_period=float("nan"),
         )
         beta = betas.get(duration) or binned_noise_factor(lc, duration)
-        event = _with_min_period(stats, event, beta, config)
-        events.append(event)
         taken.append((centre, duration))
+        if ramp_preference(lc, event, beta) > config.ramp_delta_chi2:
+            ramps.append(centre)
+            continue
+        events.append(_with_min_period(stats, event, beta, config))
 
     duos = []
     ordered = sorted(events, key=lambda e: e.time)
@@ -352,7 +415,7 @@ def search_single_events(
             periods, ratios = duo_periods(stats, first, second, beta, config)
             if periods:
                 duos.append(DuoCandidate(first, second, periods, ratios))
-    return SingleEventSearch(tuple(events), tuple(duos))
+    return SingleEventSearch(tuple(events), tuple(duos), tuple(ramps))
 
 
 def _refine(
@@ -395,9 +458,15 @@ def _with_min_period(
 
 
 def _matching(a: SingleEvent, b: SingleEvent, config: SingleEventConfig) -> bool:
-    """Depths agree within ``duo_depth_sigma`` and durations within a factor."""
+    """Depths agree within ``duo_depth_sigma`` plus a fractional floor, durations within a factor.
+
+    The floor matters at high SNR, where the depth errors are tiny and the two
+    transits of one planet still differ by several per cent through
+    detrending and how the cadences sample ingress and egress.
+    """
     sigma = float(np.hypot(a.depth_err, b.depth_err))
-    depth_ok = abs(a.depth - b.depth) <= config.duo_depth_sigma * max(sigma, 1e-12)
+    allowed = config.duo_depth_sigma * sigma + config.duo_depth_fraction * 0.5 * (a.depth + b.depth)
+    depth_ok = abs(a.depth - b.depth) <= max(allowed, 1e-12)
     ratio = max(a.duration, b.duration) / min(a.duration, b.duration)
     return bool(depth_ok and ratio <= config.duo_duration_ratio)
 
@@ -441,4 +510,4 @@ def drop_periodic(
         d for d in found.duos
         if d.first.time not in explained and d.second.time not in explained
     )
-    return SingleEventSearch(events, duos)
+    return SingleEventSearch(events, duos, found.ramps)
