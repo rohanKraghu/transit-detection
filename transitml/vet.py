@@ -91,8 +91,9 @@ CENTROID_NOTE = (
 
 SINGLE_EVENT_NOTE = (
     "individual dips found without folding, for transits seen once or twice; "
-    "an event inside a listed signal's transits is that signal, and none of "
-    "this is scored"
+    "an event inside a listed signal's transits is that signal, ramp-shaped "
+    "dips are listed under ramps rather than as events, and none of this is "
+    "scored"
 )
 
 CONTRIBUTION_METHOD = (
@@ -491,6 +492,9 @@ def main(argv: list[str] | None = None) -> int:
         periods = ", ".join(f"{p:.2f}" for p in duo.allowed_periods[:6])
         more = "" if len(duo.allowed_periods) <= 6 else f" and {len(duo.allowed_periods) - 6} more"
         print(f"  duo {duo.first.time:.2f} + {duo.second.time:.2f} d: P in {{{periods}{more}}} d")
+    if result.single_events and result.single_events.ramps:
+        times = ", ".join(f"{t:.2f}" for t in result.single_events.ramps)
+        print(f"  ramp-shaped dips set aside at {times} d (instrumental, not events)")
     for test in result.centroids or []:
         sector = test.meta.get("sector")
         label = f"sector {sector}" if sector is not None else test.target_id

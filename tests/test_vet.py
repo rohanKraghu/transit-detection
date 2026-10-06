@@ -244,3 +244,25 @@ def test_transits_of_a_periodic_signal_are_not_repeated_as_single_events(
     result, _ = vet_light_curve(planet_curve[0], load_model(model_path))
     assert result.candidates and result.candidates[0].period == pytest.approx(3.0, rel=0.01)
     assert result.single_events.events == ()
+
+
+def test_a_ramp_is_set_aside_not_listed(model_path, tmp_path, capsys):
+    """A momentum-dump ramp clears the SNR threshold but is not a single event."""
+    from transitml import vet
+    from transitml.data.base import LightCurve
+
+    rng = np.random.default_rng(4)
+    time = np.arange(0.0, 27.4, 30.0 / 1440.0)
+    flux = 1.0 + rng.normal(0.0, 4e-4, time.size)
+    after = time >= 9.0
+    flux[after] -= 5e-3 * np.exp(-(time[after] - 9.0) / 0.12)
+    lc = LightCurve("TEST-RAMP", time, flux, np.full(time.size, 4e-4))
+    result, _ = vet_light_curve(lc, load_model(model_path))
+    assert result.single_events.events == ()
+    payload = json.loads(write_json(result, tmp_path / "ramp.json").read_text())
+    assert payload["single_events"]["ramps"][0] == pytest.approx(9.0, abs=0.3)
+
+    csv_path = write_planet_csv(lc, tmp_path / "ramp.csv")
+    out = tmp_path / "reports"
+    assert vet.main([str(csv_path), "--model", str(model_path), "--out-dir", str(out)]) == 0
+    assert "ramp-shaped dips set aside at" in capsys.readouterr().out
