@@ -42,7 +42,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from ..config import EclipsingBinaryConfig, PlanetConfig, StarConfig
-from ..physics import RHO_SUN_CGS
+from ..physics import RHO_SUN_CGS, main_sequence_teff
 from .base import LightCurve, LightCurveSource
 from .synthetic import CurveKind, binary_signal, planet_signal
 
@@ -174,6 +174,10 @@ class InjectionSource(LightCurveSource):
                 "kind": kind,
                 "base_target_id": base.target_id,
                 "rho_star_cgs": rho_star,
+                # The temperature a planet's occultation was drawn with
+                # (planet_signal takes it from the density), so that the
+                # secondary test's allowance is sized for the same star.
+                "teff_k": main_sequence_teff(rho_star),
                 "sigma_white": sigma_white,
                 "variability_amplitude": meta.get(
                     "variability_amplitude", float((hi - lo) / 2.0)

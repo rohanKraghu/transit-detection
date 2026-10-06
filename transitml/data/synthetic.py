@@ -318,6 +318,7 @@ class SyntheticTESSSource(LightCurveSource):
             "sigma_white": sigma_white,
             "r_star_rsun": r_star,
             "rho_star_cgs": rho_star,
+            "teff_k": main_sequence_teff(rho_star),
         }
 
         # --- astrophysical + instrumental background -----------------------

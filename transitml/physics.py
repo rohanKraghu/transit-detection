@@ -14,6 +14,8 @@ G_CGS: float = 6.674e-8
 SECONDS_PER_DAY: float = 86400.0
 #: Mean density of the Sun in g/cm^3.
 RHO_SUN_CGS: float = 1.41
+#: The Sun's radius in centimetres.
+R_SUN_CM: float = 6.957e10
 
 
 def scaled_semi_major_axis(period_days: float, stellar_density_cgs: float) -> float:
@@ -90,6 +92,21 @@ def main_sequence_teff(stellar_density_cgs: float) -> float:
     """
     radius = (stellar_density_cgs / RHO_SUN_CGS) ** (-1.0 / 2.1)
     return float(T_SUN_K * radius**0.4)
+
+
+def main_sequence_density(t_eff: float) -> float:
+    """Mean density, in g/cm^3, of a main-sequence star at this temperature.
+
+    The inverse of :func:`main_sequence_teff`, for a catalogue star with a
+    temperature and nothing else.
+    """
+    radius = (t_eff / T_SUN_K) ** 2.5
+    return float(RHO_SUN_CGS * radius**-2.1)
+
+
+def density_from_gravity(logg_cgs: float, radius_rsun: float) -> float:
+    """Mean density, in g/cm^3, from log g (cgs) and radius: 3 g / (4 pi G R)."""
+    return float(3.0 * 10.0**logg_cgs / (4.0 * np.pi * G_CGS * radius_rsun * R_SUN_CM))
 
 
 def tess_brightness_ratio(t_planet: float, t_star: float) -> float:

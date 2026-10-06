@@ -182,6 +182,11 @@ class MASTLightCurveSource(LightCurveSource):
                 "author": self.author,
                 "sector": getattr(lc.meta, "get", lambda *_: None)("SECTOR"),
                 "tess_mag": lc.meta.get("TESSMAG") if hasattr(lc, "meta") else None,
+                # The TIC's values for the host, copied into the file header
+                # (read back by LightCurve.star).
+                "teff_k": lc.meta.get("TEFF") if hasattr(lc, "meta") else None,
+                "logg_cgs": lc.meta.get("LOGG") if hasattr(lc, "meta") else None,
+                "r_star_rsun": lc.meta.get("RADIUS") if hasattr(lc, "meta") else None,
                 # Downstream code uses sigma_white for SNR-style features; for
                 # real data the robust scatter of the flattened curve is the
                 # honest estimate, computed in transitml.preprocess.

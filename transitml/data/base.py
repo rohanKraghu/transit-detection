@@ -8,11 +8,14 @@ whether a light curve was simulated or downloaded from MAST.  ``preprocess``,
 from __future__ import annotations
 
 import abc
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Iterator, Sequence
 
 import numpy as np
 from numpy.typing import NDArray
+
+from ..physics import RHO_SUN_CGS, density_from_gravity, main_sequence_density, main_sequence_teff
 
 
 @dataclass
@@ -36,7 +39,8 @@ class LightCurve:
     meta:
         Free-form provenance/ground truth.  Synthetic curves record the injected
         parameters here so the evaluation can slice recall by true transit SNR;
-        real curves would record sector, camera, crowding, and so on.
+        real curves would record sector, camera, crowding, and so on.  The
+        host star's parameters live here too (see :attr:`star`).
     """
 
     target_id: str
@@ -61,6 +65,14 @@ class LightCurve:
         return int(self.time.size)
 
     @property
+    def star(self) -> tuple[float, float]:
+        """The host's effective temperature (K) and mean density (g/cm^3).
+
+        See :func:`stellar_parameters`.  NaN for whatever is unknown.
+        """
+        return stellar_parameters(self.meta)
+
+    @property
     def baseline_days(self) -> float:
         """Total observing span, including gaps."""
         return float(self.time[-1] - self.time[0]) if self.time.size else 0.0
@@ -76,6 +88,38 @@ class LightCurve:
             label=self.label,
             meta=dict(self.meta),
         )
+
+
+def stellar_parameters(meta: Mapping[str, Any]) -> tuple[float, float]:
+    """Effective temperature (K) and mean density (g/cm^3) from a curve's metadata.
+
+    The synthetic and injection sources record the star they drew as
+    ``rho_star_cgs`` (and ``teff_k``); a real star has catalogue values, the
+    temperature as ``teff_k`` and the density as ``rho_star_cgs`` or, failing
+    that, from ``m_star_msun`` or ``logg_cgs`` with ``r_star_rsun``.  When only
+    the temperature or only the density is known, the other is the
+    main-sequence value.  Both are NaN when neither is known.
+    """
+
+    def number(key: str) -> float:
+        try:
+            value = float(meta.get(key))  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return float("nan")
+        return value if np.isfinite(value) and value > 0 else float("nan")
+
+    teff, density, radius = number("teff_k"), number("rho_star_cgs"), number("r_star_rsun")
+    if not np.isfinite(density) and np.isfinite(radius):
+        mass, logg = number("m_star_msun"), number("logg_cgs")
+        if np.isfinite(mass):
+            density = RHO_SUN_CGS * mass / radius**3
+        elif np.isfinite(logg):
+            density = density_from_gravity(logg, radius)
+    if np.isfinite(teff) and not np.isfinite(density):
+        density = main_sequence_density(teff)
+    elif np.isfinite(density) and not np.isfinite(teff):
+        teff = main_sequence_teff(density)
+    return teff, density
 
 
 def stitch_light_curves(curves: Sequence[LightCurve]) -> LightCurve:

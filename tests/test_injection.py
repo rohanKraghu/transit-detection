@@ -21,6 +21,7 @@ from transitml.data.injection import (
 )
 from transitml.data.loader import build_dataset
 from transitml.evaluate import period_recovered
+from transitml.physics import main_sequence_teff
 
 from .conftest import make_source
 
@@ -80,6 +81,15 @@ def test_injection_is_multiplicative_and_only_dims(base_curves):
     ratio = lc.flux / base.flux
     assert np.all(ratio <= 1.0 + 1e-12)
     assert 1.0 - ratio.min() == pytest.approx(lc.meta["depth"], rel=1e-6)
+
+
+def test_injected_curves_carry_the_star_they_were_drawn_for(base_curves):
+    """The secondary test must size its allowance for the star the eclipse was drawn with."""
+    source = InjectionSource(base_curves, 0.2, 0.1, seed=3)
+    for lc in (source.generate(i) for i in range(10)):
+        teff, density = lc.star
+        assert density == lc.meta["rho_star_cgs"]
+        assert teff == pytest.approx(main_sequence_teff(density))
 
 
 def test_known_planet_hosts_are_refused(base_curves):

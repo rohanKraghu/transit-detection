@@ -117,6 +117,7 @@ _META_COLUMNS: tuple[str, ...] = (
     "sigma_flat",
     "r_star_rsun",
     "rho_star_cgs",
+    "teff_k",
     "variability_amplitude",
     "variability_period",
     "red_rms",

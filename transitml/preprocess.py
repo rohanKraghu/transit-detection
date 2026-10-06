@@ -100,6 +100,10 @@ class FlattenedLightCurve:
         Retained cadences the caller asked to keep out of the trend fit (zero
         for a blind detrend).  A few may have been given back to keep the fit
         constrained; see :func:`release_starved`.
+    teff_k, density_cgs:
+        The host star's effective temperature and mean density, carried over
+        from the input curve (:attr:`~transitml.data.base.LightCurve.star`);
+        NaN when unknown.
     """
 
     target_id: str
@@ -112,6 +116,8 @@ class FlattenedLightCurve:
     label: int | None = None
     rotation_periods: tuple[float, ...] = ()
     n_masked: int = 0
+    teff_k: float = float("nan")
+    density_cgs: float = float("nan")
 
     @property
     def baseline_days(self) -> float:
@@ -526,6 +532,7 @@ def flatten(
 
     time, signal, flux_err = time[keep], signal[keep], flux_err[keep]
     flat = signal - trend + 1.0
+    teff, density = lc.star
 
     return FlattenedLightCurve(
         target_id=lc.target_id,
@@ -538,4 +545,6 @@ def flatten(
         label=lc.label,
         rotation_periods=tuple(periods),
         n_masked=0 if exclude is None else int(exclude[keep].sum()),
+        teff_k=teff,
+        density_cgs=density,
     )
