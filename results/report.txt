@@ -6,27 +6,27 @@ test curves: 840   planets: 34   positive rate: 4.048%
 Average precision (headline metric; chance = positive rate)
 ------------------------------------------------------------------------
   random ranking (chance)            AP = 0.0405
-  baseline: depth_threshold          AP = 0.097  [0.080, 0.128]   (ROC-AUC 0.751)
-  baseline: bls_snr                  AP = 0.180  [0.149, 0.231]   (ROC-AUC 0.830)
-  model: gradient boosting           AP = 0.799  [0.732, 0.862]   (ROC-AUC 0.939)
+  baseline: depth_threshold          AP = 0.097  [0.081, 0.129]   (ROC-AUC 0.752)
+  baseline: bls_snr                  AP = 0.179  [0.149, 0.230]   (ROC-AUC 0.831)
+  model: gradient boosting           AP = 0.802  [0.737, 0.864]   (ROC-AUC 0.935)
   (brackets are 68% bootstrap intervals over 2000 test-set resamples)
 
-  lift over chance:            19.7x
-  lift over best baseline:     4.43x  (best baseline: bls_snr)
+  lift over chance:            19.8x
+  lift over best baseline:     4.47x  (best baseline: bls_snr)
   the model beats that baseline in 100.0% of paired bootstrap resamples
 
 Operating point (threshold chosen by CV on the TRAINING split only)
 ------------------------------------------------------------------------
-  rule:      max recall subject to Wilson 1-sigma lower bound on CV precision >= 0.50 (bound 0.506 at 82 candidates)
-  threshold: 0.1999
-  CV on train:  precision = 0.561   recall = 0.742
-  HELD-OUT:     precision = 0.481   recall = 0.765   F1 = 0.591
+  rule:      max recall subject to Wilson 1-sigma lower bound on CV precision >= 0.50 (bound 0.501 at 77 candidates)
+  threshold: 0.2075
+  CV on train:  precision = 0.558   recall = 0.694
+  HELD-OUT:     precision = 0.520   recall = 0.765   F1 = 0.619
 
   Confusion matrix (rows = truth, cols = prediction)
                     pred: no planet    pred: planet
-    truth: no planet          778              28
+    truth: no planet          782              24
     truth: planet               8              26
-    false positives by true object type -> eclipsing_binary: 8, noise: 20
+    false positives by true object type -> eclipsing_binary: 7, noise: 17
 
 Precision@k (what a k-night follow-up programme would actually get)
 ------------------------------------------------------------------------
@@ -47,14 +47,14 @@ Completeness vs injected transit SNR (held-out planets)
 
 Top features (permutation importance in average precision, on test)
 ------------------------------------------------------------------------
-  power_contrast               +0.2408 +/- 0.0679
-  secondary_sigma              +0.2097 +/- 0.0264
-  odd_even_sigma               +0.1035 +/- 0.0218
-  log_duration_ratio           +0.0729 +/- 0.0285
-  flux_skew                    +0.0420 +/- 0.0260
-  max_single_event_fraction    +0.0357 +/- 0.0143
-  harmonic_delta_loglike       +0.0252 +/- 0.0141
-  log_depth                    +0.0227 +/- 0.0108
+  power_contrast               +0.2979 +/- 0.0594
+  secondary_sigma              +0.2731 +/- 0.0352
+  flux_skew                    +0.1230 +/- 0.0386
+  odd_even_sigma               +0.0894 +/- 0.0265
+  max_single_event_fraction    +0.0626 +/- 0.0229
+  log_duration_ratio           +0.0458 +/- 0.0212
+  log_depth                    +0.0174 +/- 0.0105
+  harmonic_delta_loglike       +0.0155 +/- 0.0077
 
 Missed planets (false negatives at the operating threshold)
 ------------------------------------------------------------------------
