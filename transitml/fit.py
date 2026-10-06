@@ -25,10 +25,11 @@ eclipsing binary or a blend (Seager & Mallen-Ornelas 2003).
 
 The fit uses the *detrended* light curve, only within ``window_durations``
 of each transit.  Detrending is never perfect at the level of a transit
-depth, so each transit window gets its own straight-line baseline,
-marginalised analytically (a flat prior on its offset and slope): the depth
-and its interval then carry the uncertainty of where the baseline sits
-under each transit, instead of trusting the detrended level.  The noise is
+depth, so each transit window gets its own polynomial baseline (a
+quadratic by default), marginalised analytically with a flat prior on its
+coefficients: the depth and its interval then carry the uncertainty of
+where the baseline sits under each transit, instead of trusting the
+detrended level.  The noise is
 set from the data rather than trusted from ``flux_err``: the scatter of the
 cadences outside every fitted window (or, when there are too few, the
 residuals of a first maximum-a-posteriori fit) fixes the white-noise level,
@@ -83,8 +84,9 @@ class FitConfig:
     #: Keep cadences within this many search durations of a transit centre.
     window_durations: float = 2.5
     #: Baseline marginalised in each transit window: ``"offset"``, ``"line"``
-    #: or ``"quadratic"``.
-    baseline: str = "line"
+    #: or ``"quadratic"``.  The quadratic follows the curvature detrending
+    #: leaves under a transit; see the coverage study in the README.
+    baseline: str = "quadratic"
     #: Exposure time integrated over; ``None`` means the median cadence and
     #: ``0`` means instantaneous samples.
     exposure_minutes: float | None = None
@@ -415,6 +417,7 @@ class FitResult:
     density_check: dict[str, Any] | None
     warnings: list[str]
     exposure_minutes: float
+    baseline: str = "quadratic"
     #: Posterior draws, ``(n_keep, len(PARAMETERS))``; not written to JSON.
     samples: NDArray[np.float64] = field(
         repr=False, default_factory=lambda: np.empty((0, len(PARAMETERS)))
@@ -434,7 +437,8 @@ class FitResult:
         return {
             "target_id": self.target_id,
             "model": "batman, circular orbit, quadratic limb darkening, "
-            f"integrated over {self.exposure_minutes:.1f}-minute exposures",
+            f"integrated over {self.exposure_minutes:.1f}-minute exposures, "
+            f"with a {self.baseline} baseline under each transit, marginalised",
             "parameters": self.parameters,
             "map": self.map_parameters,
             "noise": self.noise,
@@ -720,6 +724,7 @@ def fit_transit(
         density_check=density_check,
         warnings=warnings,
         exposure_minutes=float(exposure_min),
+        baseline=config.baseline,
         samples=samples,
         data={
             "time": t,
