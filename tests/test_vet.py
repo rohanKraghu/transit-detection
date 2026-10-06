@@ -212,3 +212,35 @@ def test_cli_passes_the_stitch_flag_to_the_mast_source(model_path, planet_curve,
     monkeypatch.setattr(vet, "MASTLightCurveSource", FakeMAST)
     vet.main(["TIC 5", "--stitch", "--model", str(model_path), "--out-dir", str(tmp_path)])
     assert seen["stitch_sectors"] is True
+
+
+def test_a_lone_transit_is_listed_as_a_single_event(model_path, tmp_path, capsys):
+    """One 6-hour dip: BLS cannot fold it, the single-event search reports it."""
+    from transitml import vet
+    from transitml.data.base import LightCurve
+
+    rng = np.random.default_rng(3)
+    time = np.arange(0.0, 27.4, 30.0 / 1440.0)
+    flux = 1.0 + rng.normal(0.0, 4e-4, time.size)
+    flux[np.abs(time - 9.0) < 0.125] -= 3e-3
+    lc = LightCurve("TEST-LONE", time, flux, np.full(time.size, 4e-4))
+    result, _ = vet_light_curve(lc, load_model(model_path))
+    (event,) = result.single_events.events
+    assert event.time == pytest.approx(9.0, abs=0.05)
+    assert event.min_period > 18.0
+    payload = json.loads(write_json(result, tmp_path / "lone.json").read_text())
+    assert payload["single_events"]["events"][0]["time"] == pytest.approx(9.0, abs=0.05)
+    assert "none of this is scored" in payload["single_events"]["note"]
+
+    csv_path = write_planet_csv(lc, tmp_path / "lone.csv")
+    out = tmp_path / "reports"
+    assert vet.main([str(csv_path), "--model", str(model_path), "--out-dir", str(out)]) == 0
+    assert "single event at 9.0" in capsys.readouterr().out
+
+
+def test_transits_of_a_periodic_signal_are_not_repeated_as_single_events(
+    model_path, planet_curve
+):
+    result, _ = vet_light_curve(planet_curve[0], load_model(model_path))
+    assert result.candidates and result.candidates[0].period == pytest.approx(3.0, rel=0.01)
+    assert result.single_events.events == ()

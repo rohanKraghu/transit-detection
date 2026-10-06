@@ -594,13 +594,24 @@ def plot_vetting_report(lc: LightCurve, flat, result, path: Path) -> Path:
             color=colour,
             label=f"signal {cand.rank}: P = {cand.period:.3f} d, SDE {cand.sde:.1f}",
         )
+    singles = getattr(result, "single_events", None)
+    events = singles.events if singles is not None else ()
+    if events:
+        ax_flat.plot(
+            [e.time for e in events],
+            np.full(len(events), low + 0.06 * (high - low)),
+            "^",
+            ms=7,
+            color=SERIES[3 % len(SERIES)],
+            label=f"single events ({len(events)}, best SNR {max(e.snr for e in events):.1f})",
+        )
     ax_flat.set_ylabel("flux - 1 (ppt)")
     ax_flat.set_xlabel("time (days)")
     ax_flat.set_title(
         "Detrended, with every significant signal from the iterative search", loc="left"
     )
-    if result.candidates:
-        ax_flat.legend(loc="lower right", ncols=min(len(result.candidates), 3))
+    if result.candidates or events:
+        ax_flat.legend(loc="lower right", ncols=min(len(result.candidates) + bool(events), 3))
     else:
         ax_flat.set_title(
             "no signal above the significance threshold",
