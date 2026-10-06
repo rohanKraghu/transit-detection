@@ -111,7 +111,7 @@
       "top_k": 20
     }
   },
-  "runtime_seconds": 1410.6,
+  "runtime_seconds": 1577.7,
   "dataset": {
     "source": "InjectionSource",
     "n_curves": 2800,
@@ -617,7 +617,7 @@
     ]
   },
   "environment": {
-    "python": "3.11.15",
+    "python": "3.13.16",
     "numpy": "2.4.6"
   },
   "figures": [
@@ -625,5 +625,13 @@
     "figures/real_injection/02_precision_recall.png",
     "figures/real_injection/03_diagnostics.png",
     "figures/real_injection/04_feature_importance.png"
-  ]
+  ],
+  "toi_benchmark": {
+    "n_stars": 746,
+    "n_planets": 376,
+    "chance_average_precision": 0.5040214477211796,
+    "average_precision": 0.6161416553468357,
+    "planet_recall": 0.5478723404255319,
+    "false_positive_rejection": 0.6162162162162163
+  }
 }
