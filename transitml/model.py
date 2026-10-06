@@ -334,8 +334,9 @@ def train(
 # Persistence: the fitted model, for scoring single stars with ``vet``
 # --------------------------------------------------------------------------
 #: Bumped whenever the saved layout changes, or a feature changes meaning (2:
-#: masked second detrend pass, binary tests scaled by event scatter), so an
-#: old file fails loudly instead of scoring features it was not trained on.
+#: masked second detrend pass, binary tests scaled by event scatter, secondary
+#: test net of a planet's occultation), so an old file fails loudly instead of
+#: scoring features it was not trained on.
 MODEL_FORMAT_VERSION = 2
 
 

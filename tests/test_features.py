@@ -20,8 +20,10 @@ from transitml.features import (
     period_grid,
     red_noise_beta,
     run_bls,
+    secondary_excess,
     signal_detection_efficiency,
 )
+from transitml.physics import max_occultation_fraction
 from transitml.preprocess import flatten
 
 from .conftest import clean_transit_curve, make_source
@@ -117,6 +119,55 @@ def test_secondary_eclipse_is_detected(config, fast_bls):
     assert binary["secondary_sigma"] > 3 * abs(plain["secondary_sigma"])
 
 
+def _with_secondary(lc, truth, fraction, duration):
+    """``lc`` with a flat-bottomed dip of ``fraction`` times the transit depth at phase 0.5."""
+    dip = trapezoid_transit(
+        lc.time,
+        truth["period"],
+        truth["epoch"] + truth["period"] / 2,
+        fraction * truth["depth"],
+        duration,
+        0.75 * duration,
+    )
+    return LightCurve(lc.target_id, lc.time, lc.flux - dip, lc.flux_err, lc.label, dict(lc.meta))
+
+
+def test_a_planets_occultation_is_not_a_binarys_secondary(config, fast_bls):
+    """A hot Jupiter's own occultation must not read as a secondary eclipse.
+
+    On a bright star the occultation of a close-in giant, a few percent of the
+    transit depth, is significant by itself: on the TOI benchmark it was
+    what still rejected several confirmed hot Jupiters.  The test counts only
+    what is deeper than any planet's occultation could be, so the planet
+    passes while a binary's secondary at the same period still fires.
+    """
+    lc, truth = clean_transit_curve(period=1.7, depth=1e-2, duration=0.1, sigma=1.5e-4, seed=3)
+    planet = _with_secondary(lc, truth, 0.03, 0.1)
+    binary = _with_secondary(lc, truth, 0.3, 0.1)
+
+    flat = flatten(planet, config.preprocess)
+    res = run_bls(flat, fast_bls)
+    st = res["bls"].compute_stats(res["period"], res["duration"], res["transit_time"])
+    sec_value, sec_err = (float(v) for v in np.ravel(st["depth_phased"])[:2])
+    assert sec_value / sec_err > 5.0  # the occultation itself is plainly detected
+    assert extract_features(flat, fast_bls)["secondary_sigma"] == 0.0
+
+    binary_features = extract_features(flatten(binary, config.preprocess), fast_bls)
+    assert binary_features["secondary_sigma"] > 5.0
+
+
+def test_secondary_excess_allows_only_a_planets_occultation():
+    period, depth = 2.0, 1e-2
+    allowance = max_occultation_fraction(period) * depth
+    assert 0.0 < allowance < 0.2 * depth
+    assert secondary_excess(0.5 * allowance, depth, period) == 0.0
+    assert secondary_excess(allowance + 1e-4, depth, period) == pytest.approx(1e-4)
+    # A brightening at phase 0.5 is not a dip to forgive.
+    assert secondary_excess(-3e-4, depth, period) == -3e-4
+    # The allowance shrinks fast with period: hot Jupiters are hot because they are close.
+    assert max_occultation_fraction(1.0) > 5 * max_occultation_fraction(4.0)
+
+
 def test_odd_even_difference_is_detected(config, fast_bls):
     """Alternating eclipse depths are the other classic binary giveaway."""
     time = np.arange(0.0, 27.4, 1 / 48)
@@ -186,7 +237,8 @@ def test_red_noise_beta_responds_to_correlated_noise(config, fast_bls):
 def _raw_binary_sigmas(flat, bls_config):
     """The odd/even and secondary significances against white-noise error bars,
     plus the two things that scale them: the noise beta (primary and secondary
-    windows masked) and the event-to-event depth scatter ratios.
+    windows masked) and the event-to-event depth scatter ratios.  The secondary
+    is net of a planet's occultation, as in ``extract_features``.
 
     Recomputed here, independently of ``extract_features``, from the same BLS
     solution, so the tests can compare the shipped (scaled) values to the
@@ -197,7 +249,8 @@ def _raw_binary_sigmas(flat, bls_config):
     st = res["bls"].compute_stats(res["period"], res["duration"], res["transit_time"])
     odd_even = _pair_sigma(st["depth_odd"], st["depth_even"])
     sec_value, sec_err = (float(v) for v in np.ravel(st["depth_phased"])[:2])
-    secondary = sec_value / sec_err if sec_err > 0 else float("nan")
+    excess = secondary_excess(sec_value, res["depth"], res["period"])
+    secondary = excess / sec_err if sec_err > 0 else float("nan")
     period, duration, epoch = res["period"], res["duration"], res["transit_time"]
     phase = (flat.time - epoch + 0.5 * period) % period - 0.5 * period
     mask = (np.abs(phase) < duration) | (np.abs(np.abs(phase) - 0.5 * period) < duration)

@@ -77,6 +77,14 @@ HC_OVER_K: float = 1.4388e-2
 #: Effective wavelength of the TESS band (600-1000 nm), in metres.
 TESS_WAVELENGTH_M: float = 800e-9
 
+#: The host the secondary-eclipse test allows for, so that only a secondary
+#: deeper than any planet's occultation counts against a planet: a hot
+#: (7500 K), low-density (0.2 g/cm^3, an F subgiant) star, a planet with no
+#: heat redistribution, a Bond albedo of zero and a geometric albedo of 0.3.
+OCCULTATION_LIMIT_TEFF_K: float = 7500.0
+OCCULTATION_LIMIT_DENSITY_CGS: float = 0.2
+OCCULTATION_LIMIT_ALBEDO: float = 0.3
+
 
 def main_sequence_teff(stellar_density_cgs: float) -> float:
     """Effective temperature, in kelvin, of a main-sequence star of this density.
@@ -121,3 +129,24 @@ def occultation_depth(
     reflected = geometric_albedo * (radius_ratio / a_over_rs) ** 2
     return float(thermal + reflected)
 
+
+def max_occultation_fraction(period_days: float) -> float:
+    """The deepest occultation a planet at this period can show, per unit transit depth.
+
+    Evaluated for the hot, low-density host and the dark, non-redistributing
+    planet in the ``OCCULTATION_LIMIT_*`` constants: about 25% of the transit
+    depth at one day, 5% at three days and under 1% at eight.  The
+    occultations of the confirmed hot Jupiters in the TOI benchmark, up to
+    about 4% of their transit depth at periods under two days, sit well inside
+    it; a binary's secondary, typically tens of percent of the primary, does
+    not.
+    """
+    a_rs = scaled_semi_major_axis(period_days, OCCULTATION_LIMIT_DENSITY_CGS)
+    return occultation_depth(
+        1.0,
+        a_rs,
+        OCCULTATION_LIMIT_TEFF_K,
+        geometric_albedo=OCCULTATION_LIMIT_ALBEDO,
+        bond_albedo=0.0,
+        redistribution=2.0 / 3.0,
+    )

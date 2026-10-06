@@ -16,6 +16,7 @@ from transitml.physics import (
     RHO_SUN_CGS,
     T_SUN_K,
     main_sequence_teff,
+    max_occultation_fraction,
     occultation_depth,
     scaled_semi_major_axis,
     tess_brightness_ratio,
@@ -158,7 +159,13 @@ def test_occultation_physics():
     assert depth(60.0) == pytest.approx(0.1 * (0.1 / 60.0) ** 2, rel=0.01)
 
 
-def test_planets_show_their_occultation(config):
+def test_planet_occultations_stay_inside_the_secondary_test_allowance(config):
+    """Every planet's occultation is one the secondary-eclipse test forgives.
+
+    Compared against k^2 rather than the limb-darkened depth, because the
+    box-fit depth the test scales its allowance by can fall a little short of
+    the true one.
+    """
     time = np.arange(0.0, 27.4, 1 / 48)
     rng = np.random.default_rng(0)
     fractions = []
@@ -166,7 +173,8 @@ def test_planets_show_their_occultation(config):
         rho = RHO_SUN_CGS * r_star**0.9 / r_star**3
         for _ in range(60):
             _, meta = planet_signal(time, rng, rho, config.planet)
-            assert meta["secondary_depth"] > 0.0
+            allowed = max_occultation_fraction(meta["period"]) * meta["radius_ratio"] ** 2
+            assert 0.0 < meta["secondary_depth"] < allowed
             fractions.append(meta["secondary_depth"] / meta["depth"])
     # Close-in giants around the hottest hosts reach the percent level, as real ones do.
     assert max(fractions) > 0.01
