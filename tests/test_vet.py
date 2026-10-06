@@ -87,3 +87,84 @@ def test_report_writes_a_png_and_matching_json(model_path, planet_curve, tmp_pat
     assert png.name == "vet_TEST_0001.png" and js.name == "vet_TEST_0001.json"
     assert png.stat().st_size > 50_000
     assert json.loads(js.read_text())["score"] == pytest.approx(result.score)
+
+
+def write_planet_csv(lc, path):
+    np.savetxt(
+        path, np.column_stack([lc.time, lc.flux * 52_000.0, lc.flux_err * 52_000.0]),
+        delimiter=",", header="time,flux,flux_err", comments="",
+    )
+    return path
+
+
+def test_cli_end_to_end_from_a_csv(model_path, planet_curve, tmp_path, capsys):
+    from transitml import vet
+
+    csv_path = write_planet_csv(planet_curve[0], tmp_path / "planet.csv")
+    out = tmp_path / "reports"
+    assert vet.main([str(csv_path), "--model", str(model_path), "--out-dir", str(out)]) == 0
+
+    png, js = out / "vet_planet.png", out / "vet_planet.json"
+    assert png.exists() and png.stat().st_size > 50_000
+    payload = json.loads(js.read_text())
+    assert 0.0 <= payload["score"] <= 1.0
+    assert payload["candidates"][0]["period"] == pytest.approx(3.0, rel=0.01)
+    assert "signal 1: P = 3.0" in capsys.readouterr().out
+
+
+def test_cli_reads_one_star_from_an_npz_cache(model_path, planet_curve, tmp_path):
+    from transitml import vet
+    from transitml.data.base import LightCurve
+    from transitml.data.injection import save_curves
+
+    lc = planet_curve[0]
+    other = LightCurve("TIC 9", lc.time, np.ones_like(lc.flux), lc.flux_err)
+    planet = LightCurve("TIC 8", lc.time, lc.flux, lc.flux_err)
+    save_curves([other, planet], tmp_path / "cache.npz")
+
+    with pytest.raises(SystemExit, match="2 light curves"):
+        vet.main([str(tmp_path / "cache.npz"), "--model", str(model_path)])
+    vet.main([
+        str(tmp_path / "cache.npz"), "--target-id", "TIC 8",
+        "--model", str(model_path), "--out-dir", str(tmp_path),
+    ])
+    assert json.loads((tmp_path / "vet_TIC_8.json").read_text())["target_id"] == "TIC 8"
+
+
+def test_cli_downloads_a_tic_through_the_mast_source(model_path, planet_curve, tmp_path, monkeypatch):
+    """Offline: the MAST source is replaced; only the wiring is tested."""
+    from transitml import vet
+    from transitml.data.base import LightCurve
+
+    calls = {}
+
+    class FakeMAST:
+        def __init__(self, targets, **kwargs):
+            calls["targets"], calls["kwargs"] = targets, kwargs
+
+        def __iter__(self):
+            lc = planet_curve[0]
+            target = calls["targets"][0][0]
+            yield LightCurve(target, lc.time, lc.flux, lc.flux_err, meta={"sector": 14})
+
+    monkeypatch.setattr(vet, "MASTLightCurveSource", FakeMAST)
+    vet.main(["tic307210830", "--sector", "14", "--model", str(model_path), "--out-dir", str(tmp_path)])
+
+    assert calls["targets"] == [("TIC 307210830", None)]
+    assert calls["kwargs"]["sector"] == 14 and calls["kwargs"]["author"] == "TESS-SPOC"
+    payload = json.loads((tmp_path / "vet_TIC_307210830.json").read_text())
+    assert payload["target_id"] == "TIC 307210830" and payload["candidates"]
+
+
+def test_cli_refuses_a_target_that_is_neither_file_nor_tic(model_path):
+    from transitml import vet
+
+    with pytest.raises(SystemExit, match="neither an existing file nor a TIC"):
+        vet.main(["no-such-file.csv", "--model", str(model_path)])
+
+
+def test_tic_id_normalisation():
+    from transitml.vet import tic_id
+
+    assert tic_id("TIC 123") == tic_id("tic123") == tic_id(" 123 ") == "TIC 123"
+    assert tic_id("star.csv") is None

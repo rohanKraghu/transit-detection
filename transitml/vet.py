@@ -1,5 +1,14 @@
 """Vet one star: detrend, search, featurise, score, and explain the score.
 
+Usage::
+
+    python run_pipeline.py                      # trains and saves results/model.joblib
+    python -m transitml.vet star.csv            # a local time,flux[,flux_err] CSV
+    python -m transitml.vet cache.npz --target-id "TIC 123"
+    python -m transitml.vet "TIC 307210830" --sector 14   # needs lightkurve + network
+
+Writes ``vet_<target>.png`` and ``vet_<target>.json`` to ``--out-dir``.
+
 This is the single-target counterpart of ``run_pipeline.py``.  It takes one
 light curve and a model trained by ``run_pipeline.py`` (``results/model.joblib``)
 and runs exactly the same detrending and feature extraction on it, with the
@@ -19,8 +28,11 @@ they show which measured values the model reacted to most for this star.
 
 from __future__ import annotations
 
+import argparse
 import json
 import math
+import re
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -29,8 +41,10 @@ import numpy as np
 
 from .config import MultiPlanetConfig
 from .data.base import LightCurve
+from .data.files import read_light_curves
+from .data.mast import MASTLightCurveSource
 from .features import FEATURE_NAMES, extract_features, run_bls
-from .model import SavedModel
+from .model import SavedModel, load_model
 from .preprocess import FlattenedLightCurve, flatten
 from .search import CandidateSignal, iterative_search
 
@@ -211,3 +225,106 @@ def write_json(result: VetResult, path: str | Path) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(result.to_dict(), indent=2, allow_nan=False) + "\n")
     return path
+
+
+# --------------------------------------------------------------------------
+# Command line
+# --------------------------------------------------------------------------
+_TIC_PATTERN = re.compile(r"^\s*(?:TIC)?\s*(\d+)\s*$", re.IGNORECASE)
+
+
+def tic_id(text: str) -> str | None:
+    """``"TIC 123"`` for ``"TIC 123"``, ``"tic123"`` or ``"123"``; ``None`` otherwise."""
+    match = _TIC_PATTERN.match(text)
+    return f"TIC {int(match.group(1))}" if match else None
+
+
+def load_target_curves(target: str, args: argparse.Namespace) -> list[LightCurve]:
+    """Light curves for ``target``: a local file if one exists, else a TIC from MAST."""
+    path = Path(target)
+    if path.exists():
+        return read_light_curves(path, args.target_id)
+    tic = tic_id(target)
+    if tic is None:
+        raise SystemExit(f"{target!r} is neither an existing file nor a TIC ID")
+    source = MASTLightCurveSource(
+        [(tic, None)],
+        mission="TESS",
+        author=args.author,
+        exposure_time=args.exposure_time,
+        sector=args.sector,
+    )
+    curves = list(source)
+    if not curves:
+        raise SystemExit(f"{tic}: no light curve found on MAST (or the download failed)")
+    return curves
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="python -m transitml.vet",
+        description="Score one light curve with a model trained by run_pipeline.py "
+        "and write a one-page vetting report (PNG) plus its numbers (JSON).",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument(
+        "target", help="A .csv or .npz light-curve file, or a TIC ID (downloaded from MAST)."
+    )
+    parser.add_argument(
+        "--model", type=Path, default=Path("results/model.joblib"),
+        help="Model file written by run_pipeline.py.",
+    )
+    parser.add_argument(
+        "--out-dir", type=Path, default=Path("results/vet"), help="Where the report lands."
+    )
+    parser.add_argument(
+        "--target-id", default=None, help="Which star to take from a multi-star npz cache."
+    )
+    parser.add_argument("--sector", type=int, default=None, help="TESS sector (TIC input).")
+    parser.add_argument("--author", default="TESS-SPOC", help="Light-curve pipeline (TIC input).")
+    parser.add_argument(
+        "--exposure-time", type=int, default=1800, help="Cadence in seconds (TIC input)."
+    )
+    parser.add_argument(
+        "--max-signals", type=int, default=MultiPlanetConfig.max_signals,
+        help="Most signals the iterative search reports.",
+    )
+    parser.add_argument(
+        "--min-sde", type=float, default=MultiPlanetConfig.min_sde,
+        help="Significance a signal needs to be listed.",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+    curves = load_target_curves(args.target, args)
+    if len(curves) != 1:
+        found = ", ".join(
+            f"{lc.target_id} (sector {lc.meta.get('sector', '?')})" for lc in curves
+        )
+        raise SystemExit(
+            f"{len(curves)} light curves found ({found}); pick one with --target-id "
+            "or --sector"
+        )
+    lc = curves[0]
+    model = load_model(args.model)
+    multi = MultiPlanetConfig(max_signals=args.max_signals, min_sde=args.min_sde)
+    result, flat = vet_light_curve(lc, model, multi)
+    png, js = write_report(lc, flat, result, args.out_dir)
+
+    print(f"{result.target_id}: score {result.score:.3f}, threshold {result.threshold:.3f}")
+    print(f"  verdict: {result.verdict}")
+    for cand in result.candidates:
+        print(
+            f"  signal {cand.rank}: P = {cand.period:.4f} d, depth {cand.depth * 1e6:.0f} ppm, "
+            f"duration {cand.duration * 24:.2f} h, SDE {cand.sde:.1f}, SNR {cand.depth_snr:.1f}"
+        )
+    if not result.candidates:
+        print(f"  no signal reached SDE {multi.min_sde:g}")
+    print(f"  wrote {png} and {js}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
