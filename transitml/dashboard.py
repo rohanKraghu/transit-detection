@@ -151,12 +151,12 @@ h2 { font-size: 15px; margin: 0 0 10px; }
 .table-wrap { overflow-x: auto; border: 1px solid var(--grid); border-radius: 10px; background: var(--surface); }
 table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
 th { position: sticky; top: 0; background: var(--surface); text-align: right; font-weight: 600;
-  color: var(--ink-soft); padding: 9px 10px; border-bottom: 1px solid var(--grid); white-space: nowrap;
+  color: var(--ink-soft); padding: 9px 8px; border-bottom: 1px solid var(--grid); white-space: nowrap;
   user-select: none; }
 th.sortable { cursor: pointer; }
 th.sortable:hover { color: var(--ink); }
 th .arrow { display: inline-block; width: 0.9em; }
-td { padding: 5px 10px; border-bottom: 1px solid var(--grid); text-align: right; white-space: nowrap; }
+td { padding: 5px 8px; border-bottom: 1px solid var(--grid); text-align: right; white-space: nowrap; }
 .l { text-align: left; }
 tr.row { cursor: pointer; }
 tr.row:hover { background: var(--hover); }
@@ -169,7 +169,9 @@ tr.error td { color: var(--ink-soft); }
 .tag.planet { border-color: var(--cool); color: var(--cool); }
 .tag.other { color: var(--ink-soft); }
 tr.detail td { background: var(--bg); white-space: normal; text-align: left; padding: 12px 16px 16px; }
-.detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; }
+/* The table can be wider than the page; keep the detail inside the visible part of it. */
+.detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px;
+  position: sticky; left: 16px; width: calc(var(--wrap-width, 100%) - 32px); }
 .reason { display: grid; grid-template-columns: minmax(150px, 1fr) 120px 52px; gap: 8px; align-items: center; margin: 3px 0; }
 .reason .track { position: relative; height: 10px; background: var(--grid); border-radius: 2px; }
 .reason .track i { position: absolute; top: 0; height: 100%; border-radius: 2px; }
@@ -466,6 +468,12 @@ document.getElementById("q").addEventListener("input", e => { state.q = e.target
 document.getElementById("flaggedOnly").addEventListener("change", e => { state.flaggedOnly = e.target.checked; state.shown = 100; renderBody(); });
 document.getElementById("errorsToo").addEventListener("change", e => { state.errorsToo = e.target.checked; renderBody(); });
 document.getElementById("more").addEventListener("click", () => { state.shown += 200; renderBody(); });
+function fitDetail() {
+  const wrap = document.querySelector(".table-wrap");
+  wrap.style.setProperty("--wrap-width", wrap.clientWidth + "px");
+}
+window.addEventListener("resize", fitDetail);
+fitDetail();
 renderHead();
 renderBody();
 </script>
