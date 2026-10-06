@@ -39,3 +39,8 @@ results/real_injection/base_curves.npz
 # TOI table in data/toi_benchmark/ by one run.
 results/**/toi_curves.npz
 results/**/toi_curves.tried.json
+# Batch mode: the per-star result cache and downloaded sector curves are
+# rebuilt by one run; candidates.csv, summary.json and dashboard.html of the
+# demo sector are committed.
+results/batch/**/cache/
+results/batch/**/curves/
