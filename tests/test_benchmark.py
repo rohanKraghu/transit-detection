@@ -256,3 +256,11 @@ def test_training_stars_are_named_for_exclusion(toi_hosts):
 def test_depth_table_covers_every_star_with_a_depth(result):
     assert sum(r["n_planets"] for r in result.by_toi_depth) == result.n_planets
     assert "by catalogued depth" in format_benchmark_report(result)
+
+
+def test_every_star_is_listed_with_its_score(result):
+    assert len(result.stars) == result.n_stars
+    assert sum(s["kept"] for s in result.stars) == (
+        result.confusion["true_positive"] + result.confusion["false_positive"]
+    )
+    assert {s["disposition"] for s in result.stars} <= {"CP", "FP", "FA"}

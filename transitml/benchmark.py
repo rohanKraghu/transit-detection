@@ -185,6 +185,7 @@ class BenchmarkResult:
     missed_planets: list[dict[str, Any]] = field(default_factory=list)
     accepted_false_positives: list[dict[str, Any]] = field(default_factory=list)
     labels: NDArray[np.int_] | None = None
+    stars: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def positive_rate(self) -> float:
@@ -219,6 +220,7 @@ class BenchmarkResult:
             "by_toi_depth": self.by_toi_depth,
             "missed_planets": self.missed_planets,
             "accepted_false_positives": self.accepted_false_positives,
+            "stars": self.stars,
         }
 
 
@@ -400,6 +402,7 @@ def benchmark(
         missed_planets=missed,
         accepted_false_positives=accepted,
         labels=y,
+        stars=[{**row(i), "kept": bool(kept[i])} for i in range(len(rows))],
     )
 
 
@@ -573,8 +576,8 @@ def plot_benchmark(result: BenchmarkResult, path: Path) -> Path:
     chance = result.chance_average_precision
     ax_pr.axhline(chance, lw=1.4, ls="--", color=NEUTRAL)
     ax_pr.text(
-        0.015, chance - 0.02, f"random ranking (AP = {chance:.3f})",
-        ha="left", va="top", color=INK_SOFT, fontsize=8.5,
+        0.985, chance - 0.02, f"random ranking (AP = {chance:.3f})",
+        ha="right", va="top", color=INK_SOFT, fontsize=8.5,
     )
     ax_pr.set_xlim(0, 1.02)
     ax_pr.set_ylim(0, 1.05)
@@ -597,7 +600,7 @@ def plot_benchmark(result: BenchmarkResult, path: Path) -> Path:
             )
         ax_hist.axvline(result.threshold, color=NEUTRAL, lw=1.4, ls="--")
         ax_hist.text(
-            result.threshold, ax_hist.get_ylim()[1] * 0.97,
+            result.threshold, ax_hist.get_ylim()[1] * 0.55,
             f" threshold {result.threshold:.2f}",
             ha="left", va="top", color=INK_SOFT, fontsize=8.5,
         )
@@ -608,6 +611,6 @@ def plot_benchmark(result: BenchmarkResult, path: Path) -> Path:
             f"rejected {result.false_positive_rejection:.0%} of false positives",
             loc="left",
         )
-        ax_hist.legend(loc="upper center")
+        ax_hist.legend(loc="upper left", bbox_to_anchor=(0.12, 1.0))
     fig.tight_layout()
     return _save(fig, path)
