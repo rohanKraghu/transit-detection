@@ -22,8 +22,9 @@ against its own chance level.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +33,7 @@ from numpy.typing import NDArray
 
 from .config import BLSConfig, PreprocessConfig
 from .data.base import LightCurve, LightCurveSource
+from .data.injection import load_curves, save_curves
 from .data.loader import Dataset, build_dataset
 from .data.toi import BenchmarkTarget
 from .evaluate import (
@@ -99,6 +101,55 @@ def fetch_benchmark_curves(
         for lc in source:
             curves.setdefault(lc.target_id, lc)
     return [curves[t.target_id] for t in targets if t.target_id in curves]
+
+
+def load_or_fetch_curves(
+    targets: Sequence[BenchmarkTarget],
+    cache: str | Path,
+    *,
+    author: str = "TESS-SPOC",
+    exposure_time: int | None = 1800,
+    n_workers: int = 8,
+) -> list[LightCurve]:
+    """One curve per target, from ``cache`` where possible and MAST otherwise.
+
+    Only targets the cache has never tried are downloaded, so a rerun with
+    the same TOI table needs no network, and widening the sector list only
+    fetches the new stars.  Targets MAST had nothing for are remembered in a
+    ``.tried.json`` file beside the cache so they are not retried every run.
+    Labels always come from ``targets``, so a disposition that changed since
+    the download is honoured.
+    """
+    cache = Path(cache)
+    tried_path = cache.with_suffix(".tried.json")
+    cached = load_curves(cache) if cache.exists() else []
+    tried = set(json.loads(tried_path.read_text())) if tried_path.exists() else set()
+
+    def key(target_id: str, sector: Any) -> str:
+        return f"{target_id}:{sector}"
+
+    have = {key(lc.target_id, lc.meta.get("sector")): lc for lc in cached}
+    tried |= set(have)
+    missing = [t for t in targets if key(t.target_id, t.sector) not in tried]
+    if missing:
+        fetched = fetch_benchmark_curves(
+            missing, author=author, exposure_time=exposure_time, n_workers=n_workers
+        )
+        # Keyed by the sector asked for: that is the sector MAST was searched in.
+        sector_of = {t.target_id: t.sector for t in missing}
+        for lc in fetched:
+            have[key(lc.target_id, sector_of[lc.target_id])] = lc
+        tried |= {key(t.target_id, t.sector) for t in missing}
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        save_curves(list(have.values()), cache)
+        tried_path.write_text(json.dumps(sorted(tried)))
+
+    out: list[LightCurve] = []
+    for target in targets:
+        lc = have.get(key(target.target_id, target.sector))
+        if lc is not None:
+            out.append(replace(lc, label=target.label))
+    return out
 
 
 @dataclass

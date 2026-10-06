@@ -161,3 +161,34 @@ def test_curves_must_match_targets(small_config, trained, toi_hosts):
     flipped = [replace(t, label=1 - t.label) for t in targets]
     with pytest.raises(ValueError, match="disagree"):
         benchmark(dataset, flipped, trained, sectors=[14], selection={})
+
+
+def test_curve_cache_fetches_only_what_it_has_not_tried(toi_hosts, tmp_path, monkeypatch):
+    import transitml.benchmark as bench
+
+    curves, targets = toi_hosts
+    served = {lc.target_id: replace(lc, label=None) for lc in curves[:5]}
+    asked: list[list[str]] = []
+
+    def fake_fetch(wanted, **_):
+        asked.append([t.target_id for t in wanted])
+        # MAST has nothing for the sixth star.
+        return [served[t.target_id] for t in wanted if t.target_id in served]
+
+    monkeypatch.setattr(bench, "fetch_benchmark_curves", fake_fetch)
+    cache = tmp_path / "toi_curves.npz"
+
+    first = bench.load_or_fetch_curves(targets[:6], cache)
+    assert len(asked) == 1 and len(asked[0]) == 6
+    assert [lc.target_id for lc in first] == [t.target_id for t in targets[:5]]
+    assert [lc.label for lc in first] == [t.label for t in targets[:5]]
+
+    again = bench.load_or_fetch_curves(targets[:6], cache)
+    assert len(asked) == 1, "a rerun must not touch the network"
+    np.testing.assert_array_equal(again[0].flux, first[0].flux)
+
+    # A changed disposition relabels the cached curve; a new star is fetched alone.
+    relabelled = [replace(targets[0], label=1 - targets[0].label), *targets[1:7]]
+    third = bench.load_or_fetch_curves(relabelled, cache)
+    assert asked[-1] == [targets[6].target_id]
+    assert third[0].label == 1 - targets[0].label
