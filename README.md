@@ -1058,3 +1058,10 @@ on. Sizes are rough: S is a few hours, M a day or two, L longer.
 - Twicken et al. (2018): the Kepler data validation tests, including the
   centroid tests.
 - Astropy `BoxLeastSquares` and `LombScargle` implementations.
+- Kreidberg (2015): `batman`, the transit model behind the fits.
+- Foreman-Mackey et al. (2013): `emcee`, the sampler.
+- Kipping (2013): sampling quadratic limb darkening on the unit square.
+- Winn et al. (2008): the time-averaging estimate of red noise used to set
+  the fit's noise level.
+- Seager & Mallen-Ornelas (2003): the stellar density a transit's shape
+  implies, and checking it against the star.
