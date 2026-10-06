@@ -203,8 +203,8 @@ class MultiPlanetConfig:
     #: Most signals reported per light curve, the primary included.
     max_signals: int = 3
     #: A peak counts as a candidate only if its ``bls_sde`` reaches this.  On
-    #: the synthetic run, 3.7% of variable stars with nothing in them clear 5.5
-    #: on their first search, against 62% of planets.
+    #: the synthetic run, 3.6% of variable stars with nothing in them clear 5.5
+    #: on their first search, against 61% of planets.
     min_sde: float = 5.5
     #: Cadences within this many transit durations of a found mid-transit time
     #: are masked before the next search.
