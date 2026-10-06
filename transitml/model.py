@@ -333,8 +333,10 @@ def train(
 # --------------------------------------------------------------------------
 # Persistence: the fitted model, for scoring single stars with ``vet``
 # --------------------------------------------------------------------------
-#: Bumped whenever the saved layout changes, so an old file fails loudly.
-MODEL_FORMAT_VERSION = 1
+#: Bumped whenever the saved layout changes, or a feature changes meaning (2:
+#: masked second detrend pass, binary tests scaled by event scatter), so an
+#: old file fails loudly instead of scoring features it was not trained on.
+MODEL_FORMAT_VERSION = 2
 
 
 def feature_medians(X: NDArray[np.float64]) -> NDArray[np.float64]:
