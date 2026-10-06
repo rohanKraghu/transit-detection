@@ -189,6 +189,22 @@ def vet_light_curve(
     return result, flat
 
 
+def write_report(
+    lc: LightCurve,
+    flat: FlattenedLightCurve,
+    result: VetResult,
+    out_dir: str | Path,
+    stem: str | None = None,
+) -> tuple[Path, Path]:
+    """Write ``<stem>.png`` (the one-page report) and ``<stem>.json``.  Returns both paths."""
+    from .plots import plot_vetting_report  # matplotlib only when a figure is drawn
+
+    out_dir = Path(out_dir)
+    stem = stem or "vet_" + "".join(ch if ch.isalnum() else "_" for ch in result.target_id)
+    png = plot_vetting_report(lc.finite(), flat, result, out_dir / f"{stem}.png")
+    return png, write_json(result, out_dir / f"{stem}.json")
+
+
 def write_json(result: VetResult, path: str | Path) -> Path:
     """The report's numbers as strict JSON (NaN written as ``null``)."""
     path = Path(path)

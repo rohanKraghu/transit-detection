@@ -75,3 +75,15 @@ def test_json_is_strict_and_carries_score_and_candidates(model_path, planet_curv
     assert payload["verdict"].startswith(
         "planet candidate" if result.above_threshold else "not a candidate"
     )
+
+
+def test_report_writes_a_png_and_matching_json(model_path, planet_curve, tmp_path):
+    from transitml.vet import write_report
+
+    lc = planet_curve[0]
+    result, flat = vet_light_curve(lc, load_model(model_path))
+    png, js = write_report(lc, flat, result, tmp_path)
+
+    assert png.name == "vet_TEST_0001.png" and js.name == "vet_TEST_0001.json"
+    assert png.stat().st_size > 50_000
+    assert json.loads(js.read_text())["score"] == pytest.approx(result.score)
