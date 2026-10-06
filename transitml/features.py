@@ -137,23 +137,46 @@ def flatten_masked(
     peak is not a dip or is weaker than ``mask_min_sde``, or when the mask
     would cover more than ``mask_max_fraction`` of the cadences.
     """
+    return _masked_detrend(lc, preprocess, bls)[0]
+
+
+def detrend_and_search(
+    lc: LightCurve,
+    preprocess: PreprocessConfig | None = None,
+    bls: BLSConfig | None = None,
+) -> tuple[FlattenedLightCurve, dict[str, Any]]:
+    """:func:`flatten_masked`, plus the BLS search of the curve it returns.
+
+    Deciding whether to mask already searched the blind detrend, so when that
+    is the curve kept (about nine in ten on the synthetic run) its search is
+    handed on instead of run again.  BLS is the pipeline's bottleneck.
+    """
+    bls = bls or BLSConfig()
+    flat, search = _masked_detrend(lc, preprocess, bls)
+    return flat, search if search is not None else run_bls(flat, bls)
+
+
+def _masked_detrend(
+    lc: LightCurve, preprocess: PreprocessConfig | None, bls: BLSConfig | None
+) -> tuple[FlattenedLightCurve, dict[str, Any] | None]:
+    """:func:`flatten_masked`'s detrend, and the search of it if one was run."""
     preprocess = preprocess or PreprocessConfig()
     bls = bls or BLSConfig()
     lc = lc.finite()
     blind = flatten(lc, preprocess)
     if not preprocess.mask_signal:
-        return blind
+        return blind, None
     found = run_bls(blind, bls)
     if not found["depth"] > 0:
-        return blind
+        return blind, found
     if not signal_detection_efficiency(found["power"]) >= preprocess.mask_min_sde:
-        return blind
+        return blind, found
     period, epoch = found["period"], found["transit_time"]
     phase = (lc.time - epoch + 0.5 * period) % period - 0.5 * period
     exclude = np.abs(phase) < preprocess.mask_half_width_durations * found["duration"]
     if not exclude.any() or exclude.mean() > preprocess.mask_max_fraction:
-        return blind
-    return flatten(lc, preprocess, exclude=exclude)
+        return blind, found
+    return flatten(lc, preprocess, exclude=exclude), None
 
 
 def signal_detection_efficiency(power: NDArray[np.float64]) -> float:
@@ -374,7 +397,10 @@ def depth_scatter_ratio(
 
 
 def extract_features(
-    lc: FlattenedLightCurve, config: BLSConfig | None = None
+    lc: FlattenedLightCurve,
+    config: BLSConfig | None = None,
+    *,
+    search: dict[str, Any] | None = None,
 ) -> dict[str, float]:
     """Run BLS on a detrended light curve and return the full feature vector.
 
@@ -382,9 +408,12 @@ def extract_features(
     NaN rather than being imputed, because :class:`HistGradientBoostingClassifier`
     learns a split direction for missing values and "the test could not be
     computed" is itself informative (it usually means too few in-transit points).
+
+    ``search`` is ``run_bls(lc, config)`` when the caller already has it (see
+    :func:`detrend_and_search`); it is not checked against ``lc``.
     """
     config = config or BLSConfig()
-    res = run_bls(lc, config)
+    res = search if search is not None else run_bls(lc, config)
     bls, period, duration = res["bls"], res["period"], res["duration"]
     transit_time, depth = res["transit_time"], res["depth"]
     scatter = lc.scatter if lc.scatter > 0 else robust_sigma(lc.flux)

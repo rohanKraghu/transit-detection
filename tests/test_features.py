@@ -13,6 +13,7 @@ from transitml.features import (
     _pair_sigma,
     beta_inflation,
     depth_scatter_ratio,
+    detrend_and_search,
     event_depths,
     extract_features,
     flat_bottom_fraction,
@@ -426,6 +427,32 @@ def test_a_noise_peak_is_not_masked(config, fast_bls):
     res = run_bls(flatten(quiet, config.preprocess), fast_bls)
     assert signal_detection_efficiency(res["power"]) < config.preprocess.mask_min_sde
     assert flatten_masked(quiet, config.preprocess, fast_bls).n_masked == 0
+
+
+def test_detrend_and_search_hands_on_the_same_search(config, fast_bls):
+    """Reusing the gate's search must change nothing, whether or not a mask was applied."""
+    from dataclasses import replace
+
+    from .test_preprocess import transit_against_a_gap
+
+    gap = transit_against_a_gap()[0]
+    quiet, _ = clean_transit_curve(depth=0.0, variability_amplitude=2e-3, seed=8)
+    cases = [
+        (gap, config.preprocess),
+        (quiet, config.preprocess),
+        (quiet, replace(config.preprocess, mask_signal=False)),
+    ]
+    for lc, preprocess in cases:
+        flat, search = detrend_and_search(lc, preprocess, fast_bls)
+        np.testing.assert_array_equal(flat.flux, flatten_masked(lc, preprocess, fast_bls).flux)
+        again = run_bls(flat, fast_bls)
+        np.testing.assert_array_equal(search["power"], again["power"])
+        assert search["period"] == again["period"]
+        reused = extract_features(flat, fast_bls, search=search)
+        np.testing.assert_array_equal(
+            list(reused.values()), list(extract_features(flat, fast_bls).values())
+        )
+    assert detrend_and_search(gap, config.preprocess, fast_bls)[0].n_masked > 0
 
 
 def test_period_grid_is_log_spaced_and_bounded(config):

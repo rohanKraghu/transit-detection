@@ -101,15 +101,14 @@ def plot_light_curves(curves: Sequence[LightCurve], config: Config, path: Path) 
     entire reason a periodic search works.
     """
     # local import: keeps module import cheap
-    from .features import flatten_masked, run_bls
+    from .features import detrend_and_search
 
     _style()
     fig, axes = plt.subplots(len(curves), 2, figsize=(13.0, 2.7 * len(curves)))
     axes = np.atleast_2d(axes)
 
     for row, lc in enumerate(curves):
-        flat = flatten_masked(lc, config.preprocess, config.bls)
-        bls = run_bls(flat, config.bls)
+        flat, bls = detrend_and_search(lc, config.preprocess, config.bls)
         kind = str(lc.meta.get("kind", "noise"))
         colour = _CLASS_COLOR.get(kind, NEUTRAL)
         ax_raw, ax_fold = axes[row, 0], axes[row, 1]

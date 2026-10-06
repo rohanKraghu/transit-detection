@@ -16,7 +16,7 @@ from joblib import Parallel, delayed
 from numpy.typing import NDArray
 
 from ..config import BLSConfig, Config, PreprocessConfig
-from ..features import FEATURE_NAMES, extract_features, flatten_masked
+from ..features import FEATURE_NAMES, detrend_and_search, extract_features
 from .base import LightCurve, LightCurveSource
 from .synthetic import SyntheticTESSSource
 
@@ -81,8 +81,8 @@ def process_light_curve(
     pickles cleanly for :class:`joblib.Parallel`.
     """
     lc = lc.finite()
-    flat = flatten_masked(lc, preprocess, bls)
-    feats = extract_features(flat, bls)
+    flat, search = detrend_and_search(lc, preprocess, bls)
+    feats = extract_features(flat, bls, search=search)
     meta = dict(lc.meta)
     if lc.label is not None:
         # A real curve's label lives on the curve, not in generator metadata.
