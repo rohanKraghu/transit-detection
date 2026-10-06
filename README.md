@@ -685,7 +685,8 @@ python -m transitml.single_benchmark          # injection-recovery, results/sing
 **Injection-recovery.** The benchmark puts one long-period planet (P = 14
 to 400 d, drawn as in the main population, with its transit moved inside the
 sector) into each of 600 synthetic variable stars and leaves 600 others
-untouched. Full report in
+untouched, then detrends each as `vet` does, masked second pass included.
+Full report in
 [`results/single_transit/report.txt`](results/single_transit/report.txt).
 
 | SNR against the star's own noise | Planets | Found | Transits up to 10.8 h: found |

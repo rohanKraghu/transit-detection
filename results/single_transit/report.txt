@@ -3,7 +3,7 @@ Single-transit injection-recovery
 1200 synthetic variable stars, seed 2026; events need SNR >= 7.5
 
 False alarms: 14 of 600 stars with nothing injected show an event (2.3%)
-  highest SNRs on clean stars: 13.2, 12.2, 11.1, 10.7, 10.3, 9.7, 9.4, 9.2, 9.2, 9.1
+  highest SNRs on clean stars: 13.2, 12.2, 11.1, 10.3, 9.7, 9.4, 9.2, 9.2, 9.1, 9.1
   stars where a ramp-shaped dip was set aside: 87
 
 Injected: 600 planets with P = 14-400 d; transits in the data: 0: 18, 1: 516, 2: 66, 3: 0
