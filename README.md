@@ -9,7 +9,10 @@ evaluate it the way an imbalanced detection problem has to be evaluated.
 It also vets single real stars: `python -m transitml.vet "TIC ..."` downloads,
 detrends, searches and scores one target and writes a one-page report, and
 `python -m transitml.batch` does the same for a whole sector, with a cache
-and a dashboard of ranked candidates.
+and a dashboard of ranked candidates. With `--fit`, either fits a limb-darkened
+transit model to its candidates and reports the planet's size, impact
+parameter and the stellar density the transit implies, with intervals
+whose coverage is measured by injection.
 
 **One command reproduces everything in this README:**
 
@@ -17,7 +20,7 @@ and a dashboard of ranked candidates.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python run_pipeline.py            # ~2 min on 4 cores
-pytest                            # ~3 min, 312 tests
+pytest                            # ~4 min, 330 tests
 ```
 
 It writes `results/metrics.json`, `results/report.txt`, the trained model
@@ -592,7 +595,8 @@ top reasons. The reasons are SHAP values in calibrated log-odds (see
 with the base value to the star's log-odds. The JSON carries all 23. The
 probability is for a star from the training population, where 4% of stars
 host a planet; `--planet-rate 0.3` restates it for a population where 30%
-do. The score and the verdict do not depend on it.
+do. The score and the verdict do not depend on it. `--fit` adds a transit
+model fit of the primary signal; see "Fitting a candidate's transit" below.
 
 **The TIC path has only been tested offline**, with the MAST source replaced
 by a stub; this environment could not reach MAST. Local CSV and npz input is
@@ -800,6 +804,171 @@ path and the synthetic path are tested end to end. The batch runs the same
 code as `vet`, star by star, so its scores match `run_pipeline.py`'s for the
 same curves (checked to 5e-9 on the 120 test stars of a small run).
 
+## Fitting a candidate's transit
+
+The classifier says whether a dip looks like a planet. `--fit` says what the
+planet would be: it fits a limb-darkened transit model to the primary signal
+and samples the posterior, so a candidate comes with a radius ratio, an
+impact parameter, a duration and the stellar density its shape needs, each
+with an interval.
+
+```bash
+python -m transitml.vet star.csv --fit                     # adds a fit to the report
+python -m transitml.vet star.csv --fit --stellar-density 1.41 --stellar-radius 1.0
+python -m transitml.batch --synthetic 2000 --fit 10        # fits the 10 best-ranked flagged stars
+python -m transitml.fit_coverage                           # do the intervals mean what they say?
+```
+
+`vet --fit` adds a `fit` section to the JSON, a few printed lines and a
+second figure, `vet_<target>_fit.png`. `batch --fit N` fits the N
+best-ranked flagged stars and caches each fit in `cache/fits.jsonl`, keyed
+by the star's light curve and the fit settings, so a new setting refits and
+nothing else does. It adds `fit_*` columns to `candidates.csv` (the median
+and half the 68% interval of Rp/R*, b, density, T14, depth and, when the
+star's radius is known, the planet radius in Earth radii, then the density
+check, convergence and status) and shows the fit in the dashboard's row
+detail. The fit sits beside the score and never changes it. A typical fit, 6000 steps of 32 walkers,
+takes about 25 seconds on one core, and one that runs to the 30,000-step
+cap about five times that. `--fit-max-steps 2000` gives a quick look,
+which the report will usually mark as not converged.
+
+![Transit fit](figures/09_fit_example.png)
+
+The example is the first planet of the coverage study below, injected into
+a variable star and then detrended and searched as `vet` does. The truth
+is Rp/R* 0.0906, b 0.80, T14 3.75 h and a density of 0.57 g/cm³; all four
+are inside the 68% intervals, and the fitted density is 1.08 (+0.14 / -0.11)
+times the star's.
+
+**The model.**
+
+- `batman` (Kreidberg 2015): a circular orbit and quadratic limb darkening,
+  integrated over the exposure by averaging the model every 3 minutes
+  across it. The exposure is the light curve's cadence by default. Curves
+  this package generates (synthetic and injected) are instantaneous, so for
+  those it is 0; `--exposure-minutes` overrides both.
+- Seven parameters: mid-transit time, period, Rp/R*, b, log T14, and
+  Kipping's (2013) q1 and q2. The priors: t0 within one search duration of
+  the search's, the period within 2% of it, Rp/R* below 0.5, b up to
+  1 + Rp/R* (grazing allowed), q1 and q2 uniform on the unit square, which
+  covers every physical quadratic law once, and the stellar density
+  log-uniform from 0.01 to 100 g/cm³. The geometry is sampled as T14 rather
+  than density: in a shallow transit, b and density slide along a curved
+  ridge that a sampler crosses slowly, while T14 is pinned by the data. A
+  Jacobian keeps the prior flat in log density.
+- Only cadences within 2.5 search durations of each transit are fitted, and
+  each transit gets its own quadratic baseline, marginalised
+  analytically. The detrended level under a transit is uncertain at the
+  level of a transit's depth, and the depth interval should carry that.
+- The noise is measured, not taken from `flux_err`: the scatter of the
+  cadences outside every fitted window sets the white level, and the
+  time-averaging factor β (Winn et al. 2008), how much more binned residuals
+  scatter than white noise would on timescales of a quarter to one transit
+  duration, inflates it. A star with red noise gets wider intervals.
+- `emcee` (Foreman-Mackey et al. 2013) with differential-evolution moves,
+  32 walkers started around the best fit. The chain runs at least 4000
+  steps, then in blocks of 2000 until it is 50 autocorrelation times long
+  after a burn-in of 3, up to 30,000. A fit that stops at the cap says so,
+  with `converged: false` and a warning. Fits are seeded, so a rerun is
+  identical.
+- **The density check** (Seager & Mallen-Ornelas 2003). The star's density
+  is not a prior: the fit runs without it and is then compared with it, so
+  the comparison is a test. When the density is known (`--stellar-density`,
+  or the metadata synthetic and injected curves carry), the report gives
+  the ratio of fitted to stellar density with its interval and flags the
+  pair as inconsistent when the two-sided tail probability is below 0.003.
+  A planet transiting the target gives a consistent density; an eclipsing
+  binary, a blend diluted by another star, or an eccentric orbit often
+  does not. A test fits a planet against its own star, which passes, and
+  against a star ten times denser, which is flagged.
+- Other warnings: a chain that did not converge, a period posterior that
+  reaches its prior's edge, a duration close to the width of the fitted
+  window, a grazing transit.
+
+**Do the intervals mean what they say?** A 68% interval is only useful if
+the truth lands in it about 68% of the time. `python -m transitml.fit_coverage`
+injects 60 planets (period 1 to 10 days and Rp/R* 0.04 to 0.12, both
+log-uniform, b uniform from 0 to 0.9) into stars from the training
+generator and fits each twice: in white noise at the star's level, which
+tests the fitter alone, and inside the variable star, detrended and
+searched exactly as `vet --fit` does, which tests the whole chain. A planet
+is scored only when the search finds its period. The run took 28 minutes on 4 cores.
+
+![Fit coverage](figures/10_fit_coverage.png)
+
+| Parameter | Fitter alone, 68% | Fitter alone, 95% | Whole chain, 68% | Whole chain, 95% |
+|---|---:|---:|---:|---:|
+| Period | 0.63 | 0.97 | 0.60 | 0.93 |
+| t0 | 0.63 | 0.97 | 0.67 | 0.93 |
+| Rp/R* | 0.73 | 0.92 | 0.66 | 0.97 |
+| b | 0.67 | 0.87 | 0.67 | 0.95 |
+| Density | 0.65 | 0.85 | 0.72 | 0.95 |
+| T14 | 0.68 | 0.90 | 0.72 | 0.93 |
+| Depth | 0.68 | 0.90 | **0.50** | **0.86** |
+| Planets scored (converged) | 60 (54) | | 58 (56) | |
+
+Each entry is the fraction of planets whose true value fell inside the
+interval. With 60 planets a calibrated 68% interval scatters by about 0.06
+and a 95% one by about 0.03.
+
+- **Rp/R\*, T14, period and t0 are calibrated** in both experiments, to
+  within that scatter. Rp/R\* is the number to read for a candidate's size.
+- **b and density, fitter alone: the 95% intervals are a little narrow**,
+  0.87 and 0.85. One sector often barely constrains b, and so the density,
+  which leaves their intervals leaning on the prior; a credible interval is
+  only guaranteed to cover when the truths are drawn from the prior, and
+  these planets are not (b uniform up to 0.9, a single limb-darkening law).
+  Two of the eight b misses are planets with b near 0, which a central
+  interval of a parameter bounded at 0 cannot contain. In the whole chain,
+  where the red-noise factor widens every interval, both reach 0.95.
+- **Depth, whole chain: the intervals are too narrow**, 0.50 and 0.86. Of
+  the eight planets outside the 95% interval, five are off by 1% to 5%,
+  mostly on stars with strong red noise (β of 1.3 or more), where detrending
+  leaves a small distortion under the transit. The other three came out
+  28% to 52% too shallow because the detrender had already removed part of
+  the transit before the fit saw it: measured on the detrended curve, 31%
+  to 81% of the depth at mid-transit was gone. In two of them, deep planets
+  on 1.2 and 1.6 day orbits, the detrender's rotation term was fitted at
+  the planet's period: one star needs no rotation term at all without the
+  planet, and the other rotates within about 1% of the planet's period. A fit
+  cannot recover depth that is gone. Detrending again with the candidate's
+  transits masked, before fitting, is the fix, and it is not done yet.
+  Rp/R\* is calibrated on the same planets because its interval is wider:
+  it trades off against b and the limb darkening.
+- **Faint transits can wander.** Six chains in white noise and two in the
+  whole chain stopped at the 30,000-step cap. Two of the six, on
+  transits barely above the noise, drifted into grazing solutions (b above
+  1, with Rp/R\* of 0.15 and 0.22 for planets of 0.042 and 0.045), and
+  unconverged chains account for three of the six fitter-alone depth
+  misses. The report flags such
+  fits as not converged and grazing; treat a fit with a warning as a
+  rough guide.
+
+**How it got here.** The first version fitted a single flux level instead
+of a baseline per transit: 35 of 60 chains converged in each experiment,
+and the whole chain's depth coverage was 0.45 and 0.74. A straight line
+under each transit brought convergence to 56 and 54 and depth to 0.48 and
+0.81; the quadratic, now the default, gives 54 and 56 and 0.50 and 0.86, and
+lifts the whole chain's 95% coverage of Rp/R\*, b, density, T14 and period
+from 0.90 to 0.93 to between 0.93 and 0.97. It costs intervals about 5%
+wider on Rp/R\* and 11% wider on depth. `--baseline` on the coverage
+study, and `FitConfig.baseline`, switch between `offset`, `line` and
+`quadratic`.
+
+**Limits.**
+
+- Circular orbits only. An eccentric planet's transit has a different
+  duration from a circular one's, so it shows up as a density mismatch.
+- One signal is fitted, the primary. Another planet's transits inside the
+  fitted windows are not masked.
+- The training generator's planets are trapezoids, not limb-darkened
+  transits, so fits of them are approximate: the limb darkening absorbs
+  part of the mismatch. The coverage study injects `batman` transits for
+  this reason.
+- **Not yet checked against real planets.** Comparing fits of known TESS
+  planets with their published parameters needs MAST, which this
+  environment could not reach.
+
 ---
 
 ## Failure modes
@@ -983,10 +1152,12 @@ transit-detection/
 │   ├── evaluate.py             # PR curves, AP, confusion matrix, failure analysis
 │   ├── benchmark.py            # the trained model scored on real TOI dispositions
 │   ├── vet.py                  # python -m transitml.vet: one star, one page
+│   ├── fit.py                  # batman transit model sampled with emcee
+│   ├── fit_coverage.py         # do the fitted intervals cover the truth?
 │   ├── batch.py                # python -m transitml.batch: a sector, cached and ranked
 │   ├── dashboard.py            # the batch's self-contained HTML dashboard
 │   └── plots.py                # figures (matplotlib Agg, no display)
-├── tests/                      # 312 tests, ~3 min
+├── tests/                      # 330 tests, ~4 min
 │   ├── test_generator.py       # imbalance is exact; injected physics is consistent
 │   ├── test_preprocess.py      # depth preservation; why the median was rejected
 │   ├── test_features.py        # recovery vs SNR; the vetting statistics fire
@@ -1006,6 +1177,8 @@ transit-detection/
 │   ├── test_centroid.py        # blends flagged, on-target not; bad input survives
 │   ├── test_vet_centroid.py    # centroid section in JSON and PNG; score unchanged
 │   ├── test_batch.py           # ranking, cache reuse and invalidation, dashboard
+│   ├── test_fit.py             # geometry, prior, red noise, recovery, density check
+│   ├── test_fit_wiring.py      # vet --fit, batch --fit N and its cache, coverage
 │   └── test_pipeline.py        # end to end, reproducible, figures on disk
 ├── figures/                    # committed, so this README renders
 └── results/                    # metrics.json + report.txt, committed
