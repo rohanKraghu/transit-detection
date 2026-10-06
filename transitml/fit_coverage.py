@@ -132,6 +132,9 @@ def _score(flat: FlattenedLightCurve, planet: dict[str, float], fit_config: FitC
         "recovered": True,
         "truth": truth,
         "median": {name: fit.value(name) for name in SCORED},
+        "width68": {
+            name: fit.parameters[name]["upper"] - fit.parameters[name]["lower"] for name in SCORED
+        },
         "quantile": quantile,
         "inside": inside,
         "converged": fit.converged,
@@ -262,6 +265,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--n", type=int, default=60, help="Planets injected.")
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--n-jobs", type=int, default=-1)
+    parser.add_argument(
+        "--baseline", choices=("offset", "line", "quadratic"), default=FitConfig.baseline,
+        help="The per-transit baseline the fits marginalise over.",
+    )
     parser.add_argument("--out", type=Path, default=Path("results/fit_coverage.json"))
     parser.add_argument("--figure", type=Path, default=Path("figures/10_fit_coverage.png"))
     parser.add_argument(
@@ -274,7 +281,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     start = clock.time()
-    fit_config = FitConfig()
+    fit_config = FitConfig(baseline=args.baseline)
     rows = Parallel(n_jobs=args.n_jobs)(
         delayed(run_injection)(i, args.seed, fit_config) for i in range(args.n)
     )
