@@ -13,7 +13,7 @@ evaluate it the way an imbalanced detection problem has to be evaluated.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python run_pipeline.py            # ~2 min on 4 cores
-pytest                            # ~1.5 min, 152 tests
+pytest                            # ~2 min, 162 tests
 ```
 
 It writes `results/metrics.json`, `results/report.txt` and four PNGs to
@@ -184,6 +184,61 @@ for real data are the hard part, and `mast.py` documents the two honest options
 (confirmed-planet catalogues, which inherit the selection function of the
 pipelines we are trying to beat; or injection-recovery into real out-of-transit
 photometry, which is what the mission teams actually do).
+
+### Injection-recovery on real photometry
+
+The second option is implemented. `transitml/data/injection.py` takes real
+light curves of stars with no known planet and injects the same planet and
+eclipsing-binary population the synthetic generator draws, from the same
+functions, at the same exact class rates. Uninjected curves come back
+byte-for-byte untouched, so every curve carries real TESS noise and only the
+labels are constructed. Eclipses are multiplied into the flux, so aperture
+contamination dilutes them as it would a real event.
+
+```bash
+pip install lightkurve
+python run_pipeline.py --inject-into targets.txt --exclude-tois toi.csv --sector 14
+```
+
+- `targets.txt` is a list of TIC IDs (one per line, or a CSV with a `TIC ID`
+  column), for example the TESS-SPOC full-frame-image targets of one sector.
+- `toi.csv` is the TOI table exported from ExoFOP. Every listed TIC is
+  dropped, because a known host left in would become a mislabelled negative.
+  Hosts of planets nobody has found yet cannot be excluded; at a few per cent
+  of stars they bias precision slightly downward, which is the safe direction.
+- One sector per star is used, so a star cannot appear in both splits.
+- Downloaded curves are cached to `results/real_injection/base_curves.npz`;
+  later runs read the cache and need no network, so a real-data result is as
+  reproducible as the synthetic one. `--n-curves` caps the target list.
+- Results and figures go to `results/real_injection/` and
+  `figures/real_injection/`, never over the synthetic headline.
+
+**Result on real photometry (TESS sector 14).** 2,800 TESS-SPOC 30-minute
+FFI curves, drawn at random from the sector's target list after removing every
+TOI host (`data/real_injection/`), with 112 planets and 168 eclipsing binaries
+injected. Held-out set: 980 curves, 39 planets. Full report in
+[`results/real_injection/report.txt`](results/real_injection/report.txt).
+
+| | Synthetic | Real sector 14 |
+|---|---|---|
+| Model average precision | 0.80 | **0.51** [0.44, 0.60] |
+| Best baseline (BLS SNR) | | 0.10 |
+| Held-out precision / recall | | 0.48 / 0.54 |
+| Precision of top 20 | | 0.75 |
+
+The prediction held: real noise costs a lot of average precision. Most of
+the loss is at low SNR, where the search itself stops finding the period
+(30% recovered below SNR 7, 83% at SNR 7 to 12, 16 of 17 above 12), and on the
+false-positive side, where 15 of the 23 false positives at the operating
+point are real stars with nothing injected rather than binaries.
+
+To reproduce (the TOI table is the NASA Exoplanet Archive `toi` table, the
+same list ExoFOP serves):
+
+```bash
+python run_pipeline.py --inject-into data/real_injection/targets_s0014.txt \
+    --exclude-tois data/real_injection/toi.csv --sector 14 --download-workers 16
+```
 
 ---
 
@@ -475,7 +530,9 @@ The honest summary: this demonstrates the *method* — correct detrending, corre
 features, correct metric, correct protocol, honest failure analysis — on data
 whose noise is easier than reality. The next step on real data is
 injection-recovery into genuine TESS out-of-transit photometry, which keeps the
-systematics real while keeping the labels trustworthy.
+systematics real while keeping the labels trustworthy. The code for that is in
+place (see "Injection-recovery on real photometry" above); the run itself is
+what remains.
 
 ---
 
@@ -493,17 +550,19 @@ transit-detection/
 │   │   ├── base.py             # LightCurve + LightCurveSource interface
 │   │   ├── synthetic.py        # the generator
 │   │   ├── mast.py             # real TESS/Kepler via lightkurve (same interface)
+│   │   ├── injection.py        # synthetic eclipses injected into real curves
 │   │   └── loader.py           # source -> feature matrix, parallel over curves
 │   ├── preprocess.py           # robust spline + rotation detrending
 │   ├── features.py             # BLS search and vetting statistics
 │   ├── model.py                # split, baselines, training, threshold selection
 │   ├── evaluate.py             # PR curves, AP, confusion matrix, failure analysis
 │   └── plots.py                # figures (matplotlib Agg, no display)
-├── tests/                      # 152 tests, ~1.5 min
+├── tests/                      # 162 tests, ~2 min
 │   ├── test_generator.py       # imbalance is exact; injected physics is consistent
 │   ├── test_preprocess.py      # depth preservation; why the median was rejected
 │   ├── test_features.py        # recovery vs SNR; the vetting statistics fire
 │   ├── test_evaluation.py      # no test-set leakage into threshold or metrics
+│   ├── test_injection.py       # injection is exact, leaves noise alone, runs offline
 │   └── test_pipeline.py        # end to end, reproducible, figures on disk
 ├── figures/                    # committed, so this README renders
 └── results/                    # metrics.json + report.txt, committed

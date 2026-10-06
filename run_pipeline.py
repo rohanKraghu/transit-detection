@@ -6,6 +6,16 @@
 Writes ``results/metrics.json``, ``results/report.txt``, ``results/dataset.npz``
 and four PNGs to ``figures/``.  Deterministic given ``--seed``; the default run
 takes ~2 minutes on four cores.
+
+Injection-recovery on real photometry (needs ``pip install lightkurve`` and
+network access to MAST the first time; later runs reuse the cache)::
+
+    python run_pipeline.py --inject-into targets.txt --exclude-tois toi.csv --sector 14
+
+downloads one sector of real light curves for every target that is not a known
+TOI host, injects the same planet and binary population as the synthetic run,
+and writes everything to ``results/real_injection/`` and
+``figures/real_injection/`` so the synthetic headline is never overwritten.
 """
 
 from __future__ import annotations
@@ -22,7 +32,17 @@ from typing import Any
 import numpy as np
 
 from transitml.config import Config, default_config
-from transitml.data.loader import Dataset, build_default_dataset, sample_light_curves
+from transitml.data.base import LightCurveSource
+from transitml.data.injection import (
+    InjectionSource,
+    exclude_known_hosts,
+    load_curves,
+    load_excluded_tic_ids,
+    read_target_list,
+    save_curves,
+)
+from transitml.data.loader import Dataset, build_dataset
+from transitml.data.synthetic import SyntheticTESSSource
 from transitml.evaluate import evaluate, format_report
 from transitml.model import make_split, train
 from transitml.plots import plot_all
@@ -59,7 +79,48 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--no-figures", action="store_true", help="Skip plotting (useful in CI)."
     )
-    return parser.parse_args(argv)
+    real = parser.add_argument_group(
+        "injection-recovery on real photometry",
+        "Inject the synthetic planet/binary population into real MAST light curves.",
+    )
+    real.add_argument(
+        "--inject-into",
+        type=Path,
+        default=None,
+        help="Target list (one TIC per line, or a CSV with a TIC column).",
+    )
+    real.add_argument(
+        "--exclude-tois",
+        type=Path,
+        default=None,
+        help="ExoFOP TOI CSV; listed TICs are dropped as known or candidate hosts.",
+    )
+    real.add_argument("--sector", type=int, default=None, help="TESS sector to use.")
+    real.add_argument("--author", default="TESS-SPOC", help="Light-curve pipeline.")
+    real.add_argument(
+        "--exposure-time", type=int, default=1800, help="Cadence in seconds."
+    )
+    real.add_argument(
+        "--download-workers",
+        type=int,
+        default=8,
+        help="Targets fetched from MAST concurrently.",
+    )
+    real.add_argument(
+        "--curve-cache",
+        type=Path,
+        default=None,
+        help="npz of downloaded curves; read if present, written after a download.",
+    )
+    args = parser.parse_args(argv)
+    if args.inject_into is not None:
+        if args.results_dir == ROOT / "results":
+            args.results_dir = ROOT / "results" / "real_injection"
+        if args.figures_dir == ROOT / "figures":
+            args.figures_dir = ROOT / "figures" / "real_injection"
+        if args.curve_cache is None:
+            args.curve_cache = args.results_dir / "base_curves.npz"
+    return args
 
 
 def apply_overrides(config: Config, args: argparse.Namespace) -> Config:
@@ -69,6 +130,67 @@ def apply_overrides(config: Config, args: argparse.Namespace) -> Config:
     if args.n_curves is not None:
         config = replace(config, dataset=replace(config.dataset, n_curves=args.n_curves))
     return config
+
+
+def build_source(config: Config, args: argparse.Namespace) -> LightCurveSource:
+    """The synthetic population, or that population injected into real curves."""
+    if args.inject_into is None:
+        return SyntheticTESSSource(
+            n_curves=config.dataset.n_curves,
+            positive_rate=config.dataset.positive_rate,
+            eclipsing_binary_rate=config.dataset.eclipsing_binary_rate,
+            seed=config.seed,
+            survey=config.survey,
+            noise=config.noise,
+            star=config.star,
+            planet=config.planet,
+            eb=config.eb,
+        )
+
+    cache = Path(args.curve_cache)
+    if cache.exists():
+        curves = load_curves(cache)
+        if args.n_curves is not None:
+            curves = curves[: args.n_curves]
+        print(f"  loaded {len(curves)} real light curves from {_display_path(cache)}")
+    else:
+        from transitml.data.mast import MASTLightCurveSource
+
+        targets = read_target_list(args.inject_into)
+        if args.exclude_tois is not None:
+            targets, dropped = exclude_known_hosts(
+                targets, load_excluded_tic_ids(args.exclude_tois)
+            )
+            print(f"  excluded {len(dropped)} TOI hosts; {len(targets)} targets remain")
+        if args.n_curves is not None:
+            targets = targets[: args.n_curves]
+        mast = MASTLightCurveSource(
+            [(t, None) for t in targets],
+            mission="TESS",
+            author=args.author,
+            exposure_time=args.exposure_time,
+            sector=args.sector,
+            n_workers=args.download_workers,
+        )
+        curves, seen = [], set()
+        for lc in mast:
+            # One sector per star, so a star cannot sit in both splits.
+            if lc.target_id not in seen:
+                seen.add(lc.target_id)
+                curves.append(lc)
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        save_curves(curves, cache)
+        print(f"  downloaded {len(curves)} real light curves; cached to {_display_path(cache)}")
+
+    return InjectionSource(
+        curves,
+        config.dataset.positive_rate,
+        config.dataset.eclipsing_binary_rate,
+        seed=config.seed,
+        star=config.star,
+        planet=config.planet,
+        eb=config.eb,
+    )
 
 
 def pick_example_indices(dataset: Dataset, config: Config) -> list[int]:
@@ -101,13 +223,17 @@ def main(argv: list[str] | None = None) -> int:
 
     started = time.time()
     print(f"transit-detection | seed={config.seed} | python {platform.python_version()}")
+    what = "real light curves (injected)" if args.inject_into else "light curves"
+    source = build_source(config, args)
     print(
-        f"generating and searching {config.dataset.n_curves} light curves "
+        f"generating and searching {len(source)} {what} "
         f"({config.dataset.positive_rate:.1%} planets, "
         f"{config.dataset.eclipsing_binary_rate:.1%} eclipsing binaries) ..."
     )
 
-    dataset = build_default_dataset(config, n_jobs=args.n_jobs)
+    dataset = build_dataset(
+        source, preprocess=config.preprocess, bls=config.bls, n_jobs=args.n_jobs
+    )
     t_data = time.time() - started
     print(
         f"  -> {len(dataset)} curves, {int(dataset.y.sum())} planets "
@@ -145,6 +271,7 @@ def main(argv: list[str] | None = None) -> int:
         "config": config.to_dict(),
         "runtime_seconds": None,
         "dataset": {
+            "source": source.name,
             "n_curves": len(dataset),
             "n_planets": int(dataset.y.sum()),
             "positive_rate": dataset.positive_rate,
@@ -159,7 +286,7 @@ def main(argv: list[str] | None = None) -> int:
     }
 
     if not args.no_figures:
-        curves = sample_light_curves(config, pick_example_indices(dataset, config))
+        curves = [source.generate(i) for i in pick_example_indices(dataset, config)]
         paths = plot_all(
             dataset, split, trained, result, curves, config, Path(args.figures_dir)
         )
