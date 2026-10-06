@@ -1159,10 +1159,11 @@ def plot_fit(fit, path: Path, n_draws: int = 150) -> Path:
     samples = fit.samples
     period = fit.value("period")
     t0 = fit.value("t0")
-    f0 = fit.value("f0")
     hours = ((data["time"] - t0 + 0.5 * period) % period - 0.5 * period) * 24.0
     order = np.argsort(hours)
-    ppm = (data["flux"] / f0 - 1.0) * 1e6
+    # Each window's fitted baseline is taken out, as the likelihood does.
+    corrected = data["flux"] - data["baseline"]
+    ppm = (corrected - 1.0) * 1e6
     t14_h = fit.value("t14_hours")
     span = max(float(np.max(np.abs(hours))), 1.5 * t14_h)
     grid_h = np.linspace(-span, span, 400)
@@ -1177,7 +1178,7 @@ def plot_fit(fit, path: Path, n_draws: int = 150) -> Path:
     band_lo, band_hi = np.percentile(curves, [16.0, 84.0], axis=0)
     data_model = TransitModel(data["time"], fit.exposure_minutes / 1440.0, 3.0 / 1440.0)
     best = np.array([fit.map_parameters[name] for name in PARAMETERS])
-    resid_ppm = (data["flux"] - data_model.flux(best)) / f0 * 1e6
+    resid_ppm = (corrected - data_model.flux(best)) * 1e6
     bin_h = max(t14_h / 8.0, 0.25)
 
     fig = plt.figure(figsize=(13.5, 7.4))
@@ -1186,7 +1187,8 @@ def plot_fit(fit, path: Path, n_draws: int = 150) -> Path:
     ax_fold = fig.add_subplot(left[0])
     ax_res = fig.add_subplot(left[1], sharex=ax_fold)
 
-    ax_fold.plot(hours, ppm, ".", ms=2.6, color=NEUTRAL, alpha=0.55, label="detrended flux")
+    ax_fold.plot(hours, ppm, ".", ms=2.6, color=NEUTRAL, alpha=0.55,
+                 label="detrended flux, less each transit's baseline")
     centres, means = _bin_means(hours[order], ppm[order], bin_h)
     ax_fold.plot(centres, means, "o", ms=4.2, color=INK, label=f"binned ({bin_h * 60:.0f} min)")
     ax_fold.fill_between(grid_h, band_lo, band_hi, color=SERIES[0], alpha=0.25, lw=0,

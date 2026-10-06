@@ -39,7 +39,7 @@ def _theta(truth, exposure_u=(0.4, 0.25)):
     a = float(a_over_rs(truth["period"], truth["rho"]))
     t14 = float(durations(truth["period"], a, truth["k"], truth["b"])[0])
     q1, q2 = u_to_q(*exposure_u)
-    return np.array([truth["t0"], truth["period"], truth["k"], truth["b"], math.log10(t14), q1, q2, 1.0]), t14
+    return np.array([truth["t0"], truth["period"], truth["k"], truth["b"], math.log10(t14), q1, q2]), t14
 
 
 @pytest.fixture(scope="module")
@@ -105,7 +105,7 @@ def test_the_prior_is_flat_in_log_density():
     log_t14 = rng.uniform(math.log10(0.005), math.log10(4.9), 40_000)
     k, b = 0.05, 0.3
     log_prior = np.array([
-        problem.log_prior(np.array([0.0, 10.0, k, b, x, 0.5, 0.5, 1.0])) for x in log_t14
+        problem.log_prior(np.array([0.0, 10.0, k, b, x, 0.5, 0.5])) for x in log_t14
     ])
     weights = np.where(np.isfinite(log_prior), np.exp(np.where(np.isfinite(log_prior), log_prior, 0.0)), 0.0)
     a = a_from_t14(10.0, k, b, 10.0**log_t14)
@@ -144,7 +144,7 @@ def test_the_fit_recovers_an_injected_transit(fitted, injected):
     assert p["rp_earth"]["median"] == pytest.approx(p["k"]["median"] * 109.076, rel=1e-6)
     assert fitted.noise["beta"] < 1.3
     assert fitted.noise["sigma_ppm"] == pytest.approx(500, rel=0.1)
-    assert fitted.samples.shape[1] == 8 and len(fitted.samples) == 500
+    assert fitted.samples.shape[1] == 7 and len(fitted.samples) == 500
 
 
 def test_the_density_check_passes_the_right_star_and_flags_a_wrong_one(fitted, injected):

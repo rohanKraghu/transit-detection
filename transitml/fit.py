@@ -7,9 +7,9 @@ transit shape requires, the duration and the ephemeris, each with a
 credible interval.
 
 The model is ``batman`` (Kreidberg 2015): a circular orbit and quadratic limb
-darkening, integrated over the exposure time.  It has eight parameters::
+darkening, integrated over the exposure time.  It has seven parameters::
 
-    t0, period, k = Rp/R*, b, log10(T14 / day), q1, q2, f0
+    t0, period, k = Rp/R*, b, log10(T14 / day), q1, q2
 
 ``q1, q2`` are Kipping's (2013) limb-darkening parameters, uniform on the
 unit square, which covers every physical quadratic law exactly once.  The
@@ -24,11 +24,17 @@ shape needs a density far from the host's is a classic sign of an
 eclipsing binary or a blend (Seager & Mallen-Ornelas 2003).
 
 The fit uses the *detrended* light curve, only within ``window_durations``
-of each transit, and the noise is set from the data rather than trusted
-from ``flux_err``: the residuals of a first maximum-a-posteriori fit fix the
-white-noise level, and the time-averaging method (Pont et al. 2006; Winn et
-al. 2008) inflates it by beta, the factor by which binned residuals scatter
-more than white noise would.  Without that step the intervals are too
+of each transit.  Detrending is never perfect at the level of a transit
+depth, so each transit window gets its own straight-line baseline,
+marginalised analytically (a flat prior on its offset and slope): the depth
+and its interval then carry the uncertainty of where the baseline sits
+under each transit, instead of trusting the detrended level.  The noise is
+set from the data rather than trusted from ``flux_err``: the scatter of the
+cadences outside every fitted window (or, when there are too few, the
+residuals of a first maximum-a-posteriori fit) fixes the white-noise level,
+and the time-averaging method (Pont et al. 2006; Winn et al. 2008) inflates
+it by beta, the factor by which binned residuals scatter more than white
+noise would.  Without that step the intervals are too
 narrow on any star with red noise.  The sampler is ``emcee`` (Foreman-Mackey
 et al. 2013) with differential-evolution moves, which cope with the strong
 correlation between k, b and the density in shallow transits.
@@ -50,7 +56,7 @@ from .physics import G_CGS, SECONDS_PER_DAY
 from .preprocess import FlattenedLightCurve
 
 #: The sampled parameters, in order.
-PARAMETERS: tuple[str, ...] = ("t0", "period", "k", "b", "log10_t14", "q1", "q2", "f0")
+PARAMETERS: tuple[str, ...] = ("t0", "period", "k", "b", "log10_t14", "q1", "q2")
 
 #: Earth radii per solar radius.
 R_EARTH_PER_R_SUN: float = 109.076
@@ -76,6 +82,9 @@ class FitConfig:
     min_burn: int = 1000
     #: Keep cadences within this many search durations of a transit centre.
     window_durations: float = 2.5
+    #: Baseline marginalised in each transit window: ``"offset"``, ``"line"``
+    #: or ``"quadratic"``.
+    baseline: str = "line"
     #: Exposure time integrated over; ``None`` means the median cadence and
     #: ``0`` means instantaneous samples.
     exposure_minutes: float | None = None
@@ -194,7 +203,9 @@ class TransitModel:
             self._model = batman.TransitModel(self._params, self.time)
 
     def flux(self, theta: NDArray[np.float64]) -> NDArray[np.float64]:
-        t0, period, k, b, log_t14, q1, q2, f0 = theta
+        """Relative flux for ``(t0, period, k, b, log10_t14, q1, q2[, f0])``; ``f0`` defaults to 1."""
+        t0, period, k, b, log_t14, q1, q2 = theta[:7]
+        f0 = theta[7] if len(theta) > 7 else 1.0
         a = float(a_from_t14(period, k, b, 10.0**log_t14))
         u1, u2 = q_to_u(q1, q2)
         p = self._params
@@ -207,6 +218,61 @@ class TransitModel:
 # --------------------------------------------------------------------------
 # Posterior
 # --------------------------------------------------------------------------
+#: Polynomial order of each baseline kind.
+BASELINE_ORDERS = {"offset": 0, "line": 1, "quadratic": 2}
+
+
+class _Baselines:
+    """Per-window polynomial baselines, profiled out of the residuals.
+
+    For residuals ``r`` and weights ``w = 1 / sigma^2`` the best polynomial
+    in each window is a weighted least-squares fit; what is left is
+    ``chi^2 = sum w r^2 - b^T M^-1 b`` window by window.  With a flat prior on
+    the coefficients this is the marginal likelihood up to a constant (the
+    design does not depend on the transit parameters).  A window with too
+    few cadences for the requested order gets a lower one.
+    """
+
+    def __init__(self, window: NDArray[np.int64], x: NDArray[np.float64],
+                 sigma: NDArray[np.float64], kind: str):
+        if kind not in BASELINE_ORDERS:
+            raise ValueError(f"baseline must be one of {sorted(BASELINE_ORDERS)}, got {kind!r}")
+        self.window = np.asarray(window)
+        self.n = int(self.window.max()) + 1 if self.window.size else 0
+        w = 1.0 / np.asarray(sigma, dtype=float) ** 2
+        x = np.asarray(x, dtype=float)
+        order = BASELINE_ORDERS[kind]
+        counts = np.bincount(self.window, minlength=self.n)
+        # Columns x^j, zeroed in windows too short to support degree j.
+        allowed = np.minimum(order, np.maximum(counts - 2, 0) // 2)
+        self.basis = np.stack(
+            [np.where(allowed[self.window] >= j, x**j, 0.0) for j in range(order + 1)], axis=1
+        )
+        self.weighted = self.basis * w[:, None]
+        moments = np.zeros((self.n, order + 1, order + 1))
+        for j in range(order + 1):
+            for k in range(order + 1):
+                moments[:, j, k] = np.bincount(
+                    self.window, self.weighted[:, j] * self.basis[:, k], self.n
+                )
+        self.inverse = np.linalg.pinv(moments)
+        self.w = w
+
+    def remove(self, r: NDArray[np.float64]) -> NDArray[np.float64]:
+        """Residuals with each window's best polynomial taken out."""
+        b = np.stack(
+            [np.bincount(self.window, self.weighted[:, j] * r, self.n)
+             for j in range(self.basis.shape[1])],
+            axis=1,
+        )
+        coefficients = np.einsum("wjk,wk->wj", self.inverse, b)
+        return r - np.sum(coefficients[self.window] * self.basis, axis=1)
+
+    def chi2(self, r: NDArray[np.float64]) -> float:
+        left = self.remove(r)
+        return float(np.sum(self.w * left**2))
+
+
 @dataclass
 class _Problem:
     model: TransitModel
@@ -216,9 +282,15 @@ class _Problem:
     t0_halfwidth: float
     period_centre: float
     config: FitConfig
+    baselines: _Baselines | None = None
+
+    def residuals(self, theta) -> NDArray[np.float64]:
+        """Data minus model, with each window's best baseline removed."""
+        r = self.flux - self.model.flux(theta)
+        return self.baselines.remove(r) if self.baselines is not None else r
 
     def log_prior(self, theta) -> float:
-        t0, period, k, b, log_t14, q1, q2, f0 = theta
+        t0, period, k, b, log_t14, q1, q2 = theta
         c = self.config
         if abs(t0 - self.t0_centre) > self.t0_halfwidth:
             return -np.inf
@@ -226,7 +298,7 @@ class _Problem:
             return -np.inf
         if not (0.0 < k < c.max_k and 0.0 <= b < 1.0 + k):
             return -np.inf
-        if not (0.0 < q1 < 1.0 and 0.0 < q2 < 1.0 and 0.5 < f0 < 1.5):
+        if not (0.0 < q1 < 1.0 and 0.0 < q2 < 1.0):
             return -np.inf
         t14 = 10.0**log_t14
         if not 0.0 < t14 < 0.5 * period:
@@ -241,8 +313,11 @@ class _Problem:
         return math.log(float(log_density_jacobian(period, k, b, t14, a)))
 
     def log_likelihood(self, theta) -> float:
-        resid = (self.flux - self.model.flux(theta)) / self.sigma
-        return -0.5 * float(resid @ resid)
+        r = self.flux - self.model.flux(theta)
+        if self.baselines is not None:
+            return -0.5 * self.baselines.chi2(r)
+        z = r / self.sigma
+        return -0.5 * float(z @ z)
 
     def __call__(self, theta) -> float:
         prior = self.log_prior(theta)
@@ -341,8 +416,11 @@ class FitResult:
     warnings: list[str]
     exposure_minutes: float
     #: Posterior draws, ``(n_keep, len(PARAMETERS))``; not written to JSON.
-    samples: NDArray[np.float64] = field(repr=False, default_factory=lambda: np.empty((0, 8)))
-    #: The fitted cadences and their adopted errors; not written to JSON.
+    samples: NDArray[np.float64] = field(
+        repr=False, default_factory=lambda: np.empty((0, len(PARAMETERS)))
+    )
+    #: The fitted cadences, their adopted errors and each window's best
+    #: baseline under the MAP model; not written to JSON.
     data: dict[str, NDArray[np.float64]] = field(repr=False, default_factory=dict)
 
     @property
@@ -371,13 +449,13 @@ class FitResult:
 # --------------------------------------------------------------------------
 # The fit
 # --------------------------------------------------------------------------
-def _initial_guess(period, epoch, duration, depth, f0) -> NDArray[np.float64]:
+def _initial_guess(period, epoch, duration, depth) -> NDArray[np.float64]:
     k = math.sqrt(max(depth, 1e-6) / 1.1)
     k = min(max(k, 0.005), 0.4)
     b = 0.4
     t14 = min(max(duration, 1e-3), 0.2 * period)
     q1, q2 = u_to_q(0.40, 0.25)
-    return np.array([epoch, period, k, b, math.log10(t14), q1, q2, f0])
+    return np.array([epoch, period, k, b, math.log10(t14), q1, q2])
 
 
 def _clip_to_prior(theta, problem: _Problem) -> NDArray[np.float64]:
@@ -414,7 +492,7 @@ def _maximise(problem: _Problem, start: NDArray[np.float64]) -> tuple[NDArray[np
 
 
 def _derived(samples: NDArray[np.float64]) -> dict[str, NDArray[np.float64]]:
-    t0, period, k, b, log_t14, q1, q2, f0 = samples.T
+    t0, period, k, b, log_t14, q1, q2 = samples.T
     a = a_from_t14(period, k, b, 10.0**log_t14)
     rho = density(period, a)
     log_rho = np.log10(rho)
@@ -435,7 +513,6 @@ def _derived(samples: NDArray[np.float64]) -> dict[str, NDArray[np.float64]]:
         "u2": u2,
         "q1": q1,
         "q2": q2,
-        "f0": f0,
     }
 
 
@@ -500,8 +577,11 @@ def fit_transit(
     cadence = float(np.median(np.diff(time)))
     exposure_min = cadence * 1440.0 if config.exposure_minutes is None else config.exposure_minutes
     model = TransitModel(t, exposure_min / 1440.0, config.supersample_minutes / 1440.0)
-    out_of_transit = np.abs(phase[window]) > 0.75 * duration
-    f0 = float(np.median(f[out_of_transit])) if out_of_transit.sum() > 10 else 1.0
+    # Each transit's window gets its own baseline, in units of the window's half-width.
+    transit_number = np.round((t - t0_centre) / period).astype(int)
+    window_id = np.unique(transit_number, return_inverse=True)[1]
+    half_width = config.window_durations * duration
+    x_window = (t - t0_centre - transit_number * period) / half_width
 
     problem = _Problem(
         model=model,
@@ -511,8 +591,9 @@ def fit_transit(
         t0_halfwidth=max(duration, 2.0 * cadence),
         period_centre=period,
         config=config,
+        baselines=_Baselines(window_id, x_window, e, config.baseline),
     )
-    start = _clip_to_prior(_initial_guess(period, t0_centre, duration, depth, f0), problem)
+    start = _clip_to_prior(_initial_guess(period, t0_centre, duration, depth), problem)
     theta_map, _ = _maximise(problem, start)
 
     # Noise from the data: rescale the errors to the scatter of the cadences
@@ -527,7 +608,7 @@ def fit_transit(
         noise_from = "cadences outside the fitted windows"
     else:
         noise_t = t
-        noise_z = (f - model.flux(theta_map)) / e
+        noise_z = problem.residuals(theta_map) / e
         noise_from = "residuals of the best fit"
     scale = _robust_rms(noise_z)
     width = max(10.0 ** theta_map[4], duration)
@@ -535,12 +616,13 @@ def fit_transit(
         noise_t, noise_z / scale, np.linspace(0.25, 1.0, 6) * width, gap_days=3.0 * cadence
     )
     problem.sigma = e * scale * beta
+    problem.baselines = _Baselines(window_id, x_window, problem.sigma, config.baseline)
 
     # Sample.
     rng = np.random.default_rng(config.seed)
     ndim = len(PARAMETERS)
     jitter = np.array([
-        1e-3 * duration, 1e-5 * period, 1e-3, 1e-2, 2e-3, 1e-2, 1e-2, 1e-5,
+        1e-3 * duration, 1e-5 * period, 1e-3, 1e-2, 2e-3, 1e-2, 1e-2,
     ])
     walkers = []
     while len(walkers) < config.n_walkers:
@@ -557,18 +639,20 @@ def fit_transit(
     sampler.run_mcmc(np.array(walkers), config.min_steps, progress=False)
     while True:
         steps = sampler.iteration
+        # The burn-in comes from a first estimate of tau; tau is then measured
+        # on the chain that is kept, and the larger of the two is used, so the
+        # verdict below is the one the loop stopped on.
         tau_max = float(np.nanmax(sampler.get_autocorr_time(discard=steps // 3, quiet=True, tol=0)))
-        burn = max(config.min_burn, int(math.ceil(config.burn_tau * tau_max)))
-        burn = min(burn, steps // 2)
-        converged = bool(np.isfinite(tau_max) and steps - burn >= config.convergence_tau * tau_max)
+        burn = min(max(config.min_burn, int(math.ceil(config.burn_tau * tau_max))), steps // 2)
+        tau_max = max(
+            tau_max, float(np.nanmax(sampler.get_autocorr_time(discard=burn, quiet=True, tol=0)))
+        )
+        kept = steps - burn
+        converged = bool(np.isfinite(tau_max) and kept >= config.convergence_tau * tau_max)
         if converged or steps + config.block_steps > config.max_steps:
             break
         sampler.run_mcmc(None, config.block_steps, progress=False)
-    steps = sampler.iteration
     chain = sampler.get_chain(discard=burn, flat=True)
-    tau_max = float(np.nanmax(sampler.get_autocorr_time(discard=burn, quiet=True, tol=0)))
-    kept = steps - burn
-    converged = bool(np.isfinite(tau_max) and kept >= config.convergence_tau * tau_max)
 
     keep = rng.choice(len(chain), size=min(config.n_keep, len(chain)), replace=False)
     samples = chain[keep]
@@ -637,7 +721,12 @@ def fit_transit(
         warnings=warnings,
         exposure_minutes=float(exposure_min),
         samples=samples,
-        data={"time": t, "flux": f, "sigma": problem.sigma.copy()},
+        data={
+            "time": t,
+            "flux": f,
+            "sigma": problem.sigma.copy(),
+            "baseline": (f - model.flux(theta_map)) - problem.residuals(theta_map),
+        },
     )
 
 
