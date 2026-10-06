@@ -15,7 +15,7 @@ detrends, searches and scores one target and writes a one-page report.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python run_pipeline.py            # ~2 min on 4 cores
-pytest                            # ~3 min, 270 tests
+pytest                            # ~3 min, 296 tests
 ```
 
 It writes `results/metrics.json`, `results/report.txt`, the trained model
@@ -534,6 +534,93 @@ together do. The grid keeps its 2000 periods however long the baseline, so
 sectors far apart in time are searched too coarsely; consecutive sectors
 are fine.
 
+### Single and duo transits
+
+BLS needs at least two transits, and its period grid stops at half the
+baseline, so a planet on a 40-day orbit, which shows one transit in a sector
+or none, is excluded by construction (failure mode 2 below). Those are the
+long-period, temperate planets, and one event is enough to point a second
+sector or a radial-velocity campaign at the star. `transitml/single.py`
+searches for individual dips instead, and `vet` runs it on every star:
+
+- **Box scan.** Every cadence is tried as the centre of a box of six
+  durations from 1.4 to 11 hours. The depth is measured against the
+  cadences one duration wide on either side, so a slow residual trend does
+  not read as depth, and its error is the light curve's own scatter binned
+  at that duration (red noise inflates it, never below white). A box less
+  than 60% observed is skipped, so a dip half in a gap does not count. The
+  best box is refined on a finer grid of durations and centres.
+- **Events.** The highest-SNR box is an event at SNR 7.5 or more; boxes
+  overlapping it are removed and the next is taken, up to four.
+- **Ramps are not events.** A momentum-dump ramp, a sharp drop and then an
+  exponential recovery, is a lone dip too. Each event is fitted both as a box
+  (free centre and width) and as a ramp (free start and time constant, either
+  way round in time), and is set aside when the ramp fits better by a
+  chi-squared of 4 in noise units. A transit has two sharp edges and a ramp
+  one, so the two separate cleanly.
+- **What one event says about the period.** Any period that would put
+  another transit on observed data without the dip is ruled out (a predicted
+  transit whose measured depth is under half the event's), which gives a
+  minimum period. It is usually the longer side of the window, but shorter
+  when the next transit could hide in a gap. The duration gives a rough
+  period for a central transit across a Sun-like density,
+  `P = π² G ρ T³ / 3`.
+- **Duos.** Two events of matching depth (within 3 sigma plus 20% of the
+  depth) and duration (within a factor of 1.6) form a duo. Its period is the separation divided
+  by a whole number, and each such alias is kept only if none of the
+  transits it predicts lands on flat, observed data.
+- **Periodic signals are not repeated.** An event inside a transit of a
+  periodic signal from the multi-planet search is dropped, but only when at
+  least two of that signal's predicted transits show a dip at SNR 3 or more.
+  A BLS "period" whose only real dip is the event itself explains nothing,
+  so a true single transit is never hidden behind its own alias.
+
+The report lists each event with its time, depth, duration, SNR, minimum
+period and whether it sits next to a gap, marks it with a triangle on the
+detrended panel, adds duos with their allowed periods, and names the times
+of any ramps it set aside. The JSON carries the same under
+`single_events`. **None of it is scored**: the classifier still sees only the
+strongest BLS signal, and the headline numbers are unchanged.
+
+```bash
+python -m transitml.single_benchmark          # injection-recovery, results/single_transit/
+```
+
+**Injection-recovery.** The benchmark puts one long-period planet (P = 14
+to 400 d, drawn as in the main population, with its transit moved inside the
+sector) into each of 600 synthetic variable stars and leaves 600 others
+untouched. Full report in
+[`results/single_transit/report.txt`](results/single_transit/report.txt).
+
+| SNR against the star's own noise | Planets | Found | Transits up to 10.8 h: found |
+| --- | --- | --- | --- |
+| below 7 | 227 | 3% | 3% of 195 |
+| 7 to 10 | 52 | 50% | 58% of 43 |
+| 10 to 15 | 59 | 85% | 94% of 51 |
+| 15 to 25 | 65 | 77% | 93% of 45 |
+| above 25 | 179 | 94% | 100% of 137 |
+
+- **False alarms.** 14 of the 600 untouched stars (2.3%) show an event, the
+  strongest at SNR 13. Before the ramp test it was 97 (16%), most of them
+  the generator's instrumental ramps. The test set ramps aside on 87
+  stars and lost 8 of the 309 planets found without it.
+- **The SNR is the one the search can reach.** It is the transit's mean
+  depth over the error of a box of its true duration at its true time, with
+  the detrended light curve's scatter and red-noise factor. The white-noise
+  SNR of the same transits is twice as high (median), because these stars
+  also carry red noise; binned by that, recovery would look far worse than
+  the search is.
+- **Long transits are the main loss above SNR 10.** The longest box is 10.8
+  hours, under the 0.75-day spline knot spacing on purpose (see "Why the
+  knot spacing has a floor" above). A longer transit is both longer than
+  every box and partly absorbed by the detrender: on a 400-star subset,
+  transits longer than 12 hours kept a median third of their depth.
+- **Duos.** 66 planets have two transits in the data. Both were found for
+  29; 27 of those pair into a duo, and the true period is among the allowed
+  aliases for all 27. Without the 20% depth allowance only 20 paired: at
+  high SNR the depth errors are smaller than the few per cent that
+  detrending and cadence sampling put between two transits of one planet.
+
 ### Centroid test: is the dip on the target?
 
 The largest astrophysical false-positive class in real TESS data is a
@@ -662,9 +749,12 @@ the transit.
 `SYN-000935` (P = 9.0 d, 3 transits) are both missed at the search stage. With a
 27.4-day baseline, a 10-day planet contributes at most three events, the folding
 gain is `sqrt(3)`, and the BLS peak is not distinguishable from the alias forest.
-Single-transit events are excluded by construction — the period grid is capped at
-half the baseline, because a single event cannot be confirmed as periodic. Real
-surveys solve this by stacking sectors, not by better statistics on one.
+Single-transit events are excluded from the periodic search by construction: the
+period grid is capped at half the baseline, because a single event cannot be
+confirmed as periodic. Real surveys solve this by stacking sectors, not by better
+statistics on one. `vet` now also lists lone and paired dips from a separate
+single-event search (see "Single and duo transits" above), but the classifier and
+these numbers do not use it.
 
 **3. Grazing, V-shaped transits.** `SYN-001633` (b = 0.94) and `SYN-000250`
 (b = 0.92) are both missed. A grazing planet produces exactly the V-shaped,
@@ -802,17 +892,20 @@ transit-detection/
 │   ├── preprocess.py           # robust spline + rotation detrending
 │   ├── features.py             # BLS search and vetting statistics
 │   ├── search.py               # iterative multi-planet search
+│   ├── single.py               # single and duo transits, found without folding
 │   ├── centroid.py             # difference-image and centroid-motion tests
 │   ├── model.py                # split, baselines, training, threshold, save/load
 │   ├── evaluate.py             # PR curves, AP, confusion matrix, failure analysis
 │   ├── benchmark.py            # the trained model scored on real TOI dispositions
 │   ├── vet.py                  # python -m transitml.vet: one star, one page
+│   ├── single_benchmark.py     # injection-recovery for lone transits
 │   └── plots.py                # figures (matplotlib Agg, no display)
-├── tests/                      # 270 tests, ~3 min
+├── tests/                      # 296 tests, ~3 min
 │   ├── test_generator.py       # imbalance is exact; injected physics is consistent
 │   ├── test_preprocess.py      # depth preservation; why the median was rejected
 │   ├── test_features.py        # recovery vs SNR; the vetting statistics fire
 │   ├── test_search.py          # two planets found; noise yields nothing
+│   ├── test_single.py          # lone and duo transits found; ramps and noise are not
 │   ├── test_stitch.py          # sectors joined; marginal pair becomes a detection
 │   ├── test_evaluation.py      # no test-set leakage into threshold or metrics
 │   ├── test_injection.py       # injection is exact, leaves noise alone, runs offline

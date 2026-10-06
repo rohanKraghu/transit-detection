@@ -1,6 +1,6 @@
 """How often does the single-event search find a lone transit, and how often does it invent one?
 
-    python -m transitml.single_benchmark            # 1200 curves, ~5 minutes on 4 cores
+    python -m transitml.single_benchmark            # 1200 curves, ~30 s on 4 cores
 
 Half of the variable stars from the synthetic generator get one long-period
 planet, drawn from the same physics as the main population but with periods
