@@ -180,7 +180,9 @@ tr.detail td { background: var(--bg); white-space: normal; text-align: left; pad
 /* The table can be wider than the page; keep the detail inside the visible part of it. */
 .detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px;
   position: sticky; left: 16px; width: calc(var(--wrap-width, 100%) - 32px); }
-.reason { display: grid; grid-template-columns: minmax(150px, 1fr) 120px 52px; gap: 8px; align-items: center; margin: 3px 0; }
+/* Narrow enough for the four-column detail grid a fitted star gets. */
+.reason { display: grid; grid-template-columns: minmax(0, 1fr) minmax(48px, 96px) 44px; gap: 8px; align-items: center; margin: 3px 0; }
+.reason > span:first-child { overflow-wrap: anywhere; }
 .reason .track { position: relative; height: 10px; background: var(--grid); border-radius: 2px; }
 .reason .track i { position: absolute; top: 0; height: 100%; border-radius: 2px; }
 .reason .track .mid { position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--neutral); }
