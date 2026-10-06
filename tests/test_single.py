@@ -121,3 +121,16 @@ def test_results_serialise_to_plain_numbers():
     result = search_single_events(box_events([(4.1, 0.2, 2.5e-3), (22.1, 0.2, 2.5e-3)]))
     text = json.dumps(result.to_dict())
     assert '"allowed_periods"' in text and '"min_period"' in text
+
+
+def test_the_benchmark_runs_end_to_end(tmp_path):
+    import json
+
+    from transitml import single_benchmark
+
+    argv = ["--n-curves", "8", "--n-jobs", "1", "--results-dir", str(tmp_path)]
+    assert single_benchmark.main(argv) == 0
+    summary = json.loads((tmp_path / "metrics.json").read_text())
+    assert summary["clean_stars"] + summary["injected"] + summary["errors"] == 8
+    assert sum(summary["by_transits_seen"].values()) == summary["injected"]
+    assert "False alarms" in (tmp_path / "report.txt").read_text()
