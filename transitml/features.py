@@ -16,8 +16,10 @@ The features fall into four groups:
 **False-positive discriminants** -- the eclipsing-binary tests
     ``odd_even_sigma``, ``secondary_sigma``, ``half_period_depth_ratio``,
     ``flat_bottom_fraction`` (V-shaped or not), ``harmonic_delta_loglike``.
-    The two significances are divided by the red-noise ``beta`` (floored at 1),
-    so correlated noise cannot masquerade as a binary signature.
+    The two significances are divided by the red-noise ``beta`` or by the
+    event-to-event depth scatter ratio, whichever is larger (floored at 1), so
+    correlated noise and inconsistent events cannot masquerade as a binary
+    signature.
 
 **Noise characterisation** -- is the "detection" just correlated noise?
     ``red_noise_beta`` (Pont, Zucker & Queloz 2006), ``log_scatter``,
@@ -267,6 +269,70 @@ def beta_inflation(beta: float) -> float:
     return float(max(beta, 1.0))
 
 
+def event_depths(
+    lc: FlattenedLightCurve, period: float, duration: float, transit_time: float
+) -> tuple[NDArray[np.int_], NDArray[np.float64], NDArray[np.float64]]:
+    """Box depth of every observed event, one event at a time.
+
+    The weighted mean flux inside the box, against the weighted mean of every
+    cadence outside both this box and the one half a period away (so that
+    neither eclipse sits in the other's baseline), with the white-noise error
+    from ``flux_err``: the BLS depth estimate, applied per event.  Pass
+    ``transit_time + period / 2`` for the events at phase 0.5.  Returns
+    ``(epoch numbers, depths, errors)``.
+    """
+    err = np.where(lc.flux_err > 0, lc.flux_err, lc.scatter)
+    weight = 1.0 / np.maximum(err, 1e-12) ** 2
+    epoch = np.round((lc.time - transit_time) / period).astype(int)
+    offset = lc.time - transit_time - epoch * period
+    inside = np.abs(offset) < 0.5 * duration
+    outside = ~inside & (np.abs(np.abs(offset) - 0.5 * period) >= 0.5 * duration)
+    empty = np.array([], dtype=float)
+    if not inside.any() or not outside.any():
+        return np.array([], dtype=int), empty, empty
+    baseline = float(np.sum(weight[outside] * lc.flux[outside]) / np.sum(weight[outside]))
+    epochs = np.unique(epoch[inside])
+    depths, errors = np.empty(epochs.size), np.empty(epochs.size)
+    for i, k in enumerate(epochs):
+        sel = inside & (epoch == k)
+        total = float(np.sum(weight[sel]))
+        depths[i] = baseline - float(np.sum(weight[sel] * lc.flux[sel])) / total
+        errors[i] = 1.0 / np.sqrt(total)
+    return epochs, depths, errors
+
+
+def depth_scatter_ratio(
+    epochs: NDArray[np.int_],
+    depths: NDArray[np.float64],
+    errors: NDArray[np.float64],
+    *,
+    by_parity: bool,
+) -> float:
+    """Birge ratio ``sqrt(chi2 / dof)`` of per-event depths about their mean.
+
+    1 when the events agree to within their white-noise errors.  Above 1 when
+    they scatter more than that: red noise on the transit timescale, a
+    ``flux_err`` that understates the real scatter, stellar pulsation, or the
+    way a 30-minute cadence samples the ingress differently in every event.
+    Each of these makes a difference between two groups of events look more
+    significant than it is, by this factor.
+
+    With ``by_parity``, odd and even events are each compared with their own
+    mean, so an alternating depth, the binary signature itself, does not count
+    as scatter.  NaN with fewer than two degrees of freedom.
+    """
+    groups = [epochs % 2 == 0, epochs % 2 == 1] if by_parity else [np.ones(epochs.size, bool)]
+    chi2, dof = 0.0, 0
+    for group in groups:
+        if not group.any():
+            continue
+        weight = 1.0 / errors[group] ** 2
+        mean = float(np.sum(weight * depths[group]) / np.sum(weight))
+        chi2 += float(np.sum(weight * (depths[group] - mean) ** 2))
+        dof += int(group.sum()) - 1
+    return float(np.sqrt(chi2 / dof)) if dof >= 2 else float("nan")
+
+
 def extract_features(
     lc: FlattenedLightCurve, config: BLSConfig | None = None
 ) -> dict[str, float]:
@@ -321,9 +387,25 @@ def extract_features(
     # curve that mask returns beta ~ 1.5-2.4.  Excluding the secondary window
     # stops a real secondary eclipse from inflating the beta that is then used
     # to discount it.
+    #
+    # The events themselves are the other check on those error bars.  Each
+    # binary test compares groups of events (odd with even, phase 0.5 with
+    # flat), so it is overstated by however much more the events scatter
+    # than their white-noise errors allow.  On real TESS photometry of bright
+    # hot Jupiters that factor is 2-7 even after a clean detrend, and without
+    # it confirmed planets read as 10-40 sigma odd/even "binaries".
     beta = red_noise_beta(lc, duration, in_transit)
     noise_mask = (np.abs(phase) < duration) | (np.abs(np.abs(phase) - 0.5 * period) < duration)
     inflation = beta_inflation(red_noise_beta(lc, duration, noise_mask))
+    primary_ratio = depth_scatter_ratio(
+        *event_depths(lc, period, duration, transit_time), by_parity=True
+    )
+    secondary_ratio = depth_scatter_ratio(
+        *event_depths(lc, period, duration, transit_time + 0.5 * period), by_parity=False
+    )
+    # Both ratios are floored at 1 and NaN-safe, exactly like beta.
+    odd_even_inflation = max(inflation, beta_inflation(primary_ratio))
+    secondary_inflation = max(inflation, beta_inflation(secondary_ratio))
     odd_even_raw = _pair_sigma(stats_dict["depth_odd"], stats_dict["depth_even"])
     secondary_raw = float(sec_value / sec_err) if sec_err > 0 else np.nan
 
@@ -354,8 +436,8 @@ def extract_features(
         if n_transits
         else np.nan,
         # --- false-positive discriminants ---
-        "odd_even_sigma": odd_even_raw / inflation,
-        "secondary_sigma": secondary_raw / inflation,
+        "odd_even_sigma": odd_even_raw / odd_even_inflation,
+        "secondary_sigma": secondary_raw / secondary_inflation,
         "half_period_depth_ratio": float(half_depth / depth) if depth != 0 else np.nan,
         "flat_bottom_fraction": flat_bottom_fraction(lc, period, duration, transit_time),
         "harmonic_delta_loglike": harmonic_dll,
