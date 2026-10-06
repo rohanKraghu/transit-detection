@@ -80,6 +80,12 @@ class PlanetConfig:
     impact_parameter_max: float = 0.95
     #: Extra depth from limb darkening relative to the geometric (Rp/Rs)^2.
     limb_darkening_boost: float = 1.18
+    #: The planet's occultation: reflected light at this geometric albedo
+    #: (Bond albedo 1.5 times it, a Lambert sphere) plus dayside emission
+    #: with this heat-redistribution factor, from 1/4 (heat spread evenly
+    #: over the planet) to 2/3 (none).  Typical of hot Jupiters in TESS.
+    geometric_albedo: float = 0.1
+    heat_redistribution: float = 0.5
 
 
 @dataclass(frozen=True)
