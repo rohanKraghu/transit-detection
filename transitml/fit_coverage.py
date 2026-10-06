@@ -12,8 +12,9 @@ Every injection is run twice, with the same planet on the same time grid:
               directly: a test of the fitter alone.
 ``pipeline``  the transit multiplied into a synthetic variable star from the
               training generator (rotation, red noise, ramps, flares), then
-              detrended, searched and fitted exactly as ``vet --fit`` does:
-              a test of the whole chain, detrending included.
+              detrended (masked second pass included), searched and fitted
+              exactly as ``vet --fit`` does: a test of the whole chain,
+              detrending included.
 
 A planet counts only if the search finds its period (within 1%); the others
 are reported but not scored, since a fit of the wrong signal has no truth to
@@ -38,7 +39,7 @@ from joblib import Parallel, delayed
 
 from .config import default_config
 from .data.base import LightCurve
-from .features import run_bls
+from .features import detrend_and_search, run_bls
 from .fit import (
     FitConfig,
     FitError,
@@ -50,7 +51,7 @@ from .fit import (
     mid_transit_depth,
     u_to_q,
 )
-from .preprocess import FlattenedLightCurve, flatten
+from .preprocess import FlattenedLightCurve
 
 #: Parameters scored, in display order.
 SCORED: tuple[str, ...] = ("period", "t0", "k", "b", "rho_star", "t14_hours", "depth_ppm")
@@ -105,9 +106,12 @@ def truth_values(planet: dict[str, float], t0_reference: float) -> dict[str, flo
     }
 
 
-def _score(flat: FlattenedLightCurve, planet: dict[str, float], fit_config: FitConfig, bls_config):
-    """Search, fit and score one curve; ``None`` if the search missed the planet."""
-    found = run_bls(flat, bls_config)
+def _score(
+    flat: FlattenedLightCurve, planet: dict[str, float], fit_config: FitConfig, bls_config,
+    found: dict[str, Any] | None = None,
+):
+    """Search (unless ``found`` is that search), fit and score one curve."""
+    found = found if found is not None else run_bls(flat, bls_config)
     if abs(found["period"] / planet["period"] - 1.0) > 0.01:
         return {"recovered": False, "bls_period": float(found["period"])}
     try:
@@ -176,7 +180,8 @@ def run_injection(index: int, seed: int, fit_config: FitConfig) -> dict[str, Any
     out = {"index": index, "planet": planet, "sigma_ppm": 1e6 * sigma}
     out["white"] = _score(white, planet, fit_config, config.bls)
     try:
-        out["pipeline"] = _score(flatten(injected, config.preprocess), planet, fit_config, config.bls)
+        flat, found = detrend_and_search(injected, config.preprocess, config.bls)
+        out["pipeline"] = _score(flat, planet, fit_config, config.bls, found)
     except ValueError as exc:
         out["pipeline"] = {"recovered": False, "error": str(exc)}
     return out
@@ -186,8 +191,7 @@ def example_fit(index: int, seed: int, fit_config: FitConfig):
     """The whole-chain fit of injection ``index``, with the host's density and radius."""
     config, star, planet, dip, _ = _host_and_planet(index, seed)
     injected = LightCurve(star.target_id, star.time, star.flux * dip, star.flux_err, meta=star.meta)
-    flat = flatten(injected, config.preprocess)
-    found = run_bls(flat, config.bls)
+    flat, found = detrend_and_search(injected, config.preprocess, config.bls)
     rho = star.meta["rho_star_cgs"]
     return fit_transit(
         flat, found["period"], found["transit_time"], found["duration"], found["depth"],

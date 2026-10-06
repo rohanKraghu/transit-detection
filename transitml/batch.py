@@ -55,7 +55,7 @@ import numpy as np
 from joblib import Parallel, delayed
 from scipy.special import expit, logit
 
-from .config import MultiPlanetConfig, PreprocessConfig, default_config
+from .config import BLSConfig, MultiPlanetConfig, PreprocessConfig, default_config
 from .data.base import LightCurve
 from .data.files import read_light_curves
 from .data.injection import load_curves, read_target_list, save_curves
@@ -64,8 +64,8 @@ from .model import SavedModel, load_model
 
 #: Bumped when a cached row's layout changes, so old rows are recomputed.
 BATCH_FORMAT_VERSION = 1
-#: The same for cached fits.
-FIT_FORMAT_VERSION = 1
+#: The same for cached fits (2: fitted on the masked second-pass detrend).
+FIT_FORMAT_VERSION = 2
 #: Fitted quantities kept per star, as (median, lower, upper) of the 68% interval.
 FIT_KEPT: tuple[str, ...] = (
     "period", "t0", "k", "b", "rho_star", "t14_hours", "depth_ppm", "rp_earth",
@@ -238,11 +238,15 @@ def fit_key(star_key: str, config: FitConfig) -> str:
 
 
 def fit_row(
-    lc: LightCurve, row: dict[str, Any], preprocess: PreprocessConfig, config: FitConfig
+    lc: LightCurve,
+    row: dict[str, Any],
+    preprocess: PreprocessConfig,
+    bls: BLSConfig,
+    config: FitConfig,
 ) -> dict[str, Any]:
     """Fit one star's primary signal; a failure is recorded, never raised."""
+    from .features import flatten_masked
     from .fit import default_exposure_minutes, fit_transit, stellar_priors_from_meta
-    from .preprocess import flatten
 
     out: dict[str, Any] = {"key": fit_key(row["key"], config), "star_key": row["key"], "status": "ok"}
     started = time.perf_counter()
@@ -251,7 +255,8 @@ def fit_row(
             config = replace(config, exposure_minutes=default_exposure_minutes(lc.meta))
         density, radius = stellar_priors_from_meta(lc.meta)
         fit = fit_transit(
-            flatten(lc.finite(), preprocess),
+            # Detrended as vet detrends it, the primary signal masked.
+            flatten_masked(lc.finite(), preprocess, bls),
             row["period_days"], row["epoch"], row["duration_hours"] / 24.0,
             row["depth_ppm"] / 1e6, config,
             stellar_density=density, stellar_radius=radius,
@@ -303,7 +308,7 @@ def _fit_candidates(
               f"{len(todo)} to fit")
     try:
         if todo:
-            jobs = (delayed(fit_row)(by_key[r["key"]], r, model.preprocess, config) for r in todo)
+            jobs = (delayed(fit_row)(by_key[r["key"]], r, model.preprocess, model.bls, config) for r in todo)
             stream = Parallel(n_jobs=n_jobs, return_as="generator_unordered")(jobs)
             for done, fitted in enumerate(stream, start=1):
                 cache.add(fitted)
