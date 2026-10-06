@@ -138,7 +138,9 @@ def _json_safe(value: Any) -> Any:
     return value
 
 
-def feature_contributions(model: SavedModel, x: np.ndarray) -> list[dict[str, float | str]]:
+def feature_contributions(
+    model: SavedModel, x: np.ndarray
+) -> list[dict[str, float | str]]:
     """Score change from replacing each feature, one at a time, by its training median.
 
     ``delta = score(x) - score(x with feature j set to its median)``: positive
@@ -215,7 +217,9 @@ def write_report(
     from .plots import plot_vetting_report  # matplotlib only when a figure is drawn
 
     out_dir = Path(out_dir)
-    stem = stem or "vet_" + "".join(ch if ch.isalnum() else "_" for ch in result.target_id)
+    stem = stem or "vet_" + "".join(
+        ch if ch.isalnum() else "_" for ch in result.target_id
+    )
     png = plot_vetting_report(lc.finite(), flat, result, out_dir / f"{stem}.png")
     return png, write_json(result, out_dir / f"{stem}.json")
 
@@ -258,7 +262,9 @@ def load_target_curves(target: str, args: argparse.Namespace) -> list[LightCurve
     )
     curves = list(source)
     if not curves:
-        raise SystemExit(f"{tic}: no light curve found on MAST (or the download failed)")
+        raise SystemExit(
+            f"{tic}: no light curve found on MAST (or the download failed)"
+        )
     return curves
 
 
@@ -270,33 +276,53 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
-        "target", help="A .csv or .npz light-curve file, or a TIC ID (downloaded from MAST)."
+        "target",
+        help="A .csv or .npz light-curve file, or a TIC ID (downloaded from MAST).",
     )
     parser.add_argument(
-        "--model", type=Path, default=Path("results/model.joblib"),
+        "--model",
+        type=Path,
+        default=Path("results/model.joblib"),
         help="Model file written by run_pipeline.py.",
     )
     parser.add_argument(
-        "--out-dir", type=Path, default=Path("results/vet"), help="Where the report lands."
+        "--out-dir",
+        type=Path,
+        default=Path("results/vet"),
+        help="Where the report lands.",
     )
     parser.add_argument(
-        "--target-id", default=None, help="Which star to take from a multi-star npz cache."
-    )
-    parser.add_argument("--sector", type=int, default=None, help="TESS sector (TIC input).")
-    parser.add_argument("--author", default="TESS-SPOC", help="Light-curve pipeline (TIC input).")
-    parser.add_argument(
-        "--exposure-time", type=int, default=1800, help="Cadence in seconds (TIC input)."
+        "--target-id",
+        default=None,
+        help="Which star to take from a multi-star npz cache.",
     )
     parser.add_argument(
-        "--stitch", action="store_true",
+        "--sector", type=int, default=None, help="TESS sector (TIC input)."
+    )
+    parser.add_argument(
+        "--author", default="TESS-SPOC", help="Light-curve pipeline (TIC input)."
+    )
+    parser.add_argument(
+        "--exposure-time",
+        type=int,
+        default=1800,
+        help="Cadence in seconds (TIC input).",
+    )
+    parser.add_argument(
+        "--stitch",
+        action="store_true",
         help="Join every sector of the star into one curve before vetting.",
     )
     parser.add_argument(
-        "--max-signals", type=int, default=MultiPlanetConfig.max_signals,
+        "--max-signals",
+        type=int,
+        default=MultiPlanetConfig.max_signals,
         help="Most signals the iterative search reports.",
     )
     parser.add_argument(
-        "--min-sde", type=float, default=MultiPlanetConfig.min_sde,
+        "--min-sde",
+        type=float,
+        default=MultiPlanetConfig.min_sde,
         help="Significance a signal needs to be listed.",
     )
     return parser.parse_args(argv)
@@ -309,7 +335,9 @@ def main(argv: list[str] | None = None) -> int:
         try:
             curves = [stitch_light_curves(curves)]
         except ValueError as exc:
-            raise SystemExit(f"cannot stitch: {exc}; pick one star with --target-id") from exc
+            raise SystemExit(
+                f"cannot stitch: {exc}; pick one star with --target-id"
+            ) from exc
     if len(curves) != 1:
         found = ", ".join(
             f"{lc.target_id} (sector {lc.meta.get('sector', '?')})" for lc in curves
@@ -324,7 +352,9 @@ def main(argv: list[str] | None = None) -> int:
     result, flat = vet_light_curve(lc, model, multi)
     png, js = write_report(lc, flat, result, args.out_dir)
 
-    print(f"{result.target_id}: score {result.score:.3f}, threshold {result.threshold:.3f}")
+    print(
+        f"{result.target_id}: score {result.score:.3f}, threshold {result.threshold:.3f}"
+    )
     print(f"  verdict: {result.verdict}")
     for cand in result.candidates:
         print(
