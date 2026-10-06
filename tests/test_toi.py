@@ -128,3 +128,9 @@ def test_training_stars_are_excluded(exofop):
     targets, counts = select_benchmark_targets(exofop, [14], exclude_tics={100})
     assert [t.tic for t in targets] == [200]
     assert counts["in_training_set"] == 1
+
+
+def test_a_zero_period_is_unknown(tmp_path):
+    path = tmp_path / "single.csv"
+    path.write_text("TIC ID,TFOPWG Disposition,Period (days)\n1,CP,0\n2,CP,-1\n")
+    assert all(math.isnan(t.period) for t in read_toi_table(path))

@@ -190,7 +190,8 @@ def read_toi_table(path: str | Path) -> list[TOI]:
                 tic=tic,
                 toi=(get("toi") or "").strip(),
                 disposition=(get("disposition") or "").strip().upper(),
-                period=_float(get("period")),
+                # Single-transit TOIs carry a period of 0: unknown, not zero.
+                period=_float(get("period")) if _float(get("period")) > 0 else math.nan,
                 epoch_bjd=_float(get("epoch_bjd")),
                 duration_hours=_float(get("duration_hours")),
                 depth_ppm=_float(get("depth_ppm")),
