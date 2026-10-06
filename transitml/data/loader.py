@@ -85,6 +85,9 @@ def process_light_curve(
     flat = flatten(lc, preprocess)
     feats = extract_features(flat, bls)
     meta = dict(lc.meta)
+    if lc.label is not None:
+        # A real curve's label lives on the curve, not in generator metadata.
+        meta.setdefault("label", int(lc.label))
     meta["target_id"] = lc.target_id
     meta["n_cadences"] = lc.n_cadences
     meta["sigma_flat"] = flat.scatter

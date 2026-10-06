@@ -15,7 +15,7 @@ detrends, searches and scores one target and writes a one-page report.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python run_pipeline.py            # ~2 min on 4 cores
-pytest                            # ~2.5 min, 248 tests
+pytest                            # ~3 min, 282 tests
 ```
 
 It writes `results/metrics.json`, `results/report.txt`, the trained model
@@ -162,87 +162,6 @@ odd/even and secondary-eclipse tests exist in real vetting pipelines, and it is
 why those two features turn out to be the model's second and third most
 important.
 
-### Designed for real data to drop in
-
-`transitml/data/base.py` defines `LightCurveSource`; nothing downstream of it
-knows whether a curve was simulated or downloaded. There are two
-implementations:
-
-- `transitml/data/synthetic.py` — `SyntheticTESSSource`, used by the demo.
-- `transitml/data/mast.py` — `MASTLightCurveSource`, which pulls real TESS or
-  Kepler photometry from MAST through `lightkurve`. It implements the same
-  interface. The synthetic demo does not use it, because real light curves
-  need labels; the real-photometry injection run below and the `vet` command
-  do. Pointing the pipeline at it directly looks like this:
-
-```python
-source = MASTLightCurveSource(
-    targets=[("TIC 307210830", 1), ("TIC 100100827", 0), ...],
-    mission="TESS", author="SPOC", exposure_time=1800,
-)
-```
-
-The same detrending, features, model and evaluation then run unchanged. Labels
-for real data are the hard part, and `mast.py` documents the two honest options
-(confirmed-planet catalogues, which inherit the selection function of the
-pipelines we are trying to beat; or injection-recovery into real out-of-transit
-photometry, which is what the mission teams actually do).
-
-### Injection-recovery on real photometry
-
-The second option is implemented. `transitml/data/injection.py` takes real
-light curves of stars with no known planet and injects the same planet and
-eclipsing-binary population the synthetic generator draws, from the same
-functions, at the same exact class rates. Uninjected curves come back
-byte-for-byte untouched, so every curve carries real TESS noise and only the
-labels are constructed. Eclipses are multiplied into the flux, so aperture
-contamination dilutes them as it would a real event.
-
-```bash
-pip install lightkurve
-python run_pipeline.py --inject-into targets.txt --exclude-tois toi.csv --sector 14
-```
-
-- `targets.txt` is a list of TIC IDs (one per line, or a CSV with a `TIC ID`
-  column), for example the TESS-SPOC full-frame-image targets of one sector.
-- `toi.csv` is the TOI table exported from ExoFOP. Every listed TIC is
-  dropped, because a known host left in would become a mislabelled negative.
-  Hosts of planets nobody has found yet cannot be excluded; at a few per cent
-  of stars they bias precision slightly downward, which is the safe direction.
-- One sector per star is used, so a star cannot appear in both splits.
-- Downloaded curves are cached to `results/real_injection/base_curves.npz`;
-  later runs read the cache and need no network, so a real-data result is as
-  reproducible as the synthetic one. `--n-curves` caps the target list.
-- Results and figures go to `results/real_injection/` and
-  `figures/real_injection/`, never over the synthetic headline.
-
-**Result on real photometry (TESS sector 14).** 2,800 TESS-SPOC 30-minute
-FFI curves, drawn at random from the sector's target list after removing every
-TOI host (`data/real_injection/`), with 112 planets and 168 eclipsing binaries
-injected. Held-out set: 980 curves, 39 planets. Full report in
-[`results/real_injection/report.txt`](results/real_injection/report.txt).
-
-| | Synthetic | Real sector 14 |
-|---|---|---|
-| Model average precision | 0.80 | **0.51** [0.44, 0.60] |
-| Best baseline (BLS SNR) | | 0.10 |
-| Held-out precision / recall | | 0.48 / 0.54 |
-| Precision of top 20 | | 0.75 |
-
-The prediction held: real noise costs a lot of average precision. Most of
-the loss is at low SNR, where the search itself stops finding the period
-(30% recovered below SNR 7, 83% at SNR 7 to 12, 16 of 17 above 12), and on the
-false-positive side, where 15 of the 23 false positives at the operating
-point are real stars with nothing injected rather than binaries.
-
-To reproduce (the TOI table is the NASA Exoplanet Archive `toi` table, the
-same list ExoFOP serves):
-
-```bash
-python run_pipeline.py --inject-into data/real_injection/targets_s0014.txt \
-    --exclude-tois data/real_injection/toi.csv --sector 14 --download-workers 16
-```
-
 ### Structured systematics in the synthetic sector
 
 The noise above is drawn star by star, so nothing in it is shared between
@@ -335,6 +254,179 @@ every star's sampling, and the default model scores 0.63 to 0.81 across
 these three seeds. Both spreads are wider than the bootstrap interval of a
 single run, so one synthetic sector is not the number to expect, with or
 without systematics.
+
+### Designed for real data to drop in
+
+`transitml/data/base.py` defines `LightCurveSource`; nothing downstream of it
+knows whether a curve was simulated or downloaded. There are two
+implementations:
+
+- `transitml/data/synthetic.py` — `SyntheticTESSSource`, used by the demo.
+- `transitml/data/mast.py` — `MASTLightCurveSource`, which pulls real TESS or
+  Kepler photometry from MAST through `lightkurve`. It implements the same
+  interface. The synthetic demo does not use it, because real light curves
+  need labels; the real-photometry injection run below and the `vet` command
+  do. Pointing the pipeline at it directly looks like this:
+
+```python
+source = MASTLightCurveSource(
+    targets=[("TIC 307210830", 1), ("TIC 100100827", 0), ...],
+    mission="TESS", author="SPOC", exposure_time=1800,
+)
+```
+
+The same detrending, features, model and evaluation then run unchanged. Labels
+for real data are the hard part, and `mast.py` documents the two honest options
+(confirmed-planet catalogues, which inherit the selection function of the
+pipelines we are trying to beat; or injection-recovery into real out-of-transit
+photometry, which is what the mission teams actually do).
+
+### Injection-recovery on real photometry
+
+The second option is implemented. `transitml/data/injection.py` takes real
+light curves of stars with no known planet and injects the same planet and
+eclipsing-binary population the synthetic generator draws, from the same
+functions, at the same exact class rates. Uninjected curves come back
+byte-for-byte untouched, so every curve carries real TESS noise and only the
+labels are constructed. Eclipses are multiplied into the flux, so aperture
+contamination dilutes them as it would a real event.
+
+```bash
+pip install lightkurve
+python run_pipeline.py --inject-into targets.txt --exclude-tois toi.csv --sector 14
+```
+
+- `targets.txt` is a list of TIC IDs (one per line, or a CSV with a `TIC ID`
+  column), for example the TESS-SPOC full-frame-image targets of one sector.
+- `toi.csv` is the TOI table exported from ExoFOP. Every listed TIC is
+  dropped, because a known host left in would become a mislabelled negative.
+  Hosts of planets nobody has found yet cannot be excluded; at a few per cent
+  of stars they bias precision slightly downward, which is the safe direction.
+- One sector per star is used, so a star cannot appear in both splits.
+- Downloaded curves are cached to `results/real_injection/base_curves.npz`;
+  later runs read the cache and need no network, so a real-data result is as
+  reproducible as the synthetic one. `--n-curves` caps the target list.
+- Results and figures go to `results/real_injection/` and
+  `figures/real_injection/`, never over the synthetic headline.
+
+**Result on real photometry (TESS sector 14).** 2,800 TESS-SPOC 30-minute
+FFI curves, drawn at random from the sector's target list after removing every
+TOI host (`data/real_injection/`), with 112 planets and 168 eclipsing binaries
+injected. Held-out set: 980 curves, 39 planets. Full report in
+[`results/real_injection/report.txt`](results/real_injection/report.txt).
+
+| | Synthetic | Real sector 14 |
+|---|---|---|
+| Model average precision | 0.80 | **0.51** [0.44, 0.60] |
+| Best baseline (BLS SNR) | | 0.10 |
+| Held-out precision / recall | | 0.48 / 0.54 |
+| Precision of top 20 | | 0.75 |
+
+The prediction held: real noise costs a lot of average precision. Most of
+the loss is at low SNR, where the search itself stops finding the period
+(30% recovered below SNR 7, 83% at SNR 7 to 12, 16 of 17 above 12), and on the
+false-positive side, where 15 of the 23 false positives at the operating
+point are real stars with nothing injected rather than binaries.
+
+To reproduce (the TOI table is the NASA Exoplanet Archive `toi` table, the
+same list ExoFOP serves):
+
+```bash
+python run_pipeline.py --inject-into data/real_injection/targets_s0014.txt \
+    --exclude-tois data/real_injection/toi.csv --sector 14 --download-workers 16
+```
+
+### Benchmark against real labels: TOI dispositions
+
+Injection-recovery keeps the noise real but still draws the signals from this
+project's own planet and binary models. The other honest test is the one a
+vetting tool faces in use: real TESS signals that follow-up observers have
+since resolved. `--benchmark-tois` takes the ExoFOP TOI table, labels each star
+by its TFOPWG disposition, and scores the trained model on it **unchanged**,
+threshold included:
+
+| Disposition | Label |
+|---|---|
+| CP (confirmed planet), KP (known planet) | 1 |
+| FP (false positive), FA (false alarm) | 0 |
+| PC, APC (still open) | left out |
+
+A star is a planet host if any of its TOIs is CP or KP, and a negative only if
+every TOI on it is FP or FA. Each star is scored on one sector (the first of
+`--benchmark-sectors` it was observed in), and every star the model was
+trained on is removed first. Code in `transitml/data/toi.py` and
+`transitml/benchmark.py`; the table used is a 2026-10-06 ExoFOP snapshot in
+`data/toi_benchmark/`.
+
+Two things make these numbers different in kind from the ones above. Every
+star here is a TOI, so **both classes already passed a TESS pipeline's
+detection and automated vetting**: the false positives are the hard ones that
+got through, many of them eclipsing binaries on or near the target, not
+random variable stars. And the catalogue, not the sky, sets the positive rate
+(about 50% here), so precision does not transfer to a survey. The two numbers that do
+transfer are **recall on confirmed planets** and **the fraction of known false
+positives rejected** at the frozen threshold.
+
+**Result (TESS sectors 14 to 26, 30-minute TESS-SPOC curves).** 1,003 labelled
+TOI hosts were observed in those sectors; MAST has a TESS-SPOC light curve for
+746 of them (376 CP/KP, 370 FP/FA). Full reports:
+[`results/real_injection/toi_benchmark.txt`](results/real_injection/toi_benchmark.txt)
+and [`results/toi_benchmark.txt`](results/toi_benchmark.txt).
+
+| Model trained on | Planets kept | False positives rejected | AP (chance 0.50) | ROC-AUC | Top 20 |
+|---|---|---|---|---|---|
+| Injections into real sector 14 noise | 0.55 | 0.62 | **0.62** [0.59, 0.64] | 0.59 | 0.85 |
+| Synthetic light curves | 0.57 | 0.59 | 0.61 [0.58, 0.63] | 0.59 | 0.65 |
+| Baseline: rank by BLS SNR | | | 0.60 [0.57, 0.63] | 0.58 | 0.65 |
+
+![TOI benchmark](figures/real_injection/05_toi_benchmark.png)
+
+**The model barely separates confirmed planets from TOI false positives.**
+It beats ranking by BLS signal-to-noise in only 76% of paired bootstrap
+resamples, and the table of what it keeps by catalogued depth shows why: the
+fraction of planets kept and the fraction of false positives kept rise
+together, from 0.28 and 0.16 below 1000 ppm to 0.77 and 0.71 at 6000 to 10000
+ppm. On this population the model is mostly a signal-strength ranking. Its
+top 20 are 85% real planets (65% for the synthetic-trained model and for the
+BLS SNR ranking), so the most confident end of the ranking is still useful.
+Training on real noise rather than synthetic noise makes no difference here
+that the intervals can resolve.
+
+Two causes are visible in the report, and they point at the next work:
+
+- **The odd/even test fails at high SNR on real data.** The confirmed planets
+  the model rejects with the most confidence are bright hot Jupiters (TOI
+  1151.01 at SNR 1017, TOI 1431.01, TOI 1682.01), and they carry odd/even
+  depth differences of 8 to 37 sigma even after the red-noise beta correction.
+  At SNR in the hundreds, a fraction of a per cent of systematic depth
+  difference between alternate transits is many sigma. The training data had
+  no such systematics, so the model learned that a large odd/even sigma means
+  a binary. A floor on the odd/even and secondary uncertainty proportional to
+  the depth would fix this, and is a change to `features.py`.
+- **Blended binaries look like planets in a light curve.** The false positives
+  the model keeps have median odd/even and secondary significances of 0.8 and
+  0.2 sigma, indistinguishable from the planets'. That is what a background
+  eclipsing binary diluted by a brighter neighbour looks like.
+  Separating them needs pixel data. `vet --centroids` now runs a centroid
+  test from target pixel files (see "Centroid test" below), but the model and
+  this benchmark see light curves only.
+
+The search is the other ceiling: BLS recovers the catalogued period for 73% of
+planets in one sector (88% above TOI SNR 40, 32% below 10), and when it
+misses the period the planet is kept 8% of the time.
+
+To reproduce (downloads about 750 curves the first time and caches them to
+`toi_curves.npz` beside the results):
+
+```bash
+python run_pipeline.py --inject-into data/real_injection/targets_s0014.txt \
+    --exclude-tois data/real_injection/toi.csv --sector 14 \
+    --benchmark-tois data/toi_benchmark/exofop_toi_2026-10-06.csv --benchmark-sectors 14-26
+```
+
+The same flags work after the synthetic run (drop `--inject-into` and
+`--exclude-tois`). A fresh table comes from
+`https://exofop.ipac.caltech.edu/tess/download_toi.php?output=csv`.
 
 ---
 
@@ -737,15 +829,21 @@ reported number while corrupting the test rows does.
 
 **What it does not establish.** The noise model is the weak point, and it is
 weak in the direction that flatters the result. Real TESS systematics are
-*structured* — scattered light from the Earth and Moon on a 13.7-day orbital
+*structured*: scattered light from the Earth and Moon on a 13.7-day orbital
 cycle, focus changes with spacecraft thermal state, pointing jitter correlated
 across a whole camera, background contamination from neighbouring stars in a
-21-arcsecond pixel — and none of that is a stationary 1/f process. My red noise
-is generated as a power law with random phases, so it has no features the
-detrending can fail on in a correlated way across targets, and a robust spline
-handles it more easily than it would handle real data. I would expect average
-precision to drop substantially on real photometry, and the drop to come mostly
-from the false-positive side.
+21-arcsecond pixel. None of that is a stationary 1/f process. My default red
+noise is generated as a power law with random phases, star by star, so it has
+no features the detrending can fail on in a correlated way across targets, and
+a robust spline handles it more easily than it would handle real data.
+`--systematics` adds the shared, spacecraft-driven part (see "Structured
+systematics in the synthetic sector" above); on paired controls it costs 0.02
+to 0.12 in average precision and 4 to 16 of the 96 planets' periods in the
+search, mostly through momentum dumps. Its shapes are simple parametric forms
+rather than measurements from real sectors, and it still leaves out
+contamination from neighbours. I would expect average precision to drop
+substantially on real photometry, and the drop to come mostly from the
+false-positive side.
 
 Three further gaps:
 
@@ -761,7 +859,9 @@ Three further gaps:
 - **Labels.** Ground truth is known by construction here. On real data it has to
   come from a catalogue that inherits the selection function of the pipelines
   being benchmarked against, or from injection-recovery, which only measures
-  completeness and not the false-positive rate.
+  completeness and not the false-positive rate. The TOI benchmark above does
+  the first, and shows the model separates real planets from real TOI false
+  positives only slightly better than a signal-to-noise ranking.
 - **Sample size.** 96 positives in total and 34 in the test set. The bootstrap
   interval on average precision is [0.732, 0.862], roughly ±0.065, so the difference
   between 0.80 and 0.77 is noise, and only the gap to the baselines is
@@ -790,9 +890,10 @@ transit-detection/
 │   ├── physics.py              # Kepler's third law, transit durations
 │   ├── data/
 │   │   ├── base.py             # LightCurve + LightCurveSource interface, stitching
-│   │   ├── synthetic.py        # the generator
+│   │   ├── synthetic.py        # the generator, and sector-wide systematics
 │   │   ├── mast.py             # real TESS/Kepler via lightkurve (same interface)
 │   │   ├── injection.py        # synthetic eclipses injected into real curves
+│   │   ├── toi.py              # TOI table -> per-star CP/KP vs FP/FA labels
 │   │   ├── files.py            # CSV and npz light-curve files
 │   │   ├── tpf.py              # target pixel files: container, npz, lightkurve
 │   │   ├── synthetic_tpf.py    # synthetic pixels: on-target transits and blends
@@ -803,9 +904,10 @@ transit-detection/
 │   ├── centroid.py             # difference-image and centroid-motion tests
 │   ├── model.py                # split, baselines, training, threshold, save/load
 │   ├── evaluate.py             # PR curves, AP, confusion matrix, failure analysis
+│   ├── benchmark.py            # the trained model scored on real TOI dispositions
 │   ├── vet.py                  # python -m transitml.vet: one star, one page
 │   └── plots.py                # figures (matplotlib Agg, no display)
-├── tests/                      # 248 tests, ~2.5 min
+├── tests/                      # 282 tests, ~3 min
 │   ├── test_generator.py       # imbalance is exact; injected physics is consistent
 │   ├── test_preprocess.py      # depth preservation; why the median was rejected
 │   ├── test_features.py        # recovery vs SNR; the vetting statistics fire
@@ -813,6 +915,9 @@ transit-detection/
 │   ├── test_stitch.py          # sectors joined; marginal pair becomes a detection
 │   ├── test_evaluation.py      # no test-set leakage into threshold or metrics
 │   ├── test_injection.py       # injection is exact, leaves noise alone, runs offline
+│   ├── test_systematics.py     # sector systematics are shared, seeded and switchable
+│   ├── test_toi.py             # TOI parsing, per-star labels, sector choice
+│   ├── test_benchmark.py       # the real-label benchmark, offline, from a cache
 │   ├── test_files.py           # CSV and npz input
 │   ├── test_model_io.py        # saved model reloads with threshold and features
 │   ├── test_vet.py             # vet end to end on CSV, npz and a stubbed TIC
@@ -826,7 +931,8 @@ transit-detection/
 ```
 
 `python run_pipeline.py --help` exposes `--seed`, `--n-curves`, `--n-jobs`,
-`--no-figures` and the output directories. Runtime scales linearly in
+`--no-figures`, `--systematics` (with `--systematics-scale` and
+`--systematics-components`) and the output directories. Runtime scales linearly in
 `--n-curves`; the BLS search is the bottleneck and is parallel across curves.
 
 ## Roadmap
@@ -845,12 +951,13 @@ on. Sizes are rough: S is a few hours, M a day or two, L longer.
 - Centroid vetting from target pixel files (`vet --tpf`, `--centroids`):
   a difference-image offset and centroid motion, reported beside the score.
   Checked on synthetic pixels only so far.
+- Benchmark against real TOI dispositions (`--benchmark-tois`; 746 hosts in
+  sectors 14 to 26, AP 0.62 against a chance level of 0.50).
 
 **Planned**
 
 | Item | What it adds | Size |
 | --- | --- | --- |
-| Benchmark against real TOI labels, in review | Precision and recall against ExoFOP dispositions, not only labels known by construction | M |
 | Structured systematics in the generator | 13.7-day scattered light, camera-correlated jitter and focus drift, so the synthetic noise stops flattering the result | M |
 | Single-transit and duo-transit search | Events the period grid excludes by construction today | M |
 | Transit Least Squares and GPU BLS | An alternative search and a faster one; BLS is the runtime bottleneck | M |
