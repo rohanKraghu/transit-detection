@@ -59,6 +59,7 @@ def toi_hosts(small_config):
             toi=f"{900 + i}.01",
             disposition="CP" if label else ("FP" if i % 3 else "FA"),
             period=float(lc.meta["period"]),
+            depth_ppm=float(lc.meta["depth"]) * 1e6,
             snr=float(lc.meta["true_snr"]),
             sectors=(14,),
         )
@@ -250,3 +251,8 @@ def test_training_stars_are_named_for_exclusion(toi_hosts):
     base = [replace(lc, label=None) for lc in curves[:3]]
     source = InjectionSource(base, 0.0, 0.0, seed=1)
     assert run_pipeline.training_tic_ids(source) == {5000, 5001, 5002}
+
+
+def test_depth_table_covers_every_star_with_a_depth(result):
+    assert sum(r["n_planets"] for r in result.by_toi_depth) == result.n_planets
+    assert "by catalogued depth" in format_benchmark_report(result)

@@ -51,6 +51,11 @@ from .model import BASELINES, TrainedModel
 #: discovery pipeline had, so a single sector here sees less than it says.
 TOI_SNR_EDGES: tuple[float, ...] = (0.0, 10.0, 20.0, 40.0, 1e9)
 
+#: Bins of catalogued transit depth, in ppm.  If the planets kept and the false
+#: positives kept rise together with depth, the model is ranking by signal
+#: strength rather than telling the two apart.
+TOI_DEPTH_EDGES_PPM: tuple[float, ...] = (0.0, 1000.0, 3000.0, 6000.0, 10000.0, 1e9)
+
 
 class CurveListSource(LightCurveSource):
     """A fixed list of already-downloaded light curves."""
@@ -176,6 +181,7 @@ class BenchmarkResult:
     search_recovery: dict[str, float]
     planet_recall_given_search: dict[str, float]
     recall_by_toi_snr: list[dict[str, Any]]
+    by_toi_depth: list[dict[str, Any]]
     missed_planets: list[dict[str, Any]] = field(default_factory=list)
     accepted_false_positives: list[dict[str, Any]] = field(default_factory=list)
     labels: NDArray[np.int_] | None = None
@@ -210,6 +216,7 @@ class BenchmarkResult:
             "search_recovery": self.search_recovery,
             "planet_recall_given_search": self.planet_recall_given_search,
             "recall_by_toi_snr": self.recall_by_toi_snr,
+            "by_toi_depth": self.by_toi_depth,
             "missed_planets": self.missed_planets,
             "accepted_false_positives": self.accepted_false_positives,
         }
@@ -221,10 +228,17 @@ def _rate(mask: NDArray[np.bool_], within: NDArray[np.bool_]) -> float:
 
 
 def _row(
-    target: BenchmarkTarget, score: float, bls_period: float, recovered: bool
+    target: BenchmarkTarget,
+    score: float,
+    bls_period: float,
+    recovered: bool,
+    features: Any,
 ) -> dict[str, Any]:
     ref = target.reference
     return {
+        "odd_even_sigma": float(features["odd_even_sigma"]),
+        "secondary_sigma": float(features["secondary_sigma"]),
+        "red_noise_beta": float(features["red_noise_beta"]),
         "target_id": target.target_id,
         "toi": ref.toi,
         "disposition": ref.disposition,
@@ -320,15 +334,31 @@ def benchmark(
             }
         )
 
-    missed = [
-        _row(rows[i], float(scores[i]), float(bls_period[i]), bool(recovered[i]))
-        for i in np.flatnonzero(planets & ~kept)
-    ]
+    toi_depth = np.array([t.reference.depth_ppm for t in rows], dtype=float)
+    depth_rows: list[dict[str, Any]] = []
+    for lo, hi in zip(TOI_DEPTH_EDGES_PPM[:-1], TOI_DEPTH_EDGES_PPM[1:]):
+        in_bin = (toi_depth >= lo) & (toi_depth < hi)
+        depth_rows.append(
+            {
+                "depth_low_ppm": lo,
+                "depth_high_ppm": hi,
+                "n_planets": int((in_bin & planets).sum()),
+                "planets_kept": _rate(kept, in_bin & planets),
+                "n_false_positives": int((in_bin & negatives).sum()),
+                "false_positives_kept": _rate(kept, in_bin & negatives),
+            }
+        )
+
+    feats = dataset.features
+
+    def row(i: int) -> dict[str, Any]:
+        return _row(
+            rows[i], float(scores[i]), float(bls_period[i]), bool(recovered[i]), feats.iloc[i]
+        )
+
+    missed = [row(i) for i in np.flatnonzero(planets & ~kept)]
     missed.sort(key=lambda r: -np.nan_to_num(r["toi_snr"], nan=-1.0))
-    accepted = [
-        _row(rows[i], float(scores[i]), float(bls_period[i]), bool(recovered[i]))
-        for i in np.flatnonzero(negatives & kept)
-    ]
+    accepted = [row(i) for i in np.flatnonzero(negatives & kept)]
     accepted.sort(key=lambda r: -r["model_score"])
 
     return BenchmarkResult(
@@ -366,6 +396,7 @@ def benchmark(
             "period_not_recovered": _rate(kept, planets & has_period & ~recovered),
         },
         recall_by_toi_snr=snr_rows,
+        by_toi_depth=depth_rows,
         missed_planets=missed,
         accepted_false_positives=accepted,
         labels=y,
@@ -473,6 +504,17 @@ def format_benchmark_report(result: BenchmarkResult) -> str:
             f"{_fmt(row['recall'], '9.2f')}{_fmt(row['search_recovery'], '9.2f')}"
         )
     add("")
+    add("Kept at the threshold, by catalogued depth: does the model separate the")
+    add("classes, or rank both by signal strength?")
+    add(f"  {'depth (ppm)':<16s}{'planets':>8s}{'kept':>7s}{'FPs':>7s}{'kept':>7s}")
+    for row in result.by_toi_depth:
+        hi = "inf" if row["depth_high_ppm"] > 1e8 else f"{row['depth_high_ppm']:.0f}"
+        label = f"{row['depth_low_ppm']:.0f} - {hi}"
+        add(
+            f"  {label:<16s}{row['n_planets']:>8d}{_fmt(row['planets_kept'], '7.2f')}"
+            f"{row['n_false_positives']:>7d}{_fmt(row['false_positives_kept'], '7.2f')}"
+        )
+    add("")
     add("Highest-SNR confirmed planets the model rejected")
     add("-" * 72)
     _rows(add, result.missed_planets)
@@ -501,6 +543,12 @@ def _rows(add, rows: list[dict[str, Any]], limit: int = 10) -> None:
             f"S{row['sector']:<3d} SNR {_fmt(row['toi_snr'], '6.1f')}  "
             f"P {_fmt(row['toi_period_days'], '7.2f')} d  BLS {_fmt(row['bls_period_days'], '7.2f')} d"
             f"  score {row['model_score']:.3f}"
+        )
+        add(
+            f"  {'':<15s} odd/even {_fmt(row['odd_even_sigma'], '.1f')} sigma, "
+            f"secondary {_fmt(row['secondary_sigma'], '.1f')} sigma, "
+            f"red-noise beta {_fmt(row['red_noise_beta'], '.2f')}"
+            + ("" if row["period_recovered"] else ", period not recovered")
         )
     if len(rows) > limit:
         add(f"  ... and {len(rows) - limit} more")
