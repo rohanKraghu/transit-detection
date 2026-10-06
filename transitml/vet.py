@@ -6,6 +6,7 @@ Usage::
     python -m transitml.vet star.csv            # a local time,flux[,flux_err] CSV
     python -m transitml.vet cache.npz --target-id "TIC 123"
     python -m transitml.vet "TIC 307210830" --sector 14   # needs lightkurve + network
+    python -m transitml.vet "TIC 307210830" --stitch      # every sector, joined
 
 Writes ``vet_<target>.png`` and ``vet_<target>.json`` to ``--out-dir``.
 
@@ -40,7 +41,7 @@ from typing import Any
 import numpy as np
 
 from .config import MultiPlanetConfig
-from .data.base import LightCurve
+from .data.base import LightCurve, stitch_light_curves
 from .data.files import read_light_curves
 from .data.mast import MASTLightCurveSource
 from .features import FEATURE_NAMES, extract_features, run_bls
@@ -253,6 +254,7 @@ def load_target_curves(target: str, args: argparse.Namespace) -> list[LightCurve
         author=args.author,
         exposure_time=args.exposure_time,
         sector=args.sector,
+        stitch_sectors=args.stitch,
     )
     curves = list(source)
     if not curves:
@@ -286,6 +288,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--exposure-time", type=int, default=1800, help="Cadence in seconds (TIC input)."
     )
     parser.add_argument(
+        "--stitch", action="store_true",
+        help="Join every sector of the star into one curve before vetting.",
+    )
+    parser.add_argument(
         "--max-signals", type=int, default=MultiPlanetConfig.max_signals,
         help="Most signals the iterative search reports.",
     )
@@ -299,13 +305,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     curves = load_target_curves(args.target, args)
+    if args.stitch and len(curves) > 1:
+        try:
+            curves = [stitch_light_curves(curves)]
+        except ValueError as exc:
+            raise SystemExit(f"cannot stitch: {exc}; pick one star with --target-id") from exc
     if len(curves) != 1:
         found = ", ".join(
             f"{lc.target_id} (sector {lc.meta.get('sector', '?')})" for lc in curves
         )
         raise SystemExit(
             f"{len(curves)} light curves found ({found}); pick one with --target-id "
-            "or --sector"
+            "or --sector, or join one star's sectors with --stitch"
         )
     lc = curves[0]
     model = load_model(args.model)

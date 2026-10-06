@@ -168,3 +168,47 @@ def test_tic_id_normalisation():
 
     assert tic_id("TIC 123") == tic_id("tic123") == tic_id(" 123 ") == "TIC 123"
     assert tic_id("star.csv") is None
+
+
+def test_cli_stitches_the_sectors_of_one_star(model_path, planet_curve, tmp_path):
+    from transitml import vet
+    from transitml.data.base import LightCurve
+    from transitml.data.injection import save_curves
+
+    lc = planet_curve[0]
+    half = lc.time < 13.0
+    sectors = [
+        LightCurve("TIC 8", lc.time[sel], lc.flux[sel] * scale, lc.flux_err[sel] * scale,
+                   meta={"sector": n})
+        for n, (sel, scale) in enumerate(((half, 1.0), (~half, 1.05)), start=14)
+    ]
+    save_curves(sectors, tmp_path / "two_sectors.npz")
+
+    with pytest.raises(SystemExit, match="--stitch"):
+        vet.main([str(tmp_path / "two_sectors.npz"), "--model", str(model_path)])
+    vet.main([
+        str(tmp_path / "two_sectors.npz"), "--stitch",
+        "--model", str(model_path), "--out-dir", str(tmp_path),
+    ])
+    payload = json.loads((tmp_path / "vet_TIC_8.json").read_text())
+    assert payload["n_cadences"] > 0.95 * lc.n_cadences
+    assert payload["candidates"][0]["period"] == pytest.approx(3.0, rel=0.01)
+
+
+def test_cli_passes_the_stitch_flag_to_the_mast_source(model_path, planet_curve, tmp_path, monkeypatch):
+    from transitml import vet
+    from transitml.data.base import LightCurve
+
+    seen = {}
+
+    class FakeMAST:
+        def __init__(self, targets, **kwargs):
+            seen.update(kwargs)
+
+        def __iter__(self):
+            lc = planet_curve[0]
+            yield LightCurve("TIC 5", lc.time, lc.flux, lc.flux_err)
+
+    monkeypatch.setattr(vet, "MASTLightCurveSource", FakeMAST)
+    vet.main(["TIC 5", "--stitch", "--model", str(model_path), "--out-dir", str(tmp_path)])
+    assert seen["stitch_sectors"] is True
