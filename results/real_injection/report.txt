@@ -6,27 +6,27 @@ test curves: 980   planets: 39   positive rate: 3.980%
 Average precision (headline metric; chance = positive rate)
 ------------------------------------------------------------------------
   random ranking (chance)            AP = 0.0398
-  baseline: depth_threshold          AP = 0.073  [0.061, 0.097]   (ROC-AUC 0.677)
-  baseline: bls_snr                  AP = 0.100  [0.085, 0.127]   (ROC-AUC 0.773)
-  model: gradient boosting           AP = 0.435  [0.361, 0.532]   (ROC-AUC 0.820)
+  baseline: depth_threshold          AP = 0.071  [0.059, 0.093]   (ROC-AUC 0.674)
+  baseline: bls_snr                  AP = 0.099  [0.084, 0.126]   (ROC-AUC 0.771)
+  model: gradient boosting           AP = 0.461  [0.390, 0.563]   (ROC-AUC 0.819)
   (brackets are 68% bootstrap intervals over 2000 test-set resamples)
 
-  lift over chance:            10.9x
-  lift over best baseline:     4.36x  (best baseline: bls_snr)
+  lift over chance:            11.6x
+  lift over best baseline:     4.67x  (best baseline: bls_snr)
   the model beats that baseline in 100.0% of paired bootstrap resamples
 
 Operating point (threshold chosen by CV on the TRAINING split only)
 ------------------------------------------------------------------------
-  rule:      max recall subject to Wilson 1-sigma lower bound on CV precision >= 0.50 (bound 0.503 at 73 candidates)
-  threshold: 0.4587
-  CV on train:  precision = 0.562   recall = 0.562
-  HELD-OUT:     precision = 0.400   recall = 0.564   F1 = 0.468
+  rule:      max recall subject to Wilson 1-sigma lower bound on CV precision >= 0.50 (bound 0.502 at 75 candidates)
+  threshold: 0.5028
+  CV on train:  precision = 0.560   recall = 0.575
+  HELD-OUT:     precision = 0.479   recall = 0.590   F1 = 0.529
 
   Confusion matrix (rows = truth, cols = prediction)
                     pred: no planet    pred: planet
-    truth: no planet          908              33
-    truth: planet              17              22
-    false positives by true object type -> eclipsing_binary: 11, noise: 22
+    truth: no planet          916              25
+    truth: planet              16              23
+    false positives by true object type -> eclipsing_binary: 10, noise: 15
 
 Precision@k (what a k-night follow-up programme would actually get)
 ------------------------------------------------------------------------
@@ -39,22 +39,22 @@ Completeness vs injected transit SNR (held-out planets)
   recall = P(search finds the period) x P(classifier keeps it | found)
   SNR bin            n   recall   search  classifier
   0 - 7             10     0.00     0.30        0.00
-  7 - 12            12     0.67     0.83        0.80
+  7 - 12            12     0.67     0.92        0.73
   12 - 20            5     1.00     1.00        1.00
   20 - 40            5     0.60     0.80        0.75
-  40 - inf           7     0.86     1.00        0.86
-  overall search recovery on held-out planets: 0.74
+  40 - inf           7     1.00     1.00        1.00
+  overall search recovery on held-out planets: 0.77
 
 Top features (permutation importance in average precision, on test)
 ------------------------------------------------------------------------
-  bls_sde                      +0.1006 +/- 0.0271
-  secondary_sigma              +0.0903 +/- 0.0374
-  log_depth                    +0.0459 +/- 0.0267
-  log_period                   +0.0369 +/- 0.0236
-  clipped_fraction             +0.0358 +/- 0.0153
-  power_contrast               +0.0250 +/- 0.0188
-  bls_depth_snr                +0.0231 +/- 0.0159
-  harmonic_delta_loglike       +0.0224 +/- 0.0190
+  bls_sde                      +0.0928 +/- 0.0346
+  secondary_sigma              +0.0758 +/- 0.0267
+  log_depth                    +0.0433 +/- 0.0280
+  log_period                   +0.0424 +/- 0.0296
+  red_noise_beta               +0.0316 +/- 0.0168
+  clipped_fraction             +0.0302 +/- 0.0103
+  power_contrast               +0.0263 +/- 0.0187
+  duration_over_period         +0.0231 +/- 0.0197
 
 Missed planets (false negatives at the operating threshold)
 ------------------------------------------------------------------------
@@ -73,7 +73,7 @@ Missed planets (false negatives at the operating threshold)
   TIC 103688785 inj00635 SNR    5.6  depth     777 ppm  P   5.55 d  T14  1.87 h  b 0.80  n_tr 5
                -> search did not recover the period
   TIC 233243653 inj01503 SNR    6.7  depth    1062 ppm  P   2.90 d  T14  2.37 h  b 0.77  n_tr 8
-               -> period recovered; classifier rejected it  (odd/even 0.2 sigma, secondary 1.3 sigma, red-noise beta 1.11)
+               -> period recovered; classifier rejected it  (odd/even 0.2 sigma, secondary 0.8 sigma, red-noise beta 1.11)
   TIC 287149795 inj02270 SNR    6.9  depth    1436 ppm  P   6.20 d  T14  1.72 h  b 0.73  n_tr 4
                -> search did not recover the period
   TIC 232635289 inj01505 SNR    7.0  depth    3130 ppm  P   6.69 d  T14  2.98 h  b 0.40  n_tr 3
@@ -81,6 +81,6 @@ Missed planets (false negatives at the operating threshold)
   TIC 233730201 inj00394 SNR    7.9  depth     770 ppm  P   2.96 d  T14  1.77 h  b 0.30  n_tr 6
                -> period recovered; classifier rejected it  (odd/even 0.0 sigma, secondary 0.2 sigma, red-noise beta 1.22)
   TIC 302351247 inj02095 SNR    8.0  depth    3459 ppm  P   3.49 d  T14  3.18 h  b 0.61  n_tr 6
-               -> search did not recover the period
-  ... and 5 more
+               -> period recovered; classifier rejected it  (odd/even 0.2 sigma, secondary 1.1 sigma, red-noise beta 1.57)
+  ... and 4 more
 ========================================================================
