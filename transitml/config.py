@@ -171,6 +171,27 @@ class BLSConfig:
 
 
 @dataclass(frozen=True)
+class MultiPlanetConfig:
+    """Iterative search for additional periodic signals (``transitml.search``).
+
+    Only the vetting tool uses this.  The classifier and its headline numbers
+    stay on the single strongest BLS peak.
+    """
+
+    #: Most signals reported per light curve, the primary included.
+    max_signals: int = 3
+    #: A peak counts as a candidate only if its ``bls_sde`` reaches this.  On
+    #: the synthetic run, 3.7% of variable stars with nothing in them clear 5.5
+    #: on their first search, against 62% of planets.
+    min_sde: float = 5.5
+    #: Cadences within this many transit durations of a found mid-transit time
+    #: are masked before the next search.
+    mask_half_width_durations: float = 1.5
+    #: Stop when fewer cadences than this survive the masking.
+    min_cadences: int = 200
+
+
+@dataclass(frozen=True)
 class EvalConfig:
     """Evaluation and operating-point selection."""
 
@@ -202,6 +223,7 @@ class Config:
     dataset: DatasetConfig = field(default_factory=DatasetConfig)
     preprocess: PreprocessConfig = field(default_factory=PreprocessConfig)
     bls: BLSConfig = field(default_factory=BLSConfig)
+    multi_planet: MultiPlanetConfig = field(default_factory=MultiPlanetConfig)
     evaluation: EvalConfig = field(default_factory=EvalConfig)
 
     def to_dict(self) -> dict[str, Any]:

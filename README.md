@@ -13,11 +13,12 @@ evaluate it the way an imbalanced detection problem has to be evaluated.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python run_pipeline.py            # ~2 min on 4 cores
-pytest                            # ~3 min, 185 tests
+pytest                            # ~3 min, 223 tests
 ```
 
-It writes `results/metrics.json`, `results/report.txt` and four PNGs to
-`figures/`. Fixed seed (42), pinned dependencies, deterministic output.
+It writes `results/metrics.json`, `results/report.txt`, the trained model
+(`results/model.joblib`, used by `vet` below) and four PNGs to `figures/`.
+Fixed seed (42), pinned dependencies, deterministic output.
 
 ---
 
@@ -480,6 +481,57 @@ volume, not a claim about architectures.
 
 ---
 
+## Vetting one star
+
+`python -m transitml.vet` scores a single light curve with the model
+`run_pipeline.py` saved, and explains the score on one page.
+
+```bash
+python run_pipeline.py                                   # writes results/model.joblib
+python -m transitml.vet star.csv                         # columns time,flux[,flux_err]
+python -m transitml.vet results/real_injection/base_curves.npz --target-id "TIC 123"
+python -m transitml.vet "TIC 307210830" --sector 14      # needs lightkurve and network
+python -m transitml.vet "TIC 307210830" --stitch         # every sector, joined
+```
+
+It detrends and featurises with the preprocessing and BLS settings stored in
+the model file, so the score means what it meant in training, then writes
+`results/vet/vet_<target>.png` and a JSON of the same numbers: the raw curve
+and removed trend, the detrended curve with every candidate signal marked,
+the primary fold, odd against even transits, the phase-0.5 window, the key
+features with score, threshold and verdict, and the top reasons. The reasons
+are approximate and labelled so: each is the change in score when one
+feature alone is set to its training-split median. They are not additive.
+
+**The TIC path has only been tested offline**, with the MAST source replaced
+by a stub; this environment could not reach MAST. Local CSV and npz input is
+tested end to end. The model file is a pickle tied to the scikit-learn
+version that wrote it, so it is git-ignored and rebuilt by `run_pipeline.py`;
+load only model files you made.
+
+**More than one planet.** The classifier scores only the strongest BLS peak,
+and the headline numbers are unchanged. `transitml/search.py` adds an
+iterative search for the vetting report: find the best signal, mask 1.5
+durations around each of its transits, search again, up to three signals,
+stopping at the first peak whose `bls_sde` is below 5.5. On the synthetic run
+3.7% of plain variable stars clear 5.5 on their first search, against 62% of
+planets. A light curve with nothing significant yields an empty list.
+
+**More than one sector.** `stitch_light_curves` (in `transitml/data/base.py`)
+joins sectors of one star: each is divided by its own median, then they are
+concatenated with the gaps left as gaps. `MASTLightCurveSource(...,
+stitch_sectors=True)` yields one stitched curve per target; the default is
+still one curve per sector. Detrending already splits on gaps, so no spline
+segment spans one, and the BLS grid extends to half the stitched baseline,
+which brings the long-period planets of failure mode 2 below within reach.
+The test that pins this uses a 10-day planet with three transits per sector:
+neither sector alone gives a significant peak at 10 days, the two stitched
+together do. The grid keeps its 2000 periods however long the baseline, so
+sectors far apart in time are searched too coarsely; consecutive sectors
+are fine.
+
+---
+
 ## Failure modes
 
 ![Diagnostics](figures/03_diagnostics.png)
@@ -639,26 +691,34 @@ transit-detection/
 │   ├── config.py               # every tunable number, in one dataclass tree
 │   ├── physics.py              # Kepler's third law, transit durations
 │   ├── data/
-│   │   ├── base.py             # LightCurve + LightCurveSource interface
+│   │   ├── base.py             # LightCurve + LightCurveSource interface, stitching
 │   │   ├── synthetic.py        # the generator
 │   │   ├── mast.py             # real TESS/Kepler via lightkurve (same interface)
 │   │   ├── injection.py        # synthetic eclipses injected into real curves
 │   │   ├── toi.py              # TOI table -> per-star CP/KP vs FP/FA labels
+│   │   ├── files.py            # CSV and npz light-curve files
 │   │   └── loader.py           # source -> feature matrix, parallel over curves
 │   ├── preprocess.py           # robust spline + rotation detrending
 │   ├── features.py             # BLS search and vetting statistics
-│   ├── model.py                # split, baselines, training, threshold selection
+│   ├── search.py               # iterative multi-planet search
+│   ├── model.py                # split, baselines, training, threshold, save/load
 │   ├── evaluate.py             # PR curves, AP, confusion matrix, failure analysis
 │   ├── benchmark.py            # the trained model scored on real TOI dispositions
+│   ├── vet.py                  # python -m transitml.vet: one star, one page
 │   └── plots.py                # figures (matplotlib Agg, no display)
-├── tests/                      # 185 tests, ~3 min
+├── tests/                      # 223 tests, ~3 min
 │   ├── test_generator.py       # imbalance is exact; injected physics is consistent
 │   ├── test_preprocess.py      # depth preservation; why the median was rejected
 │   ├── test_features.py        # recovery vs SNR; the vetting statistics fire
+│   ├── test_search.py          # two planets found; noise yields nothing
+│   ├── test_stitch.py          # sectors joined; marginal pair becomes a detection
 │   ├── test_evaluation.py      # no test-set leakage into threshold or metrics
 │   ├── test_injection.py       # injection is exact, leaves noise alone, runs offline
 │   ├── test_toi.py             # TOI parsing, per-star labels, sector choice
 │   ├── test_benchmark.py       # the real-label benchmark, offline, from a cache
+│   ├── test_files.py           # CSV and npz input
+│   ├── test_model_io.py        # saved model reloads with threshold and features
+│   ├── test_vet.py             # vet end to end on CSV, npz and a stubbed TIC
 │   └── test_pipeline.py        # end to end, reproducible, figures on disk
 ├── figures/                    # committed, so this README renders
 └── results/                    # metrics.json + report.txt, committed

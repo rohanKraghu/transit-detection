@@ -3,8 +3,9 @@
 
     python run_pipeline.py
 
-Writes ``results/metrics.json``, ``results/report.txt``, ``results/dataset.npz``
-and four PNGs to ``figures/``.  Deterministic given ``--seed``; the default run
+Writes ``results/metrics.json``, ``results/report.txt``, ``results/dataset.npz``,
+the fitted classifier as ``results/model.joblib`` (for scoring new light
+curves) and four PNGs to ``figures/``.  Deterministic given ``--seed``; the default run
 takes ~2 minutes on four cores.
 
 Injection-recovery on real photometry (needs ``pip install lightkurve`` and
@@ -55,7 +56,7 @@ from transitml.data.loader import Dataset, build_dataset
 from transitml.data.synthetic import SyntheticTESSSource
 from transitml.data.toi import parse_sector_spec, read_toi_table, select_benchmark_targets
 from transitml.evaluate import evaluate, format_report
-from transitml.model import TrainedModel, make_split, train
+from transitml.model import TrainedModel, make_split, save_model, train
 from transitml.plots import plot_all
 
 ROOT = Path(__file__).resolve().parent
@@ -406,11 +407,23 @@ def main(argv: list[str] | None = None) -> int:
         }
 
     dataset.save(results_dir / "dataset.npz")
+    model_path = save_model(
+        trained,
+        split,
+        results_dir / "model.joblib",
+        preprocess=config.preprocess,
+        bls=config.bls,
+        provenance={"seed": config.seed, "source": source.name},
+    )
+    payload["model"] = _display_path(model_path)
     payload["runtime_seconds"] = round(time.time() - started, 1)
     (results_dir / "metrics.json").write_text(json.dumps(payload, indent=2, default=str))
     (results_dir / "report.txt").write_text(report + "\n")
 
-    print(f"\nwrote {results_dir / 'metrics.json'} and {results_dir / 'report.txt'}")
+    print(
+        f"\nwrote {results_dir / 'metrics.json'}, {results_dir / 'report.txt'} "
+        f"and {model_path}"
+    )
     print(f"total runtime: {payload['runtime_seconds']}s")
     return 0
 
