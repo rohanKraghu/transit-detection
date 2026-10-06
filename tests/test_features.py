@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 import pytest
 
@@ -21,8 +23,10 @@ from transitml.features import (
     period_grid,
     red_noise_beta,
     run_bls,
+    secondary_excess,
     signal_detection_efficiency,
 )
+from transitml.physics import max_occultation_fraction
 from transitml.preprocess import flatten
 
 from .conftest import clean_transit_curve, make_source
@@ -116,6 +120,37 @@ def test_secondary_eclipse_is_detected(config, fast_bls):
 
     assert binary["secondary_sigma"] > 5.0
     assert binary["secondary_sigma"] > 3 * abs(plain["secondary_sigma"])
+
+
+def test_a_planets_own_occultation_is_not_a_secondary_eclipse(config, fast_bls):
+    """Around a known star a hot Jupiter's occultation is discounted; a binary's is not."""
+    star = {"teff_k": 8000.0, "rho_star_cgs": 0.3}
+    period, depth = 3.0, 8e-3
+    # The planet's 200 ppm occultation is 2.5% of the transit; this star allows 4%.
+    assert max_occultation_fraction(period, star["teff_k"], star["rho_star_cgs"]) > 0.035
+    lc, truth = clean_transit_curve(period=period, depth=depth, duration=0.12, sigma=1e-4, seed=5)
+
+    def with_secondary(fraction: float, meta: dict) -> LightCurve:
+        dip = trapezoid_transit(
+            lc.time, period, truth["epoch"] + period / 2, fraction * depth, 0.12, 0.09
+        )
+        return replace(lc, flux=lc.flux - dip, meta={**lc.meta, **meta})
+
+    def secondary(curve: LightCurve) -> float:
+        return extract_features(flatten(curve, config.preprocess), fast_bls)["secondary_sigma"]
+
+    # With the star unknown the whole dip counts, as before the allowance.
+    assert secondary(with_secondary(0.025, {})) > 5.0
+    assert abs(secondary(with_secondary(0.025, star))) < 1.0
+    assert secondary(with_secondary(0.2, star)) > 5.0
+
+
+def test_secondary_excess():
+    assert secondary_excess(3e-4, 5e-4) == 0.0
+    assert secondary_excess(8e-4, 5e-4) == pytest.approx(3e-4)
+    # A brightening at phase 0.5 is not an eclipse to discount.
+    assert secondary_excess(-2e-4, 5e-4) == -2e-4
+    assert secondary_excess(8e-4, float("nan")) == 8e-4
 
 
 def test_odd_even_difference_is_detected(config, fast_bls):

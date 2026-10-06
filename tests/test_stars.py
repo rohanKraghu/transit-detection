@@ -1,4 +1,4 @@
-"""Host-star parameters, and where a light curve gets them."""
+"""Host-star parameters: where they come from, and the occultation allowance they size."""
 
 from __future__ import annotations
 
@@ -10,11 +10,13 @@ import pytest
 
 from transitml.data.base import stellar_parameters
 from transitml.physics import (
+    OCCULTATION_LIMIT_FRACTION,
     RHO_SUN_CGS,
     T_SUN_K,
     density_from_gravity,
     main_sequence_density,
     main_sequence_teff,
+    max_occultation_fraction,
 )
 from transitml.preprocess import flatten
 
@@ -26,6 +28,21 @@ def test_density_relations():
     for rho in (0.3, 1.0, 5.0):
         assert main_sequence_density(main_sequence_teff(rho)) == pytest.approx(rho)
     assert main_sequence_density(T_SUN_K) == pytest.approx(RHO_SUN_CGS)
+
+
+def test_the_allowance_grows_with_a_hotter_star_and_a_closer_orbit():
+    sun = max_occultation_fraction(1.0, T_SUN_K, RHO_SUN_CGS)
+    assert 0.02 < sun < 0.05
+    assert max_occultation_fraction(3.0, T_SUN_K, RHO_SUN_CGS) < sun / 5
+    assert max_occultation_fraction(2.0, 7500.0, 0.4) > max_occultation_fraction(2.0, T_SUN_K, 0.4)
+    # A lower density puts the same period's orbit closer to the star.
+    assert max_occultation_fraction(2.0, T_SUN_K, 0.3) > max_occultation_fraction(2.0, T_SUN_K, 1.4)
+
+
+def test_the_allowance_is_capped_and_needs_a_known_star():
+    assert max_occultation_fraction(0.5, 10000.0, 0.05) == OCCULTATION_LIMIT_FRACTION
+    assert math.isnan(max_occultation_fraction(2.0, math.nan, 1.0))
+    assert math.isnan(max_occultation_fraction(2.0, 6000.0, math.nan))
 
 
 @pytest.mark.parametrize(

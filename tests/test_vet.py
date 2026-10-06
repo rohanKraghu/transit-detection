@@ -109,7 +109,22 @@ def test_cli_end_to_end_from_a_csv(model_path, planet_curve, tmp_path, capsys):
     payload = json.loads(js.read_text())
     assert 0.0 <= payload["score"] <= 1.0
     assert payload["candidates"][0]["period"] == pytest.approx(3.0, rel=0.01)
-    assert "signal 1: P = 3.0" in capsys.readouterr().out
+    printed = capsys.readouterr().out
+    assert "signal 1: P = 3.0" in printed
+    # A CSV carries no star: the secondary test cannot size its allowance.
+    assert "star: unknown" in printed
+
+
+def test_cli_takes_the_star_from_the_command_line(model_path, planet_curve, tmp_path, capsys):
+    from transitml import vet
+
+    csv_path = write_planet_csv(planet_curve[0], tmp_path / "planet.csv")
+    argv = [str(csv_path), "--model", str(model_path), "--out-dir", str(tmp_path / "reports")]
+    assert vet.main([*argv, "--teff", "6200", "--density", "0.8"]) == 0
+    assert "star: 6200 K, 0.80 g/cm^3" in capsys.readouterr().out
+    # A temperature alone implies a main-sequence density.
+    assert vet.main([*argv, "--teff", "5772"]) == 0
+    assert "star: 5772 K, 1.41 g/cm^3" in capsys.readouterr().out
 
 
 def test_cli_reads_one_star_from_an_npz_cache(model_path, planet_curve, tmp_path):

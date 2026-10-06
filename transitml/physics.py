@@ -137,3 +137,48 @@ def occultation_depth(
     thermal = radius_ratio**2 * tess_brightness_ratio(t_day, t_eff)
     reflected = geometric_albedo * (radius_ratio / a_over_rs) ** 2
     return float(thermal + reflected)
+
+
+# --------------------------------------------------------------------------
+# The allowance.  How deep a planet's occultation can be depends on its star:
+# the temperature sets how bright the dayside can glow, and the density, with
+# the period, how close the planet must orbit.  The secondary-eclipse test
+# counts only what is deeper than the deepest occultation a planet could show
+# around that star.
+# --------------------------------------------------------------------------
+#: The planet the allowance is for: no heat redistribution, a Bond albedo of
+#: zero and this geometric albedo.  That is hotter and brighter than the hot
+#: Jupiters measured so far (the synthetic planets use 0.1 and a
+#: redistribution factor of 0.5, see ``PlanetConfig``).
+OCCULTATION_LIMIT_ALBEDO: float = 0.3
+#: Whatever the star, the allowance stops at this fraction of the transit
+#: depth.  KELT-9 b, the hottest planet known, shows about a tenth.  Beyond
+#: that the orbit the period and density imply hugs a hot or swollen star so
+#: closely that a binary is the likelier reading.
+OCCULTATION_LIMIT_FRACTION: float = 0.15
+
+
+def max_occultation_fraction(
+    period_days: float, t_eff: float, stellar_density_cgs: float
+) -> float:
+    """The deepest occultation a planet on this orbit can show, per unit transit depth.
+
+    Evaluated for the planet described at ``OCCULTATION_LIMIT_ALBEDO`` around
+    the given star, and capped at ``OCCULTATION_LIMIT_FRACTION``.  Around a
+    Sun-like star that is 3.5% of the transit depth at one day and 0.5% at
+    three; around a 7500 K star of density 0.4 g/cm^3, 5.4% at two days and
+    the full 15% at one.  NaN when the star's temperature or density is
+    unknown.
+    """
+    if not (period_days > 0 and t_eff > 0 and stellar_density_cgs > 0):
+        return float("nan")
+    a_rs = max(scaled_semi_major_axis(period_days, stellar_density_cgs), 1.0)
+    fraction = occultation_depth(
+        1.0,
+        a_rs,
+        t_eff,
+        geometric_albedo=OCCULTATION_LIMIT_ALBEDO,
+        bond_albedo=0.0,
+        redistribution=2.0 / 3.0,
+    )
+    return float(min(fraction, OCCULTATION_LIMIT_FRACTION))
