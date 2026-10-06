@@ -544,9 +544,11 @@ def plot_vetting_report(lc: LightCurve, flat, result, path: Path) -> Path:
     bin_width = max(duration_h / 4.0, 1e-3)
     ppt = (flat.flux - 1.0) * 1e3
 
-    fig = plt.figure(figsize=(13.0, 14.0))
+    centroid = _centroid_to_show(result)
+    ratios = (1.0, 1.0, 1.2, 1.5) + ((1.5,) if centroid is not None else ())
+    fig = plt.figure(figsize=(13.0, 14.0 if centroid is None else 17.5))
     grid = fig.add_gridspec(
-        4, 3, height_ratios=(1.0, 1.0, 1.2, 1.5), hspace=0.42, wspace=0.28
+        len(ratios), 3, height_ratios=ratios, hspace=0.42, wspace=0.28
     )
 
     # -- row 1: raw flux and the trend that was removed ----------------------
@@ -731,6 +733,9 @@ def plot_vetting_report(lc: LightCurve, flat, result, path: Path) -> Path:
     )
     ax_why.set_title("Top reasons: features that moved the score most", loc="left")
 
+    if centroid is not None:
+        _plot_centroid_row(fig, grid, 4, result, centroid)
+
     verdict_colour = SERIES[0] if result.above_threshold else SERIES[1]
     fig.suptitle(
         f"{result.target_id}: score {result.score:.3f} vs threshold {result.threshold:.3f}, "
@@ -749,5 +754,185 @@ def plot_vetting_report(lc: LightCurve, flat, result, path: Path) -> Path:
         fontsize=8,
         color=INK_SOFT,
     )
-    fig.subplots_adjust(top=0.95, bottom=0.06, left=0.07, right=0.98)
+    fig.subplots_adjust(
+        top=0.95 if centroid is None else 0.94, bottom=0.06, left=0.07, right=0.98
+    )
     return _save(fig, path)
+
+
+# --------------------------------------------------------------------------
+# Centroid row of the vetting report (``vet --tpf`` / ``--centroids``)
+# --------------------------------------------------------------------------
+def _centroid_to_show(result):
+    """The centroid test the report draws: a flagged one first, then a measured one."""
+    tests = list(getattr(result, "centroids", None) or [])
+    if not tests:
+        return None
+    for wanted in (lambda c: c.significant, lambda c: c.status == "ok"):
+        for test in tests:
+            if wanted(test) and test.difference_image is not None:
+                return test
+    return tests[0]
+
+
+def _two_hue_map(name: str, low: str, mid: str, high: str):
+    from matplotlib.colors import LinearSegmentedColormap
+
+    return LinearSegmentedColormap.from_list(name, [low, mid, high])
+
+
+def _mark_positions(ax, centroid) -> None:
+    """Target, out-of-transit centroid and difference-image centroid, each labelled."""
+    marks = (
+        (centroid.target_position, "+", INK, "target (catalogue)"),
+        (centroid.out_of_transit_centroid, "x", INK_SOFT, "out-of-transit centroid"),
+        (centroid.difference_centroid, "o", INK, "difference-image centroid"),
+    )
+    for position, marker, colour, label in marks:
+        if position is None or not np.all(np.isfinite(position)):
+            continue
+        ax.plot(
+            *position, marker, ms=10, mew=2.0, color=colour, mfc="none", label=label
+        )
+    start = centroid.reference_position
+    end = centroid.difference_centroid
+    if start is not None and end is not None and np.all(np.isfinite([*start, *end])):
+        ax.annotate(
+            "",
+            xy=end,
+            xytext=start,
+            arrowprops={"arrowstyle": "->", "color": INK, "lw": 1.4},
+        )
+
+
+def _outline(ax, mask, colour: str) -> None:
+    """Draw the outline of a boolean pixel mask."""
+    rows, cols = mask.shape
+    for r in range(rows):
+        for c in range(cols):
+            if not mask[r, c]:
+                continue
+            for (dr, dc), segment in (
+                ((-1, 0), ([c - 0.5, c + 0.5], [r - 0.5, r - 0.5])),
+                ((1, 0), ([c - 0.5, c + 0.5], [r + 0.5, r + 0.5])),
+                ((0, -1), ([c - 0.5, c - 0.5], [r - 0.5, r + 0.5])),
+                ((0, 1), ([c + 0.5, c + 0.5], [r - 0.5, r + 0.5])),
+            ):
+                rr, cc = r + dr, c + dc
+                if not (0 <= rr < rows and 0 <= cc < cols and mask[rr, cc]):
+                    ax.plot(*segment, "-", lw=1.2, color=colour)
+
+
+def _plot_centroid_row(fig, grid, row: int, result, centroid) -> None:
+    """Out-of-transit image, difference image and the centroid numbers."""
+    ax_oot = fig.add_subplot(grid[row, 0])
+    ax_diff = fig.add_subplot(grid[row, 1])
+    ax_text = fig.add_subplot(grid[row, 2])
+    ax_text.axis("off")
+
+    if centroid.difference_image is not None:
+        oot = centroid.out_of_transit_image
+        diff = centroid.difference_image
+        sequential = _two_hue_map("oot", SURFACE, "#9cc2ee", SERIES[0])
+        diverging = _two_hue_map("diff", SERIES[1], "#e9e8e4", SERIES[0])
+        image = ax_oot.imshow(
+            oot, origin="lower", cmap=sequential, interpolation="nearest"
+        )
+        fig.colorbar(image, ax=ax_oot, fraction=0.046, pad=0.03, label="e-/s")
+        scale = float(np.nanmax(np.abs(diff))) if np.isfinite(diff).any() else 1.0
+        image = ax_diff.imshow(
+            diff,
+            origin="lower",
+            cmap=diverging,
+            vmin=-scale,
+            vmax=scale,
+            interpolation="nearest",
+        )
+        fig.colorbar(
+            image,
+            ax=ax_diff,
+            fraction=0.046,
+            pad=0.03,
+            label="flux lost in transit (e-/s)",
+        )
+        for ax in (ax_oot, ax_diff):
+            ax.grid(False)
+            if centroid.aperture is not None:
+                _outline(ax, centroid.aperture, INK_SOFT)
+            _mark_positions(ax, centroid)
+            ax.set_xlabel("column (pixels)")
+            ax.set_xlim(-0.5, oot.shape[1] - 0.5)
+            ax.set_ylim(-0.5, oot.shape[0] - 0.5)
+        ax_oot.set_ylabel("row (pixels)")
+        ax_oot.legend(
+            loc="upper left", fontsize=7.5, handletextpad=0.4, borderaxespad=0.2
+        )
+    else:
+        for ax in (ax_oot, ax_diff):
+            ax.axis("off")
+            ax.text(
+                0.0,
+                0.5,
+                f"no image: {centroid.message}",
+                fontsize=9,
+                color=INK_SOFT,
+                wrap=True,
+                transform=ax.transAxes,
+            )
+    sector = centroid.meta.get("sector")
+    where = f", sector {sector}" if sector is not None else ""
+    ax_oot.set_title(f"Out of transit{where} (aperture outlined)", loc="left")
+    ax_diff.set_title("Difference image (out minus in transit)", loc="left")
+
+    def fmt(value, spec=".2f"):
+        return "n/a" if value is None or not np.isfinite(value) else format(value, spec)
+
+    offset = centroid.offset_pixels or (float("nan"), float("nan"))
+    error = centroid.offset_error_pixels or (float("nan"), float("nan"))
+    lines = [
+        ("reference", centroid.reference.replace("_", " ") or "n/a"),
+        ("offset (column, row)", f"{fmt(offset[0])}, {fmt(offset[1])} px"),
+        ("1-sigma error", f"{fmt(error[0])}, {fmt(error[1])} px"),
+        ("offset", f"{fmt(centroid.offset_arcsec, '.1f')} arcsec"),
+        ("significance", f"{fmt(centroid.offset_sigma, '.1f')} sigma"),
+        (
+            "from out-of-transit centroid",
+            f"{fmt(centroid.offset_from_oot_sigma, '.1f')} sigma",
+        ),
+        ("dip in difference image", f"SNR {fmt(centroid.difference_snr, '.0f')}"),
+        ("transits used", str(centroid.n_transits)),
+    ]
+    table = ax_text.table(
+        cellText=lines,
+        colLabels=("centroid test", "value"),
+        cellLoc="left",
+        colWidths=(0.55, 0.45),
+        bbox=(0.0, 0.22, 1.0, 0.78),
+    )
+    table.auto_set_font_size(False)
+    table.set_fontsize(8.5)
+    for cell in table.get_celld().values():
+        cell.set_edgecolor(GRID)
+    flagged = any(c.significant for c in result.centroids)
+    ax_text.text(
+        0.0,
+        0.0,
+        centroid.verdict,
+        fontsize=9,
+        fontweight="bold" if flagged else None,
+        color=SERIES[1] if flagged else INK,
+        wrap=True,
+        va="bottom",
+        transform=ax_text.transAxes,
+    )
+    ax_text.set_title("Centroid test (not in the score)", loc="left")
+    if flagged:
+        fig.text(
+            0.01,
+            0.962,
+            "Centroid test flags an offset: the dip is likely on a neighbouring star "
+            "(bottom row). The score above does not include this test.",
+            fontsize=10.5,
+            fontweight="bold",
+            color=SERIES[1],
+        )

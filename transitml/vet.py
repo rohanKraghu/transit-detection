@@ -7,6 +7,8 @@ Usage::
     python -m transitml.vet cache.npz --target-id "TIC 123"
     python -m transitml.vet "TIC 307210830" --sector 14   # needs lightkurve + network
     python -m transitml.vet "TIC 307210830" --stitch      # every sector, joined
+    python -m transitml.vet star.csv --tpf star_tpf.npz   # plus a centroid test
+    python -m transitml.vet "TIC 307210830" --sector 14 --centroids
 
 Writes ``vet_<target>.png`` and ``vet_<target>.json`` to ``--out-dir``.
 
@@ -25,6 +27,12 @@ The "top reasons" are an approximation and are labelled as one: for each
 feature, the change in score when that feature alone is replaced by its median
 over the training split.  They are not additive and do not sum to the score;
 they show which measured values the model reacted to most for this star.
+
+With ``--tpf`` (a saved :class:`~transitml.data.tpf.TargetPixelData`) or, for
+a TIC, ``--centroids`` (download the target pixel files), the primary signal's
+ephemeris is also run through the centroid tests in :mod:`transitml.centroid`.
+That result is a separate vetting test reported beside the score: the model
+was not trained on centroid features and its score does not change.
 """
 
 from __future__ import annotations
@@ -40,10 +48,12 @@ from typing import Any
 
 import numpy as np
 
+from .centroid import CentroidConfig, CentroidResult, centroid_test
 from .config import MultiPlanetConfig
 from .data.base import LightCurve, stitch_light_curves
 from .data.files import read_light_curves
 from .data.mast import MASTLightCurveSource
+from .data.tpf import TargetPixelData, download_tpfs, load_tpf
 from .features import FEATURE_NAMES, extract_features, run_bls
 from .model import SavedModel, load_model
 from .preprocess import FlattenedLightCurve, flatten
@@ -68,6 +78,11 @@ KEY_FEATURES: tuple[str, ...] = (
 #: How many of the largest score changes are reported as reasons.
 N_REASONS = 5
 
+CENTROID_NOTE = (
+    "separate vetting test reported beside the score; the classifier was not "
+    "trained on centroid features and its score does not use them"
+)
+
 CONTRIBUTION_METHOD = (
     "approximate: change in score when this feature alone is replaced by its "
     "training-split median; not additive"
@@ -88,6 +103,16 @@ class VetResult:
     n_cadences: int
     baseline_days: float
     model_provenance: dict[str, Any] = field(default_factory=dict)
+    #: ``None`` when no centroid test was asked for; else one per target pixel file.
+    centroids: list[CentroidResult] | None = None
+    centroid_note: str = ""
+
+    @property
+    def centroid_offset(self) -> bool | None:
+        """True if any centroid test flags an offset; ``None`` if none was run."""
+        if not self.centroids:
+            return None
+        return any(c.significant for c in self.centroids)
 
     @property
     def above_threshold(self) -> bool:
@@ -104,23 +129,28 @@ class VetResult:
         return self.contributions[:N_REASONS]
 
     def to_dict(self) -> dict[str, Any]:
-        return _json_safe(
-            {
-                "target_id": self.target_id,
-                "score": self.score,
-                "threshold": self.threshold,
-                "above_threshold": self.above_threshold,
-                "verdict": self.verdict,
-                "primary_signal": self.primary,
-                "candidates": [c.to_dict() for c in self.candidates],
-                "features": self.features,
-                "top_reasons": self.reasons,
-                "contribution_method": CONTRIBUTION_METHOD,
-                "n_cadences": self.n_cadences,
-                "baseline_days": self.baseline_days,
-                "model": self.model_provenance,
+        out = {
+            "target_id": self.target_id,
+            "score": self.score,
+            "threshold": self.threshold,
+            "above_threshold": self.above_threshold,
+            "verdict": self.verdict,
+            "primary_signal": self.primary,
+            "candidates": [c.to_dict() for c in self.candidates],
+            "features": self.features,
+            "top_reasons": self.reasons,
+            "contribution_method": CONTRIBUTION_METHOD,
+            "n_cadences": self.n_cadences,
+            "baseline_days": self.baseline_days,
+            "model": self.model_provenance,
+        }
+        if self.centroids is not None:
+            out["centroid"] = {
+                "offset_flag": self.centroid_offset,
+                "note": self.centroid_note or CENTROID_NOTE,
+                "tests": [c.to_dict() for c in self.centroids],
             }
-        )
+        return _json_safe(out)
 
 
 def _json_safe(value: Any) -> Any:
@@ -174,8 +204,15 @@ def vet_light_curve(
     lc: LightCurve,
     model: SavedModel,
     multi: MultiPlanetConfig | None = None,
+    tpfs: list[TargetPixelData] | None = None,
+    centroid_config: CentroidConfig | None = None,
 ) -> tuple[VetResult, FlattenedLightCurve]:
-    """Detrend, search, featurise and score one light curve."""
+    """Detrend, search, featurise and score one light curve.
+
+    With ``tpfs`` (an empty list counts: it records that none was found), the
+    primary signal's ephemeris is also run through :func:`centroid_test` on
+    each target pixel file.  The score is computed before and without it.
+    """
     lc = lc.finite()
     flat = flatten(lc, model.preprocess)
     features = extract_features(flat, model.bls)
@@ -203,6 +240,21 @@ def vet_light_curve(
         baseline_days=float(flat.baseline_days),
         model_provenance={"threshold_rule": model.threshold_rule, **model.provenance},
     )
+    if tpfs is not None:
+        result.centroids = [
+            centroid_test(
+                tpf,
+                primary["period"],
+                primary["transit_time"],
+                primary["duration"],
+                centroid_config,
+            )
+            for tpf in tpfs
+        ]
+        if not tpfs:
+            result.centroid_note = (
+                "no target pixel file was available; " + CENTROID_NOTE
+            )
     return result, flat
 
 
@@ -268,6 +320,31 @@ def load_target_curves(target: str, args: argparse.Namespace) -> list[LightCurve
     return curves
 
 
+def load_target_pixels(
+    target: str, args: argparse.Namespace
+) -> list[TargetPixelData] | None:
+    """Target pixel files for the centroid test: ``--tpf`` files, or a download.
+
+    ``None`` when neither ``--tpf`` nor ``--centroids`` was given.
+    """
+    if args.tpf:
+        return [load_tpf(path) for path in args.tpf]
+    if not args.centroids:
+        return None
+    tic = tic_id(target)
+    if Path(target).exists() or tic is None:
+        raise SystemExit(
+            "--centroids downloads target pixel files for a TIC ID; "
+            "for a local light curve pass --tpf FILE.npz"
+        )
+    tpfs = download_tpfs(
+        tic, author=args.author, exposure_time=args.exposure_time, sector=args.sector
+    )
+    if not tpfs:
+        print(f"  {tic}: no target pixel file found on MAST; centroid test skipped")
+    return tpfs
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="python -m transitml.vet",
@@ -314,6 +391,21 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Join every sector of the star into one curve before vetting.",
     )
     parser.add_argument(
+        "--tpf",
+        type=Path,
+        action="append",
+        default=None,
+        metavar="FILE.npz",
+        help="Target pixel file saved by transitml.data.tpf.save_tpf; runs the centroid "
+        "test on the primary signal. Repeat for several sectors.",
+    )
+    parser.add_argument(
+        "--centroids",
+        action="store_true",
+        help="For a TIC: download its target pixel files (same author, cadence and "
+        "sector as the light curve) and run the centroid test.",
+    )
+    parser.add_argument(
         "--max-signals",
         type=int,
         default=MultiPlanetConfig.max_signals,
@@ -347,9 +439,10 @@ def main(argv: list[str] | None = None) -> int:
             "or --sector, or join one star's sectors with --stitch"
         )
     lc = curves[0]
+    tpfs = load_target_pixels(args.target, args)
     model = load_model(args.model)
     multi = MultiPlanetConfig(max_signals=args.max_signals, min_sde=args.min_sde)
-    result, flat = vet_light_curve(lc, model, multi)
+    result, flat = vet_light_curve(lc, model, multi, tpfs)
     png, js = write_report(lc, flat, result, args.out_dir)
 
     print(
@@ -363,6 +456,15 @@ def main(argv: list[str] | None = None) -> int:
         )
     if not result.candidates:
         print(f"  no signal reached SDE {multi.min_sde:g}")
+    for test in result.centroids or []:
+        sector = test.meta.get("sector")
+        label = f"sector {sector}" if sector is not None else test.target_id
+        print(f"  centroid ({label}): {test.verdict}")
+    if result.centroid_offset:
+        print(
+            "  FLAG: significant centroid offset; the signal is likely on a neighbour "
+            "(the score above does not include this test)"
+        )
     print(f"  wrote {png} and {js}")
     return 0
 
