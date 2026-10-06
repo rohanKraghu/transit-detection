@@ -268,9 +268,9 @@ trained on is removed first. Code in `transitml/data/toi.py` and
 Two things make these numbers different in kind from the ones above. Every
 star here is a TOI, so **both classes already passed a TESS pipeline's
 detection and automated vetting**: the false positives are the hard ones that
-got through, many of them eclipsing binaries on or near the target, not random variable
-stars. And the catalogue, not the sky, sets the positive rate (about 50%
-here), so precision does not transfer to a survey. The two numbers that do
+got through, many of them eclipsing binaries on or near the target, not
+random variable stars. And the catalogue, not the sky, sets the positive rate
+(about 50% here), so precision does not transfer to a survey. The two numbers that do
 transfer are **recall on confirmed planets** and **the fraction of known false
 positives rejected** at the frozen threshold.
 
@@ -295,8 +295,9 @@ fraction of planets kept and the fraction of false positives kept rise
 together, from 0.28 and 0.16 below 1000 ppm to 0.77 and 0.71 at 6000 to 10000
 ppm. On this population the model is mostly a signal-strength ranking. Its
 top 20 are 85% real planets (65% for the synthetic-trained model and for the
-BLS SNR ranking), so the most confident end of the ranking is still useful. Training on real noise rather than synthetic noise makes no difference
-here that the intervals can resolve.
+BLS SNR ranking), so the most confident end of the ranking is still useful.
+Training on real noise rather than synthetic noise makes no difference here
+that the intervals can resolve.
 
 Two causes are visible in the report, and they point at the next work:
 
@@ -846,6 +847,9 @@ on. Sizes are rough: S is a few hours, M a day or two, L longer.
 - `python -m transitml.vet`: one star in, a one-page vetting report out.
 - Iterative multi-planet search for the vetting report.
 - Multi-sector stitching (`--stitch`, `stitch_light_curves`).
+- Centroid vetting from target pixel files (`vet --tpf`, `--centroids`):
+  a difference-image offset and centroid motion, reported beside the score.
+  Checked on synthetic pixels only so far.
 - Benchmark against real TOI dispositions (`--benchmark-tois`; 746 hosts in
   sectors 14 to 26, AP 0.62 against a chance level of 0.50).
 
@@ -853,7 +857,6 @@ on. Sizes are rough: S is a few hours, M a day or two, L longer.
 
 | Item | What it adds | Size |
 | --- | --- | --- |
-| Centroid-shift tests from target pixel files | A test for background blended binaries, the largest real false-positive class | L |
 | Structured systematics in the generator | 13.7-day scattered light, camera-correlated jitter and focus drift, so the synthetic noise stops flattering the result | M |
 | Single-transit and duo-transit search | Events the period grid excludes by construction today | M |
 | Transit Least Squares and GPU BLS | An alternative search and a faster one; BLS is the runtime bottleneck | M |
