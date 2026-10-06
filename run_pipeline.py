@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import platform
 import sys
 import time
@@ -56,6 +57,7 @@ from transitml.data.loader import Dataset, build_dataset
 from transitml.data.synthetic import SyntheticTESSSource
 from transitml.data.toi import parse_sector_spec, read_toi_table, select_benchmark_targets
 from transitml.evaluate import evaluate, format_report
+from transitml.features import BLS_ENGINE_ENV, bls_engine
 from transitml.model import TrainedModel, make_split, save_model, train
 from transitml.plots import plot_all
 
@@ -90,6 +92,21 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--no-figures", action="store_true", help="Skip plotting (useful in CI)."
+    )
+    search = parser.add_argument_group("periodic search")
+    search.add_argument(
+        "--search",
+        choices=("bls", "tls"),
+        default="bls",
+        help="Box Least Squares, or Transit Least Squares (needs transitleastsquares; "
+        "writes to results/tls/).",
+    )
+    search.add_argument(
+        "--bls-engine",
+        choices=("astropy", "cpu", "gpu"),
+        default=None,
+        help="Who computes the BLS periodogram; all give the same result. gpu needs CuPy. "
+        f"None keeps ${BLS_ENGINE_ENV} or astropy.",
     )
     real = parser.add_argument_group(
         "injection-recovery on real photometry",
@@ -147,6 +164,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="npz of downloaded TOI-host curves; None means toi_curves.npz in the results dir.",
     )
     args = parser.parse_args(argv)
+    if args.search == "tls":
+        if args.results_dir == ROOT / "results":
+            args.results_dir = ROOT / "results" / "tls"
+        if args.figures_dir == ROOT / "figures":
+            args.figures_dir = ROOT / "figures" / "tls"
     if args.inject_into is not None:
         if args.results_dir == ROOT / "results":
             args.results_dir = ROOT / "results" / "real_injection"
@@ -165,6 +187,8 @@ def apply_overrides(config: Config, args: argparse.Namespace) -> Config:
         config = replace(config, seed=args.seed)
     if args.n_curves is not None:
         config = replace(config, dataset=replace(config.dataset, n_curves=args.n_curves))
+    if args.search != config.bls.search:
+        config = replace(config, bls=replace(config.bls, search=args.search))
     return config
 
 
@@ -323,9 +347,16 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     config = apply_overrides(default_config(), args)
     np.random.seed(config.seed)
+    if args.bls_engine is not None:
+        # Set before any worker starts, so every process inherits it.
+        os.environ[BLS_ENGINE_ENV] = args.bls_engine
 
     started = time.time()
-    print(f"transit-detection | seed={config.seed} | python {platform.python_version()}")
+    print(
+        f"transit-detection | seed={config.seed} | python {platform.python_version()} | "
+        f"search {config.bls.search}"
+        + (f" ({bls_engine()} BLS engine)" if config.bls.search == "bls" else "")
+    )
     what = "real light curves (injected)" if args.inject_into else "light curves"
     source = build_source(config, args)
     print(
