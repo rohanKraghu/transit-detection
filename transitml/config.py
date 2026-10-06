@@ -218,8 +218,8 @@ class SingleEventConfig:
     duo_duration_ratio: float = 1.6
     #: Periods ``gap / n`` are tried for n up to this.
     duo_max_harmonic: int = 30
-    #: A predicted transit on observed data rules a period out when the data
-    #: there are deeper than this fraction of the event depth would require.
+    #: A predicted transit on observed data rules a period out when the dip
+    #: measured there is shallower than this fraction of the event's depth.
     duo_veto_fraction: float = 0.5
     #: Stellar density (g/cm^3) used for the period-from-duration estimate.
     stellar_density_cgs: float = 1.41
