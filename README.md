@@ -13,7 +13,7 @@ evaluate it the way an imbalanced detection problem has to be evaluated.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python run_pipeline.py            # ~2 min on 4 cores
-pytest                            # ~2 min, 162 tests
+pytest                            # ~3 min, 185 tests
 ```
 
 It writes `results/metrics.json`, `results/report.txt` and four PNGs to
@@ -239,6 +239,96 @@ same list ExoFOP serves):
 python run_pipeline.py --inject-into data/real_injection/targets_s0014.txt \
     --exclude-tois data/real_injection/toi.csv --sector 14 --download-workers 16
 ```
+
+### Benchmark against real labels: TOI dispositions
+
+Injection-recovery keeps the noise real but still draws the signals from this
+project's own planet and binary models. The other honest test is the one a
+vetting tool faces in use: real TESS signals that follow-up observers have
+since resolved. `--benchmark-tois` takes the ExoFOP TOI table, labels each star
+by its TFOPWG disposition, and scores the trained model on it **unchanged**,
+threshold included:
+
+| Disposition | Label |
+|---|---|
+| CP (confirmed planet), KP (known planet) | 1 |
+| FP (false positive), FA (false alarm) | 0 |
+| PC, APC (still open) | left out |
+
+A star is a planet host if any of its TOIs is CP or KP, and a negative only if
+every TOI on it is FP or FA. Each star is scored on one sector (the first of
+`--benchmark-sectors` it was observed in), and every star the model was
+trained on is removed first. Code in `transitml/data/toi.py` and
+`transitml/benchmark.py`; the table used is a 2026-10-06 ExoFOP snapshot in
+`data/toi_benchmark/`.
+
+Two things make these numbers different in kind from the ones above. Every
+star here is a TOI, so **both classes already passed a TESS pipeline's
+detection and automated vetting**: the false positives are the hard ones that
+got through, many of them eclipsing binaries on or near the target, not random variable
+stars. And the catalogue, not the sky, sets the positive rate (about 50%
+here), so precision does not transfer to a survey. The two numbers that do
+transfer are **recall on confirmed planets** and **the fraction of known false
+positives rejected** at the frozen threshold.
+
+**Result (TESS sectors 14 to 26, 30-minute TESS-SPOC curves).** 1,003 labelled
+TOI hosts were observed in those sectors; MAST has a TESS-SPOC light curve for
+746 of them (376 CP/KP, 370 FP/FA). Full reports:
+[`results/real_injection/toi_benchmark.txt`](results/real_injection/toi_benchmark.txt)
+and [`results/toi_benchmark.txt`](results/toi_benchmark.txt).
+
+| Model trained on | Planets kept | False positives rejected | AP (chance 0.50) | ROC-AUC | Top 20 |
+|---|---|---|---|---|---|
+| Injections into real sector 14 noise | 0.55 | 0.62 | **0.62** [0.59, 0.64] | 0.59 | 0.85 |
+| Synthetic light curves | 0.57 | 0.59 | 0.61 [0.58, 0.63] | 0.59 | 0.65 |
+| Baseline: rank by BLS SNR | | | 0.60 [0.57, 0.63] | 0.58 | 0.65 |
+
+![TOI benchmark](figures/real_injection/05_toi_benchmark.png)
+
+**The model barely separates confirmed planets from TOI false positives.**
+It beats ranking by BLS signal-to-noise in only 76% of paired bootstrap
+resamples, and the table of what it keeps by catalogued depth shows why: the
+fraction of planets kept and the fraction of false positives kept rise
+together, from 0.28 and 0.16 below 1000 ppm to 0.77 and 0.71 at 6000 to 10000
+ppm. On this population the model is mostly a signal-strength ranking. Its
+top 20 are 85% real planets (65% for the synthetic-trained model and for the
+BLS SNR ranking), so the most confident end of the ranking is still useful. Training on real noise rather than synthetic noise makes no difference
+here that the intervals can resolve.
+
+Two causes are visible in the report, and they point at the next work:
+
+- **The odd/even test fails at high SNR on real data.** The confirmed planets
+  the model rejects with the most confidence are bright hot Jupiters (TOI
+  1151.01 at SNR 1017, TOI 1431.01, TOI 1682.01), and they carry odd/even
+  depth differences of 8 to 37 sigma even after the red-noise beta correction.
+  At SNR in the hundreds, a fraction of a per cent of systematic depth
+  difference between alternate transits is many sigma. The training data had
+  no such systematics, so the model learned that a large odd/even sigma means
+  a binary. A floor on the odd/even and secondary uncertainty proportional to
+  the depth would fix this, and is a change to `features.py`.
+- **Blended binaries look like planets in a light curve.** The false positives
+  the model keeps have median odd/even and secondary significances of 0.8 and
+  0.2 sigma, indistinguishable from the planets'. That is what a background
+  eclipsing binary diluted by a brighter neighbour looks like.
+  Separating them needs centroid tests from target pixel files (roadmap item
+  T8); no light-curve feature will.
+
+The search is the other ceiling: BLS recovers the catalogued period for 73% of
+planets in one sector (88% above TOI SNR 40, 32% below 10), and when it
+misses the period the planet is kept 8% of the time.
+
+To reproduce (downloads about 750 curves the first time and caches them to
+`toi_curves.npz` beside the results):
+
+```bash
+python run_pipeline.py --inject-into data/real_injection/targets_s0014.txt \
+    --exclude-tois data/real_injection/toi.csv --sector 14 \
+    --benchmark-tois data/toi_benchmark/exofop_toi_2026-10-06.csv --benchmark-sectors 14-26
+```
+
+The same flags work after the synthetic run (drop `--inject-into` and
+`--exclude-tois`). A fresh table comes from
+`https://exofop.ipac.caltech.edu/tess/download_toi.php?output=csv`.
 
 ---
 
@@ -520,7 +610,9 @@ Three further gaps:
 - **Labels.** Ground truth is known by construction here. On real data it has to
   come from a catalogue that inherits the selection function of the pipelines
   being benchmarked against, or from injection-recovery, which only measures
-  completeness and not the false-positive rate.
+  completeness and not the false-positive rate. The TOI benchmark above does
+  the first, and shows the model separates real planets from real TOI false
+  positives only slightly better than a signal-to-noise ranking.
 - **Sample size.** 96 positives in total and 34 in the test set. The bootstrap
   interval on average precision is [0.732, 0.862], roughly ±0.065, so the difference
   between 0.80 and 0.77 is noise, and only the gap to the baselines is
@@ -551,18 +643,22 @@ transit-detection/
 │   │   ├── synthetic.py        # the generator
 │   │   ├── mast.py             # real TESS/Kepler via lightkurve (same interface)
 │   │   ├── injection.py        # synthetic eclipses injected into real curves
+│   │   ├── toi.py              # TOI table -> per-star CP/KP vs FP/FA labels
 │   │   └── loader.py           # source -> feature matrix, parallel over curves
 │   ├── preprocess.py           # robust spline + rotation detrending
 │   ├── features.py             # BLS search and vetting statistics
 │   ├── model.py                # split, baselines, training, threshold selection
 │   ├── evaluate.py             # PR curves, AP, confusion matrix, failure analysis
+│   ├── benchmark.py            # the trained model scored on real TOI dispositions
 │   └── plots.py                # figures (matplotlib Agg, no display)
-├── tests/                      # 162 tests, ~2 min
+├── tests/                      # 185 tests, ~3 min
 │   ├── test_generator.py       # imbalance is exact; injected physics is consistent
 │   ├── test_preprocess.py      # depth preservation; why the median was rejected
 │   ├── test_features.py        # recovery vs SNR; the vetting statistics fire
 │   ├── test_evaluation.py      # no test-set leakage into threshold or metrics
 │   ├── test_injection.py       # injection is exact, leaves noise alone, runs offline
+│   ├── test_toi.py             # TOI parsing, per-star labels, sector choice
+│   ├── test_benchmark.py       # the real-label benchmark, offline, from a cache
 │   └── test_pipeline.py        # end to end, reproducible, figures on disk
 ├── figures/                    # committed, so this README renders
 └── results/                    # metrics.json + report.txt, committed
