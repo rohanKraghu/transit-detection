@@ -120,3 +120,56 @@ def test_two_marginal_sectors_stitch_into_a_detection():
     assert signal_detection_efficiency(result["power"]) >= threshold + 1.0
     found = iterative_search(flat, bls)
     assert found and found[0].period == pytest.approx(PERIOD, rel=0.002)
+
+
+class _Quantity:
+    def __init__(self, value):
+        self.value = value
+
+
+class _FakeLKCurve:
+    """The slice of ``lightkurve.LightCurve`` that ``MASTLightCurveSource`` reads."""
+
+    def __init__(self, lc: LightCurve, sector_number: int):
+        self.time, self.flux = _Quantity(lc.time), _Quantity(lc.flux)
+        self.flux_err = _Quantity(lc.flux_err)
+        self.meta = {"SECTOR": sector_number}
+
+    def remove_nans(self):
+        return self
+
+
+class _FakeLightkurve:
+    def __init__(self, curves):
+        self.curves = curves
+
+    def search_lightcurve(self, target_id, **kwargs):
+        curves = self.curves
+
+        class Search:
+            def __len__(self):
+                return len(curves)
+
+            def download_all(self, **kwargs):
+                return curves
+
+        return Search()
+
+
+@pytest.mark.parametrize("stitch", [False, True])
+def test_mast_source_yields_one_stitched_curve_per_target_only_when_asked(monkeypatch, stitch):
+    from transitml.data.mast import MASTLightCurveSource
+
+    a, b = sector(0.0, seed=1), sector(28.4, level=1.07, seed=2)
+    fake = _FakeLightkurve([_FakeLKCurve(a, 14), _FakeLKCurve(b, 15)])
+    monkeypatch.setattr(MASTLightCurveSource, "_import_lightkurve", staticmethod(lambda: fake))
+
+    kwargs = {"stitch_sectors": True} if stitch else {}
+    curves = list(MASTLightCurveSource([("TIC 1", None)], **kwargs))
+    if stitch:
+        assert len(curves) == 1
+        assert curves[0].n_cadences == a.n_cadences + b.n_cadences
+        assert curves[0].meta["sectors"] == [14, 15]
+    else:
+        assert [lc.meta["sector"] for lc in curves] == [14, 15]
+        assert [lc.n_cadences for lc in curves] == [a.n_cadences, b.n_cadences]
