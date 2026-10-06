@@ -1,0 +1,78 @@
+{
+  "n_curves": 1200,
+  "seed": 2026,
+  "min_snr": 7.5,
+  "ramp_delta_chi2": 4.0,
+  "longest_box_days": 0.45,
+  "false_alarm_stars": 14,
+  "clean_stars": 600,
+  "clean_stars_with_a_ramp_set_aside": 87,
+  "injected": 600,
+  "with_a_transit_in_the_data": 582,
+  "by_transits_seen": {
+    "0": 18,
+    "1": 516,
+    "2": 66,
+    "3": 0
+  },
+  "recovery_by_snr": [
+    {
+      "snr_low": 0.0,
+      "snr_high": 7.0,
+      "n": 227,
+      "recovered": 7,
+      "n_within_longest_box": 195,
+      "recovered_within_longest_box": 6
+    },
+    {
+      "snr_low": 7.0,
+      "snr_high": 10.0,
+      "n": 52,
+      "recovered": 26,
+      "n_within_longest_box": 43,
+      "recovered_within_longest_box": 25
+    },
+    {
+      "snr_low": 10.0,
+      "snr_high": 15.0,
+      "n": 59,
+      "recovered": 50,
+      "n_within_longest_box": 51,
+      "recovered_within_longest_box": 48
+    },
+    {
+      "snr_low": 15.0,
+      "snr_high": 25.0,
+      "n": 65,
+      "recovered": 50,
+      "n_within_longest_box": 45,
+      "recovered_within_longest_box": 42
+    },
+    {
+      "snr_low": 25.0,
+      "snr_high": null,
+      "n": 179,
+      "recovered": 168,
+      "n_within_longest_box": 137,
+      "recovered_within_longest_box": 137
+    }
+  ],
+  "median_white_over_noise_snr": 1.9599247068027836,
+  "duos": 66,
+  "duo_both_found": 29,
+  "duo_paired": 27,
+  "duo_true_period_allowed": 27,
+  "errors": 0,
+  "clean_best_snrs": [
+    13.166523800120213,
+    12.164483252094131,
+    11.14000216457238,
+    10.651740226436228,
+    10.28163116667361,
+    9.657092754902266,
+    9.371780248090156,
+    9.193872773995352,
+    9.156509116426232,
+    9.058392771715436
+  ]
+}

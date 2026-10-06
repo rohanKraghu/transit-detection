@@ -11,11 +11,19 @@ searched with :func:`transitml.single.search_single_events`.
 
 * **Recovery** is the fraction of planets with at least one transit in the
   data whose transit is found (an event within half a transit duration of a
-  true mid-transit time), binned by that transit's own SNR.
+  true mid-transit time).  It is binned by the SNR the strongest transit has
+  against that star's own noise: its mean injected depth over the error of a
+  box of its true duration at its true time, with the detrended light
+  curve's scatter and its red-noise factor at that duration.  That is the
+  best the box search can do on that star.  The ideal white-noise SNR
+  (depth over the white-noise level times the square root of the in-transit
+  cadences) is recorded too, and is typically twice as high, because the
+  synthetic stars also carry red noise.
 * **False alarms** are events on the untouched stars, which have no transit.
-  This is the number that sets ``min_snr``.
-* **Duos** are planets with two transits in the data; the check is whether
-  the true period is among the periods the search leaves allowed.
+  This is the number that sets ``min_snr`` and ``ramp_delta_chi2``.
+* **Duos** are planets with two transits in the data: how many have both
+  found, how many of those pair into a duo, and whether the true period is
+  among the periods the search leaves allowed.
 
 Writes ``results/single_transit/report.txt`` and ``metrics.json``.
 """
@@ -35,8 +43,8 @@ from joblib import Parallel, delayed
 from .config import PlanetConfig, PreprocessConfig, SingleEventConfig, default_config
 from .data.base import LightCurve
 from .data.synthetic import SyntheticTESSSource, planet_signal, trapezoid_transit
-from .preprocess import flatten
-from .single import search_single_events
+from .preprocess import FlattenedLightCurve, flatten
+from .single import _BoxStats, binned_noise_factor, search_single_events
 
 SNR_BINS: tuple[float, ...] = (0.0, 7.0, 10.0, 15.0, 25.0, np.inf)
 
@@ -73,16 +81,37 @@ def inject_long_period(
     ]
     sigma = float(lc.meta["sigma_white"])
     n_in = [int(np.count_nonzero(np.abs(lc.time - m) < half)) for m in seen]
+    mean_depth = [float(np.mean(dip[np.abs(lc.time - m) < half])) for m in seen]
     truth = {
         **truth,
         "transit_times": seen,
-        # The SNR of one transit, the quantity a single-event search lives on.
+        "mean_depths": mean_depth,
+        # The ideal SNR of one transit, against white noise alone.
         "single_snr": float(truth["depth"] / sigma * np.sqrt(max(n_in))) if n_in else 0.0,
     }
     injected = LightCurve(
         lc.target_id, lc.time, lc.flux - dip, lc.flux_err, lc.label, dict(lc.meta)
     )
     return injected, truth
+
+
+def noise_snr(flat: FlattenedLightCurve, truth: dict[str, Any], min_coverage: float) -> float:
+    """SNR of the strongest injected transit against this star's own noise.
+
+    Its mean injected depth over the error the box search assigns a box of
+    the true duration at the true time: the detrended scatter, times the
+    red-noise factor at that duration, times ``sqrt(1/n_in + 1/n_out)``.
+    0 when no transit has enough data around it.
+    """
+    duration = float(truth["duration_t14"])
+    beta = binned_noise_factor(flat, duration)
+    stats = _BoxStats(flat)
+    best = 0.0
+    for mid, depth in zip(truth["transit_times"], truth["mean_depths"], strict=True):
+        measured, err, _ = stats.depth(np.array([mid]), duration, beta, min_coverage)
+        if np.isfinite(measured[0]) and err[0] > 0:
+            best = max(best, depth / float(err[0]))
+    return best
 
 
 def _one(
@@ -99,30 +128,46 @@ def _one(
     if inject:
         lc, truth = inject_long_period(lc, np.random.default_rng([seed, index, 7]), planet)
     try:
-        found = search_single_events(flatten(lc, preprocess), config)
+        flat = flatten(lc, preprocess)
+        found = search_single_events(flat, config)
     except ValueError:
-        return {"index": index, "injected": inject, "error": True, **truth}
+        return {"index": index, "injected": inject, "error": True}
     times = [e.time for e in found.events]
-    hit = False
-    if inject and truth["transit_times"]:
-        tol = 0.5 * truth["duration_t14"]
-        hit = any(abs(t - m) < tol for t in times for m in truth["transit_times"])
-    duo_ok = None
-    if inject and len(truth["transit_times"]) == 2:
-        duo_ok = any(
-            any(abs(p / truth["period"] - 1.0) < 0.02 for p in d.allowed_periods)
-            for d in found.duos
-        )
-    return {
+    row: dict[str, Any] = {
         "index": index,
         "injected": inject,
         "error": False,
         "n_events": len(times),
+        "n_ramps": len(found.ramps),
         "best_snr": max((e.snr for e in found.events), default=0.0),
-        "recovered": hit,
-        "duo_period_allowed": duo_ok,
-        **{k: truth[k] for k in ("period", "depth", "duration_t14", "single_snr") if k in truth},
         "n_transits_seen": len(truth.get("transit_times", [])),
+    }
+    if not inject:
+        return row
+    tol = 0.5 * truth["duration_t14"]
+    found_transits = [
+        any(abs(t - m) < tol for t in times) for m in truth["transit_times"]
+    ]
+    duo = None
+    if len(truth["transit_times"]) == 2:
+        first, second = truth["transit_times"]
+        pair = [
+            d for d in found.duos
+            if abs(d.first.time - first) < tol and abs(d.second.time - second) < tol
+        ]
+        duo = {
+            "both_found": all(found_transits),
+            "paired": bool(pair),
+            "true_period_allowed": any(
+                abs(p / truth["period"] - 1.0) < 0.02 for d in pair for p in d.allowed_periods
+            ),
+        }
+    return {
+        **row,
+        "recovered": any(found_transits),
+        "duo": duo,
+        "noise_snr": noise_snr(flat, truth, config.min_coverage) if truth["transit_times"] else 0.0,
+        **{k: truth[k] for k in ("period", "depth", "duration_t14", "single_snr")},
     }
 
 
@@ -140,42 +185,59 @@ def run(n_curves: int, seed: int, n_jobs: int, config: SingleEventConfig) -> dic
     clean = [r for r in rows if not r["injected"] and not r["error"]]
     injected = [r for r in rows if r["injected"] and not r["error"]]
     visible = [r for r in injected if r["n_transits_seen"] > 0]
+    longest = max(config.durations_days)
     bins = []
     for lo, hi in pairwise(SNR_BINS):
-        sel = [r for r in visible if lo <= r["single_snr"] < hi]
+        sel = [r for r in visible if lo <= r["noise_snr"] < hi]
+        short = [r for r in sel if r["duration_t14"] <= longest]
         bins.append({
             "snr_low": lo,
             "snr_high": hi if np.isfinite(hi) else None,
             "n": len(sel),
             "recovered": sum(r["recovered"] for r in sel),
+            "n_within_longest_box": len(short),
+            "recovered_within_longest_box": sum(r["recovered"] for r in short),
         })
-    duos = [r for r in visible if r["n_transits_seen"] == 2]
+    duos = [r["duo"] for r in visible if r["duo"] is not None]
     return {
         "n_curves": n_curves,
         "seed": seed,
         "min_snr": config.min_snr,
+        "ramp_delta_chi2": config.ramp_delta_chi2,
+        "longest_box_days": longest,
         "false_alarm_stars": sum(r["n_events"] > 0 for r in clean),
         "clean_stars": len(clean),
+        "clean_stars_with_a_ramp_set_aside": sum(r["n_ramps"] > 0 for r in clean),
         "injected": len(injected),
         "with_a_transit_in_the_data": len(visible),
         "by_transits_seen": {
             str(n): sum(r["n_transits_seen"] == n for r in injected) for n in (0, 1, 2, 3)
         },
         "recovery_by_snr": bins,
+        "median_white_over_noise_snr": float(np.median(
+            [r["single_snr"] / r["noise_snr"] for r in visible if r["noise_snr"] > 0]
+        )) if visible else float("nan"),
         "duos": len(duos),
-        "duo_true_period_allowed": sum(bool(r["duo_period_allowed"]) for r in duos),
+        "duo_both_found": sum(d["both_found"] for d in duos),
+        "duo_paired": sum(d["paired"] for d in duos),
+        "duo_true_period_allowed": sum(d["true_period_allowed"] for d in duos),
         "errors": sum(r["error"] for r in rows),
         "clean_best_snrs": sorted((r["best_snr"] for r in clean), reverse=True)[:10],
     }
+
+
+def _fraction(k: int, n: int) -> str:
+    return f"{k / n:.0%}" if n else "n/a"
 
 
 def format_report(summary: dict[str, Any]) -> str:
     clean = max(summary["clean_stars"], 1)
     seen = ", ".join(f"{k}: {v}" for k, v in summary["by_transits_seen"].items())
     best = ", ".join(f"{s:.1f}" for s in summary["clean_best_snrs"])
+    longest = summary["longest_box_days"] * 24
     lines = [
         "Single-transit injection-recovery",
-        "=" * 64,
+        "=" * 72,
         (
             f"{summary['n_curves']} synthetic variable stars, seed {summary['seed']}; "
             f"events need SNR >= {summary['min_snr']:g}"
@@ -187,23 +249,32 @@ def format_report(summary: dict[str, Any]) -> str:
             f"({summary['false_alarm_stars'] / clean:.1%})"
         ),
         f"  highest SNRs on clean stars: {best}",
+        (
+            f"  stars where a ramp-shaped dip was set aside: "
+            f"{summary['clean_stars_with_a_ramp_set_aside']}"
+        ),
         "",
         f"Injected: {summary['injected']} planets with P = 14-400 d; transits in the data: {seen}",
         "",
-        "  single-transit SNR      n   recovered",
+        "  SNR against the star's own noise (white-noise SNR is "
+        f"{summary['median_white_over_noise_snr']:.1f}x higher, median)",
+        f"                         all planets        transits up to {longest:.1f} h",
+        "  SNR               n   recovered          n   recovered",
     ]
     for row in summary["recovery_by_snr"]:
         hi = "inf" if row["snr_high"] is None else f"{row['snr_high']:g}"
-        frac = row["recovered"] / row["n"] if row["n"] else float("nan")
         lines.append(
-            f"  {row['snr_low']:>5g} - {hi:<5}     {row['n']:>4}   "
-            f"{row['recovered']:>4}  ({frac:.0%})"
+            f"  {row['snr_low']:>5g} - {hi:<5}  {row['n']:>4}   {row['recovered']:>4}"
+            f" ({_fraction(row['recovered'], row['n']):>4})"
+            f"     {row['n_within_longest_box']:>4}   {row['recovered_within_longest_box']:>4}"
+            f" ({_fraction(row['recovered_within_longest_box'], row['n_within_longest_box']):>4})"
         )
     lines += [
         "",
         (
-            f"Duos (two transits in the data): {summary['duos']}; the true period is "
-            f"among the allowed aliases for {summary['duo_true_period_allowed']}"
+            f"Duos (two transits in the data): {summary['duos']}; both found "
+            f"{summary['duo_both_found']}, paired {summary['duo_paired']}, true period "
+            f"among the allowed aliases {summary['duo_true_period_allowed']}"
         ),
     ]
     return "\n".join(lines)
