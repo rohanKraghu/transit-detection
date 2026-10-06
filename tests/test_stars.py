@@ -9,6 +9,13 @@ import numpy as np
 import pytest
 
 from transitml.data.base import stellar_parameters
+from transitml.data.tic import (
+    STAR_FIELDS,
+    load_or_fetch_stars,
+    read_star_table,
+    with_star,
+    write_star_table,
+)
 from transitml.physics import (
     OCCULTATION_LIMIT_FRACTION,
     RHO_SUN_CGS,
@@ -79,3 +86,68 @@ def test_synthetic_curves_carry_their_star(config):
         assert density == lc.meta["rho_star_cgs"]
         assert teff == pytest.approx(main_sequence_teff(density))
 
+
+def test_star_tables_round_trip_with_blanks(tmp_path):
+    stars = {
+        42: {
+            "teff_k": 6100.0,
+            "logg_cgs": 4.3,
+            "r_star_rsun": 1.2,
+            "m_star_msun": 1.1,
+            "rho_star_cgs": 0.9,
+        },
+        7: {name: math.nan for name in STAR_FIELDS},
+    }
+    path = tmp_path / "stars.csv"
+    write_star_table(path, stars)
+    assert path.read_text().splitlines()[1] == "7,,,,,"
+    back = read_star_table(path)
+    assert back[42] == pytest.approx(stars[42])
+    assert all(math.isnan(v) for v in back[7].values())
+
+
+def test_only_stars_the_table_lacks_are_looked_up(tmp_path):
+    path = tmp_path / "stars.csv"
+    asked: list[list[int]] = []
+
+    def fake_tic(ids):
+        asked.append(list(ids))
+        return {tic: {"teff_k": 5000.0 + tic, "rho_star_cgs": 1.0} for tic in ids if tic != 3}
+
+    first = load_or_fetch_stars([1, 2, 3], path, fetch=fake_tic)
+    assert asked == [[1, 2, 3]]
+    assert first[2]["teff_k"] == 5002.0 and math.isnan(first[3]["teff_k"])
+    # Star 3 is not in the TIC: remembered as blank rather than asked for again.
+    second = load_or_fetch_stars([2, 3, 4], path, fetch=fake_tic)
+    assert asked[-1] == [4]
+    assert sorted(second) == [2, 3, 4]
+    assert sorted(read_star_table(path)) == [1, 2, 3, 4]
+
+
+def test_a_failed_lookup_writes_nothing(tmp_path):
+    path = tmp_path / "stars.csv"
+
+    def offline(_ids):
+        raise ConnectionError("no network")
+
+    with pytest.raises(ConnectionError):
+        load_or_fetch_stars([1], path, fetch=offline)
+    assert not path.exists()
+
+
+def test_with_star_fills_only_known_values():
+    lc, _ = clean_transit_curve(seed=2)
+    lc = replace(lc, target_id="TIC 42", meta={"sector": 14})
+    stars = {
+        42: {
+            "teff_k": 6100.0,
+            "logg_cgs": math.nan,
+            "r_star_rsun": 1.2,
+            "m_star_msun": math.nan,
+            "rho_star_cgs": 0.9,
+        }
+    }
+    tagged = with_star(lc, stars)
+    assert tagged.meta == {"sector": 14, "teff_k": 6100.0, "r_star_rsun": 1.2, "rho_star_cgs": 0.9}
+    assert tagged.star == (6100.0, 0.9)
+    assert with_star(lc, {}) is lc

@@ -146,6 +146,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="npz of downloaded TOI-host curves; None means toi_curves.npz in the results dir.",
     )
+    bench.add_argument(
+        "--benchmark-stars",
+        type=Path,
+        default=None,
+        help="CSV of the hosts' TIC temperatures and densities, read if present; stars "
+        "it lacks are looked up at MAST. None means tic_stars.csv beside the TOI table.",
+    )
     args = parser.parse_args(argv)
     if args.inject_into is not None:
         if args.results_dir == ROOT / "results":
@@ -156,6 +163,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             args.curve_cache = args.results_dir / "base_curves.npz"
     if args.benchmark_tois is not None and args.benchmark_cache is None:
         args.benchmark_cache = args.results_dir / "toi_curves.npz"
+    if args.benchmark_tois is not None and args.benchmark_stars is None:
+        args.benchmark_stars = args.benchmark_tois.parent / "tic_stars.csv"
     return args
 
 
@@ -249,6 +258,7 @@ def run_toi_benchmark(
         format_benchmark_report,
         load_or_fetch_curves,
         plot_benchmark,
+        with_tic_stars,
     )
 
     spec = args.benchmark_sectors or str(args.sector if args.sector is not None else 14)
@@ -267,7 +277,12 @@ def run_toi_benchmark(
         exposure_time=args.exposure_time,
         n_workers=args.download_workers,
     )
-    print(f"  {len(curves)} have a light curve; searching them ...")
+    curves = with_tic_stars(curves, args.benchmark_stars)
+    n_known = sum(1 for lc in curves if all(np.isfinite(lc.star)))
+    print(
+        f"  {len(curves)} have a light curve, {n_known} a TIC temperature or density; "
+        "searching them ..."
+    )
     dataset = build_benchmark_dataset(
         curves, preprocess=config.preprocess, bls=config.bls, n_jobs=args.n_jobs
     )

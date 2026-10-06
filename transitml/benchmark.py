@@ -33,8 +33,9 @@ from numpy.typing import NDArray
 
 from .config import BLSConfig, PreprocessConfig
 from .data.base import LightCurve, LightCurveSource
-from .data.injection import load_curves, save_curves
+from .data.injection import load_curves, save_curves, tic_number
 from .data.loader import Dataset, build_dataset
+from .data.tic import load_or_fetch_stars, read_star_table, with_star
 from .data.toi import BenchmarkTarget
 from .evaluate import (
     N_BOOTSTRAP,
@@ -155,6 +156,25 @@ def load_or_fetch_curves(
         if lc is not None:
             out.append(replace(lc, label=target.label))
     return out
+
+
+def with_tic_stars(curves: Sequence[LightCurve], path: str | Path) -> list[LightCurve]:
+    """The curves with their hosts' TIC temperature and density in ``meta``.
+
+    The secondary-eclipse test sizes its allowance for a planet's own
+    occultation from them.  Stars come from the table at ``path``, and only
+    those it lacks are looked up at MAST
+    (:func:`~transitml.data.tic.load_or_fetch_stars`).  If that lookup fails,
+    the stars the table already has are used and the rest go without, which
+    leaves their secondary test as it was before the allowance.
+    """
+    tics = [tic for lc in curves if (tic := tic_number(lc.target_id)) is not None]
+    try:
+        stars = load_or_fetch_stars(tics, path)
+    except Exception as exc:  # noqa: BLE001 - network and catalogue errors vary
+        print(f"  TIC lookup failed ({exc}); using only the stars already in {path}")
+        stars = read_star_table(path) if Path(path).exists() else {}
+    return [with_star(lc, stars) for lc in curves]
 
 
 @dataclass
