@@ -192,3 +192,61 @@ def test_curve_cache_fetches_only_what_it_has_not_tried(toi_hosts, tmp_path, mon
     third = bench.load_or_fetch_curves(relabelled, cache)
     assert asked[-1] == [targets[6].target_id]
     assert third[0].label == 1 - targets[0].label
+
+
+def test_run_pipeline_benchmark_reads_a_cache_offline(
+    small_config, trained, toi_hosts, tmp_path, monkeypatch
+):
+    """The ``--benchmark-tois`` path end to end, from a TOI table and a curve cache."""
+    import run_pipeline
+    import transitml.benchmark as bench
+    from transitml.data.injection import save_curves
+    from transitml.data.synthetic import SyntheticTESSSource
+
+    curves, targets = toi_hosts
+    table = tmp_path / "exofop_toi.csv"
+    table.write_text(
+        "TIC ID,TOI,TFOPWG Disposition,Period (days),Planet SNR,Sectors\n"
+        + "".join(
+            f'{t.tic},{t.reference.toi},{t.reference.disposition},'
+            f'{t.reference.period},{t.reference.snr},"14,15"\n'
+            for t in targets
+        )
+        + '999,1.01,PC,3.0,10.0,"14"\n'
+    )
+    cache = tmp_path / "toi_curves.npz"
+    save_curves(curves, cache)
+
+    def no_network(*_, **__):
+        raise AssertionError("everything is cached; MAST must not be queried")
+
+    monkeypatch.setattr(bench, "fetch_benchmark_curves", no_network)
+    args = run_pipeline.parse_args(
+        [
+            "--benchmark-tois", str(table),
+            "--benchmark-sectors", "14",
+            "--benchmark-cache", str(cache),
+            "--results-dir", str(tmp_path / "results"),
+            "--figures-dir", str(tmp_path / "figures"),
+            "--n-jobs", "2",
+        ]
+    )
+    (tmp_path / "results").mkdir()
+    source = SyntheticTESSSource(n_curves=1, positive_rate=0.0, eclipsing_binary_rate=0.0, seed=1)
+    payload = run_pipeline.run_toi_benchmark(args, small_config, trained, source)
+
+    assert payload["n_stars"] == len(targets)
+    assert payload["selection"]["unlabelled"] == 1
+    assert (tmp_path / "results" / "toi_benchmark.txt").exists()
+    assert json.loads((tmp_path / "results" / "toi_benchmark.json").read_text())["sectors"] == [14]
+    assert (tmp_path / "figures" / "05_toi_benchmark.png").exists()
+
+
+def test_training_stars_are_named_for_exclusion(toi_hosts):
+    import run_pipeline
+    from transitml.data.injection import InjectionSource
+
+    curves, _ = toi_hosts
+    base = [replace(lc, label=None) for lc in curves[:3]]
+    source = InjectionSource(base, 0.0, 0.0, seed=1)
+    assert run_pipeline.training_tic_ids(source) == {5000, 5001, 5002}

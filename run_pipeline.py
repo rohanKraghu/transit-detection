@@ -16,6 +16,15 @@ downloads one sector of real light curves for every target that is not a known
 TOI host, injects the same planet and binary population as the synthetic run,
 and writes everything to ``results/real_injection/`` and
 ``figures/real_injection/`` so the synthetic headline is never overwritten.
+
+Benchmark against real labels (either mode; needs ``lightkurve`` the first
+time)::
+
+    python run_pipeline.py ... --benchmark-tois exofop_toi.csv --benchmark-sectors 14-26
+
+scores the trained model, unchanged, on TOI hosts whose follow-up disposition
+is known (CP/KP planets, FP/FA false positives) and writes
+``toi_benchmark.json`` and ``toi_benchmark.txt`` beside the metrics.
 """
 
 from __future__ import annotations
@@ -40,11 +49,13 @@ from transitml.data.injection import (
     load_excluded_tic_ids,
     read_target_list,
     save_curves,
+    tic_number,
 )
 from transitml.data.loader import Dataset, build_dataset
 from transitml.data.synthetic import SyntheticTESSSource
+from transitml.data.toi import parse_sector_spec, read_toi_table, select_benchmark_targets
 from transitml.evaluate import evaluate, format_report
-from transitml.model import make_split, train
+from transitml.model import TrainedModel, make_split, train
 from transitml.plots import plot_all
 
 ROOT = Path(__file__).resolve().parent
@@ -112,6 +123,28 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="npz of downloaded curves; read if present, written after a download.",
     )
+    bench = parser.add_argument_group(
+        "benchmark against real labels",
+        "Score the trained model on TOI hosts with a follow-up disposition.",
+    )
+    bench.add_argument(
+        "--benchmark-tois",
+        type=Path,
+        default=None,
+        help="ExoFOP TOI CSV (download_toi.php?output=csv); needs its Sectors column.",
+    )
+    bench.add_argument(
+        "--benchmark-sectors",
+        default=None,
+        help="Sectors to score, in preference order, e.g. 14 or 14-26; "
+        "None means --sector, else 14.",
+    )
+    bench.add_argument(
+        "--benchmark-cache",
+        type=Path,
+        default=None,
+        help="npz of downloaded TOI-host curves; None means toi_curves.npz in the results dir.",
+    )
     args = parser.parse_args(argv)
     if args.inject_into is not None:
         if args.results_dir == ROOT / "results":
@@ -120,6 +153,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             args.figures_dir = ROOT / "figures" / "real_injection"
         if args.curve_cache is None:
             args.curve_cache = args.results_dir / "base_curves.npz"
+    if args.benchmark_tois is not None and args.benchmark_cache is None:
+        args.benchmark_cache = args.results_dir / "toi_curves.npz"
     return args
 
 
@@ -191,6 +226,73 @@ def build_source(config: Config, args: argparse.Namespace) -> LightCurveSource:
         planet=config.planet,
         eb=config.eb,
     )
+
+
+def training_tic_ids(source: LightCurveSource) -> set[int]:
+    """TIC numbers of the real stars the model was trained on (none if synthetic)."""
+    if not isinstance(source, InjectionSource):
+        return set()
+    return {n for lc in source.base_curves if (n := tic_number(lc.target_id)) is not None}
+
+
+def run_toi_benchmark(
+    args: argparse.Namespace,
+    config: Config,
+    trained: TrainedModel,
+    source: LightCurveSource,
+) -> dict[str, Any]:
+    """Score ``trained`` on labelled TOI hosts; write the report, JSON and figure."""
+    from transitml.benchmark import (
+        benchmark,
+        build_benchmark_dataset,
+        format_benchmark_report,
+        load_or_fetch_curves,
+        plot_benchmark,
+    )
+
+    spec = args.benchmark_sectors or str(args.sector if args.sector is not None else 14)
+    sectors = parse_sector_spec(spec)
+    targets, selection = select_benchmark_targets(
+        read_toi_table(args.benchmark_tois), sectors, exclude_tics=training_tic_ids(source)
+    )
+    print(
+        f"\nTOI benchmark: {selection['positives']} CP/KP and {selection['negatives']} FP/FA "
+        f"hosts in sectors {spec} ({selection['in_training_set']} dropped as training stars)"
+    )
+    curves = load_or_fetch_curves(
+        targets,
+        args.benchmark_cache,
+        author=args.author,
+        exposure_time=args.exposure_time,
+        n_workers=args.download_workers,
+    )
+    print(f"  {len(curves)} have a light curve; searching them ...")
+    dataset = build_benchmark_dataset(
+        curves, preprocess=config.preprocess, bls=config.bls, n_jobs=args.n_jobs
+    )
+    result = benchmark(
+        dataset,
+        targets,
+        trained,
+        sectors=sectors,
+        selection=selection,
+        n_without_curve=len(targets) - len(curves),
+        top_k=config.evaluation.top_k,
+        seed=config.seed,
+    )
+    report = format_benchmark_report(result)
+    print()
+    print(report)
+
+    results_dir = Path(args.results_dir)
+    payload = result.to_dict()
+    payload["toi_table"] = _display_path(Path(args.benchmark_tois).resolve())
+    if not args.no_figures:
+        figure = plot_benchmark(result, Path(args.figures_dir) / "05_toi_benchmark.png")
+        payload["figure"] = _display_path(figure)
+    (results_dir / "toi_benchmark.json").write_text(json.dumps(payload, indent=2, default=str))
+    (results_dir / "toi_benchmark.txt").write_text(report + "\n")
+    return payload
 
 
 def pick_example_indices(dataset: Dataset, config: Config) -> list[int]:
@@ -292,6 +394,16 @@ def main(argv: list[str] | None = None) -> int:
         )
         payload["figures"] = [_display_path(p) for p in paths]
         print("figures: " + ", ".join(_display_path(p) for p in paths))
+
+    if args.benchmark_tois is not None:
+        bench = run_toi_benchmark(args, config, trained, source)
+        payload["toi_benchmark"] = {
+            k: bench[k] for k in ("n_stars", "n_planets", "chance_average_precision")
+        } | {
+            "average_precision": bench["model"]["average_precision"],
+            "planet_recall": bench["operating_point"]["planet_recall"],
+            "false_positive_rejection": bench["operating_point"]["false_positive_rejection"],
+        }
 
     dataset.save(results_dir / "dataset.npz")
     payload["runtime_seconds"] = round(time.time() - started, 1)
