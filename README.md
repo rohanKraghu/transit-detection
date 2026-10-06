@@ -7,7 +7,9 @@ hundred times deeper. This repository is an end-to-end pipeline for that
 problem — generate the photometry, detrend it, search it, classify it, and
 evaluate it the way an imbalanced detection problem has to be evaluated.
 It also vets single real stars: `python -m transitml.vet "TIC ..."` downloads,
-detrends, searches and scores one target and writes a one-page report.
+detrends, searches and scores one target and writes a one-page report, and
+`python -m transitml.batch` does the same for a whole sector, with a cache
+and a dashboard of ranked candidates.
 
 **One command reproduces everything in this README:**
 
@@ -15,7 +17,7 @@ detrends, searches and scores one target and writes a one-page report.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python run_pipeline.py            # ~2 min on 4 cores
-pytest                            # ~3 min, 294 tests
+pytest                            # ~3 min, 312 tests
 ```
 
 It writes `results/metrics.json`, `results/report.txt`, the trained model
@@ -43,6 +45,10 @@ Intervals are 68% bootstrap intervals over 2000 paired resamples of the test
 set. With 34 positives the point estimate carries ±0.07, so the third decimal
 means nothing — but the model out-scores the baseline in **100.0%** of paired
 resamples, so the gap does.
+
+That test set is one draw. On three fresh sectors of 2000 stars from the same
+generator, which the model never saw, average precision was 0.61, 0.74 and
+0.67; see "Vetting a whole sector" below.
 
 ![Precision-recall](figures/02_precision_recall.png)
 
@@ -707,6 +713,93 @@ circular Gaussian, much tidier than the TESS PRF. The test also uses only the
 primary signal and one ephemeris per run, and is not applied in the
 `run_pipeline.py` evaluation, which has no pixels.
 
+## Vetting a whole sector
+
+`python -m transitml.batch` runs every star of a sector through what `vet`
+does to one (detrend, search, featurise, score, calibrate, explain) in
+parallel, caches each result as it lands, and ranks the lot.
+
+```bash
+python run_pipeline.py                                    # writes results/model.joblib
+python -m transitml.batch --synthetic 2000                # an offline demo sector, with ground truth
+python -m transitml.batch --targets s14.txt --sector 14   # real stars from MAST (one TIC per line, or a CSV)
+python -m transitml.batch curves.npz more_curves/         # light-curve files or directories of them
+```
+
+It writes four things to `--out-dir` (default `results/batch/<source>/`):
+
+- `candidates.csv`: every star ranked by score, with P(planet), the verdict,
+  the primary signal's period, depth, duration and SNR, how many signals the
+  iterative search found, and the three SHAP reasons that moved it most.
+- `summary.json`: counts, the model file and its fingerprint, how much came
+  from the cache, the expected number of planets among the flagged stars
+  (the sum of their probabilities), and, when the stars carry ground truth
+  (synthetic or injected), how the list scores against it.
+- `dashboard.html`: one self-contained page, no network and no server: a
+  histogram of P(planet), and a sortable, filterable table with a folded
+  light curve per row. Clicking a row shows its SHAP reasons, every signal
+  found, and a link to its full report.
+- `reports/`: the full one-page `vet` report for the top `--reports`
+  flagged stars (10 by default).
+
+![Batch dashboard](figures/08_batch_dashboard.png)
+
+The committed demo is `results/batch/synthetic_seed7/`, from
+`python -m transitml.batch --synthetic 2000 --seed 7 --reports 3`: 2000 stars
+the model has never seen, from the training generator with a different seed.
+It took 237 s on 4 cores, about half a core-second per star.
+
+**Caching.** There are two layers, so a sector can be stopped and resumed
+and a rerun does only what changed. Downloaded light curves are saved in
+chunks of 200 as they arrive (`curves/`), together with the targets MAST had
+nothing for, so an interrupted download restarts where it stopped. Each
+star's result is appended to `cache/results.jsonl` the moment it is
+computed, keyed by a hash of its light curve, the model file and the search
+settings; a rerun skips every star whose key is there. A changed curve
+recomputes that star alone, and a new model or new `--max-signals` or
+`--min-sde` recomputes everything. A run killed mid-write leaves at most one
+torn line, which the next run ignores. `--planet-rate` is applied when the
+outputs are written, so restating the probabilities for a population where,
+say, 30% of stars host a planet costs nothing. `--force` ignores the cache.
+A star whose light curve cannot be processed is reported in the table and
+`summary.json` with its error and does not stop the rest.
+
+**How well it does on a fresh sector.** The held-out numbers in the headline
+come from 840 stars with 34 planets, a small sample. Three fresh synthetic
+sectors of 2000 stars, 80 planets each, scored by the same saved model:
+
+| Sample | Stars | Planets | Flagged | Planets flagged | Precision | Recall | Average precision | Expected planets |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Held-out split (seed 42) | 840 | 34 | 54 | 26 | 0.48 | 0.76 | 0.80 | 42.5 |
+| Fresh sector, seed 7 | 2000 | 80 | 125 | 48 | 0.38 | 0.60 | 0.61 | 86.0 |
+| Fresh sector, seed 8 | 2000 | 80 | 129 | 60 | 0.47 | 0.75 | 0.74 | 94.0 |
+| Fresh sector, seed 9 | 2000 | 80 | 111 | 57 | 0.51 | 0.71 | 0.67 | 84.6 |
+
+"Expected planets" is the sum of P(planet) over every star in the sample.
+Average precision on the fresh sectors was 0.61, 0.74 and 0.67, against
+0.80 on the held-out split: that figure, from 34 planets, sits at the lucky
+end of what this model does, and about 0.67 is the better single number.
+The threshold was chosen so that out-of-fold training precision was at
+least 0.5 at one sigma; on fresh stars precision came in at 0.38 to 0.51,
+0.45 pooled over the three sectors, so expect a little under half of the
+flagged stars to be planets. The top 20 were planets in 58 of 60 cases. The
+probabilities run high: pooled over the three sectors they add up to 265
+planets where there are 240, about 10% too many, in the same direction as
+the held-out 42.5 against 34. The ranking is the dependable part; treat
+P(planet) as a slight overstatement.
+
+**Payload.** The dashboard carries every star, but only the flagged stars
+and the top 300 by score carry their folded light curve, signals and
+reasons in full; the rest carry the table columns and their top reason, and
+`candidates.csv` has everything. That keeps a 2000-star sector to 0.8 MB;
+a 20,000-star sector flagged at the same rate would be about 7 MB.
+
+**The MAST path has only been tested offline**, with the download replaced
+by a stub, as for `vet`: this environment could not reach MAST. The files
+path and the synthetic path are tested end to end. The batch runs the same
+code as `vet`, star by star, so its scores match `run_pipeline.py`'s for the
+same curves (checked to 5e-9 on the 120 test stars of a small run).
+
 ---
 
 ## Failure modes
@@ -890,8 +983,10 @@ transit-detection/
 │   ├── evaluate.py             # PR curves, AP, confusion matrix, failure analysis
 │   ├── benchmark.py            # the trained model scored on real TOI dispositions
 │   ├── vet.py                  # python -m transitml.vet: one star, one page
+│   ├── batch.py                # python -m transitml.batch: a sector, cached and ranked
+│   ├── dashboard.py            # the batch's self-contained HTML dashboard
 │   └── plots.py                # figures (matplotlib Agg, no display)
-├── tests/                      # 294 tests, ~3 min
+├── tests/                      # 312 tests, ~3 min
 │   ├── test_generator.py       # imbalance is exact; injected physics is consistent
 │   ├── test_preprocess.py      # depth preservation; why the median was rejected
 │   ├── test_features.py        # recovery vs SNR; the vetting statistics fire
@@ -910,6 +1005,7 @@ transit-detection/
 │   ├── test_synthetic_tpf.py   # synthetic pixels put the light where it belongs
 │   ├── test_centroid.py        # blends flagged, on-target not; bad input survives
 │   ├── test_vet_centroid.py    # centroid section in JSON and PNG; score unchanged
+│   ├── test_batch.py           # ranking, cache reuse and invalidation, dashboard
 │   └── test_pipeline.py        # end to end, reproducible, figures on disk
 ├── figures/                    # committed, so this README renders
 └── results/                    # metrics.json + report.txt, committed
