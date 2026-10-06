@@ -536,7 +536,7 @@ def plot_pr(result: DR25Result, path: Path) -> Path:
     ax.set_xlabel("recall on planet candidates")
     ax.set_ylabel("precision")
     ax.set_title(f"Held-out DR25 stars: {result.n_test} TCEs, class-balanced sample", loc="left")
-    ax.legend(loc="lower left")
+    ax.legend(loc="center left")
     fig.tight_layout()
     return _save(fig, path)
 
