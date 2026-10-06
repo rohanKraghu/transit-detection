@@ -940,7 +940,8 @@ on. Sizes are rough: S is a few hours, M a day or two, L longer.
 
 - Odd/even and secondary-eclipse significances divided by the red-noise β.
 - Operating threshold chosen on a Wilson lower bound of CV precision.
-- Injection-recovery on real TESS photometry (sector 14, AP 0.51).
+- Injection-recovery on real TESS photometry (sector 14: AP 0.44 on the
+  held-out split, about 0.56 in cross-validation).
 - `python -m transitml.vet`: one star in, a one-page vetting report out.
 - Iterative multi-planet search for the vetting report.
 - Multi-sector stitching (`--stitch`, `stitch_light_curves`).
@@ -949,18 +950,23 @@ on. Sizes are rough: S is a few hours, M a day or two, L longer.
   Checked on synthetic pixels only so far.
 - Benchmark against real TOI dispositions (`--benchmark-tois`; 746 hosts in
   sectors 14 to 26, AP 0.62 against a chance level of 0.50).
+- Binary tests that hold up on bright real stars: odd/even and secondary
+  significances also scaled by the event-to-event depth scatter, and a second
+  detrend with the strongest signal masked. Confirmed planets above TOI SNR
+  100 reading as odd/even binaries fell from 36% to 6%.
 
 **Planned**
 
 | Item | What it adds | Size |
 | --- | --- | --- |
-| Structured systematics in the generator | 13.7-day scattered light, camera-correlated jitter and focus drift, so the synthetic noise stops flattering the result | M |
-| Single-transit and duo-transit search | Events the period grid excludes by construction today | M |
-| Transit Least Squares and GPU BLS | An alternative search and a faster one; BLS is the runtime bottleneck | M |
-| Kepler DR25 training set, then an optional CNN | About 34k labels, enough to train on transit shape | L |
-| Probability calibration and per-candidate SHAP | A calibrated score and an exact reason per object | S |
-| Batch mode over a whole sector | On-disk caching and a candidate list | M |
-| Planet parameter fits | batman and emcee fits for candidates that pass | M |
+| Structured systematics in the generator, in review | 13.7-day scattered light, camera-correlated jitter and focus drift, so the synthetic noise stops flattering the result | M |
+| Single-transit and duo-transit search, in review | Events the period grid excludes by construction today | M |
+| Transit Least Squares and GPU BLS, in review | An alternative search and a faster one; BLS is the runtime bottleneck | M |
+| Kepler DR25 training set, then an optional CNN, in review | About 34k labels, enough to train on transit shape | L |
+| Probability calibration and per-candidate SHAP, in review | A calibrated score and an exact reason per object | S |
+| Batch mode over a whole sector, in review | On-disk caching and a candidate list | M |
+| Planet parameter fits, in review | batman and emcee fits for candidates that pass | M |
+| Per-star occultation allowance | Stop rejecting hot Jupiters on their own secondary eclipse, using each host's temperature and density from the TOI table | M |
 
 ## References
 
