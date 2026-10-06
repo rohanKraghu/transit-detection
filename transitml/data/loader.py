@@ -16,8 +16,7 @@ from joblib import Parallel, delayed
 from numpy.typing import NDArray
 
 from ..config import BLSConfig, Config, PreprocessConfig
-from ..features import FEATURE_NAMES, extract_features
-from ..preprocess import flatten
+from ..features import FEATURE_NAMES, extract_features, flatten_masked
 from .base import LightCurve, LightCurveSource
 from .synthetic import SyntheticTESSSource
 
@@ -82,7 +81,7 @@ def process_light_curve(
     pickles cleanly for :class:`joblib.Parallel`.
     """
     lc = lc.finite()
-    flat = flatten(lc, preprocess)
+    flat = flatten_masked(lc, preprocess, bls)
     feats = extract_features(flat, bls)
     meta = dict(lc.meta)
     if lc.label is not None:

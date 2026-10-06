@@ -16,6 +16,7 @@ from transitml.features import (
     event_depths,
     extract_features,
     flat_bottom_fraction,
+    flatten_masked,
     period_grid,
     red_noise_beta,
     run_bls,
@@ -386,6 +387,45 @@ def test_wandering_depths_are_not_a_binary_but_alternating_ones_are(config, fast
     assert ratio_planet > 3.0 and ratio_binary > 3.0
     assert planet["odd_even_sigma"] < 3.0
     assert binary["odd_even_sigma"] > 5.0
+
+
+def test_flatten_masked_keeps_a_transit_against_a_gap(config, fast_bls):
+    """End to end: the masked second pass finds the signal and keeps every event."""
+    from .test_preprocess import transit_against_a_gap
+
+    lc, period, epoch, duration, depth = transit_against_a_gap()
+    blind = flatten(lc, config.preprocess)
+    masked = flatten_masked(lc, config.preprocess, fast_bls)
+    assert masked.n_masked > 0
+
+    _, blind_depths, _ = event_depths(blind, period, duration, epoch)
+    _, masked_depths, _ = event_depths(masked, period, duration, epoch)
+    assert blind_depths.min() < 0.2 * depth
+    np.testing.assert_allclose(masked_depths, depth, rtol=0.1)
+
+
+def test_flatten_masked_falls_back_to_the_blind_detrend(config, fast_bls):
+    from dataclasses import replace
+
+    lc, _ = clean_transit_curve(period=3.4, depth=3e-3, duration=0.12, sigma=2e-4, seed=1)
+    blind = flatten(lc, config.preprocess)
+    assert flatten_masked(lc, config.preprocess, fast_bls).n_masked > 0
+    for preprocess in (
+        replace(config.preprocess, mask_signal=False),
+        replace(config.preprocess, mask_min_sde=1e9),
+        replace(config.preprocess, mask_max_fraction=0.0),
+    ):
+        same = flatten_masked(lc, preprocess, fast_bls)
+        assert same.n_masked == 0
+        np.testing.assert_array_equal(same.flux, blind.flux)
+
+
+def test_a_noise_peak_is_not_masked(config, fast_bls):
+    """Masking a peak the search does not believe in would only feed it."""
+    quiet, _ = clean_transit_curve(depth=0.0, variability_amplitude=2e-3, seed=8)
+    res = run_bls(flatten(quiet, config.preprocess), fast_bls)
+    assert signal_detection_efficiency(res["power"]) < config.preprocess.mask_min_sde
+    assert flatten_masked(quiet, config.preprocess, fast_bls).n_masked == 0
 
 
 def test_period_grid_is_log_spaced_and_bounded(config):
