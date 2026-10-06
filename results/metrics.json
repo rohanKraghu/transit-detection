@@ -111,8 +111,9 @@
       "top_k": 20
     }
   },
-  "runtime_seconds": 123.7,
+  "runtime_seconds": 281.6,
   "dataset": {
+    "source": "SyntheticTESSSource",
     "n_curves": 2400,
     "n_planets": 96,
     "positive_rate": 0.04,
@@ -466,13 +467,21 @@
     ]
   },
   "environment": {
-    "python": "3.11.15",
-    "numpy": "2.2.6"
+    "python": "3.13.16",
+    "numpy": "2.4.6"
   },
   "figures": [
     "figures/01_light_curves.png",
     "figures/02_precision_recall.png",
     "figures/03_diagnostics.png",
     "figures/04_feature_importance.png"
-  ]
+  ],
+  "toi_benchmark": {
+    "n_stars": 746,
+    "n_planets": 376,
+    "chance_average_precision": 0.5040214477211796,
+    "average_precision": 0.6062296219942408,
+    "planet_recall": 0.5691489361702128,
+    "false_positive_rejection": 0.5918918918918918
+  }
 }
