@@ -243,6 +243,99 @@ python run_pipeline.py --inject-into data/real_injection/targets_s0014.txt \
     --exclude-tois data/real_injection/toi.csv --sector 14 --download-workers 16
 ```
 
+### Structured systematics in the synthetic sector
+
+The noise above is drawn star by star, so nothing in it is shared between
+targets. Real TESS systematics come from the spacecraft: every star on a
+camera sees the same scattered light, pointing jitter and focus changes, and
+every star in the sector sees the same momentum dumps. `--systematics` adds
+that layer, drawn once per sector from the seed:
+
+```
++ scattered light   rises into each perigee, 13.7 d apart (the mid-sector gap is one),
+                    with a 1-day Earthshine modulation; camera levels 1.0, 0.6, 0.35, 0.2
++ pointing jitter   1/f noise, one series per camera
++ momentum dumps    spacecraft-wide, every 2.5 to 5 d: the cadence is lost and the
+                    flux settles back over about 1.5 hours
++ focus settling    after each perigee as the thermal state recovers, per camera
+```
+
+![Sector systematics](figures/systematics/05_sector_systematics.png)
+
+Each star gets a camera and its own coupling to each component, in units of
+its white-noise scatter (scattered light 1 to 20, dumps 1 to 8, focus 0.5 to
+5, jitter 0.3 to 1.5), so stars on one camera share the shape at different
+strengths, as they do after real background subtraction. Scattered light and
+jitter can take either sign; dumps and defocus only lose flux. The stars,
+planets and binaries are the same draws as without it.
+
+```bash
+python run_pipeline.py --systematics                           # results/systematics/
+python run_pipeline.py --systematics --systematics-scale 0     # the paired control
+python run_pipeline.py --systematics --systematics-components momentum_dumps
+```
+
+A scale of 0 keeps the sector's gap and the cadences lost at dumps but adds
+no signal, so it is the control for the same stars with and without the
+systematics. Turning components off leaves the others exactly as they were.
+On the default seed (2400 curves, 96 planets, 34 held out), adding one
+component at a time:
+
+| Added to the control | Held-out AP | Planets whose period the search finds (of 96) | Variable stars peaking at the dump period |
+| --- | --- | --- | --- |
+| nothing (control) | 0.748 [0.671, 0.833] | 86 | 3% |
+| scattered light | 0.748 | 87 | |
+| pointing jitter | 0.759 | 82 | |
+| momentum dumps | 0.749 | 78 | 53% |
+| focus settling | 0.787 | 85 | |
+| all four | 0.730 [0.656, 0.806] | 76 | 44% |
+
+Full report in
+[`results/systematics/report.txt`](results/systematics/report.txt).
+
+**The search pays, the classifier mostly does not.** Momentum dumps are a
+periodic, hour-long loss of flux at the same times in every star, which is a
+transit as far as a per-star box search can tell. With all four components,
+44% of the variable stars put their strongest BLS peak at the dump interval
+or a multiple of it (from 3%), and 340 of the 356 with a significant peak
+(SDE above 7) are there. The planets lose too: the search finds 76 of 96
+periods instead of 86, 13 planets have their peak taken by the dumps
+instead of 3, and above a transit SNR of 12 it finds 75 of 80 instead of 79.
+The classifier, by contrast, loses only 0.02 in average precision. Of the
+324 held-out variable stars whose peak sits at the dump period it flags 10,
+against 9 of the other 429: their dips are real but shallow (a median depth
+of 1.9 times the scatter, against 5.6 for planets), and shallow peaks are
+what the model already calls noise. Jitter and focus alone do not hurt the
+classifier; focus even helps, by a margin well inside the interval.
+
+**It is not learning the sector's dump period.** A model trained on one
+sector could simply learn that the dump interval means "not a planet". To
+test that, the same population was drawn into two more sectors (seeds 43 and
+44, each with its own dump interval, gap and camera series), each with its
+own paired control, and the sector 42 model was also scored on them:
+
+| Sector (dump interval) | AP, control → with systematics | Search finds (of 96) | Variable stars at the dump period | Sector 42 model, with systematics |
+| --- | --- | --- | --- | --- |
+| 42 (2.58 d) | 0.748 → 0.730 | 86 → 76 | 3% → 44% | |
+| 43 (4.33 d) | 0.679 → 0.644 | 75 → 71 | 4% → 32% | 0.621 |
+| 44 (2.52 d) | 0.661 → 0.538 | 82 → 66 | 2% → 43% | 0.514 |
+
+Scored on a sector it never saw, the sector 42 model loses about 0.02
+against that sector's own model, which is no more than it loses without
+systematics (between a gain of 0.01 and a loss of 0.06 on the same two
+sectors). What does vary is how much a sector suffers: the paired drop is
+0.02 in sector 42, 0.04 in 43 and 0.12 in 44, where the search also loses
+the most planets. Sectors 42 and 44 dump at nearly the same interval, so the
+interval alone does not set the cost.
+
+Every comparison here is paired for a reason. The control differs from the
+same seed's run without `--systematics` by 0.05 to 0.15 in average
+precision, only because the shared gap and the dropped dump cadences change
+every star's sampling, and the default model scores 0.63 to 0.81 across
+these three seeds. Both spreads are wider than the bootstrap interval of a
+single run, so one synthetic sector is not the number to expect, with or
+without systematics.
+
 ---
 
 ## Preprocessing: the part that decides whether anything else matters
