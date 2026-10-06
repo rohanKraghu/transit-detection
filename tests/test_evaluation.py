@@ -25,7 +25,13 @@ from transitml.evaluate import (
     score_curve,
 )
 from transitml.features import FEATURE_NAMES
-from transitml.model import BASELINES, make_split, select_threshold, train
+from transitml.model import (
+    BASELINES,
+    make_split,
+    select_threshold,
+    train,
+    wilson_lower_bound,
+)
 
 
 @pytest.fixture(scope="module")
@@ -272,6 +278,47 @@ def test_select_threshold_falls_back_loudly_when_unreachable():
     scores = np.random.default_rng(0).uniform(size=y.size)
     _, rule, _, _ = select_threshold(y, scores, target_precision=0.99)
     assert "unreachable" in rule
+
+
+def test_wilson_lower_bound_is_below_the_point_estimate_and_tightens_with_n():
+    tp = np.array([1.0, 5.0, 50.0, 10.0, 0.0])
+    n = np.array([1.0, 10.0, 100.0, 10.0, 4.0])
+    point = tp / n
+    lower = wilson_lower_bound(tp, n, z=1.0)
+    assert np.all(lower <= point + 1e-12)
+    assert np.all(lower >= 0.0)
+    # Same 0.5 precision: the bound is tighter at 100 candidates than at 10.
+    assert lower[2] > lower[1]
+    assert wilson_lower_bound(tp, n, z=0.0) == pytest.approx(point)
+    # 1-sigma Wilson bound for 5/10, by hand: (0.55 - sqrt(0.025 + 0.0025)) / 1.1
+    assert lower[1] == pytest.approx((0.55 - np.sqrt(0.0275)) / 1.1, rel=1e-12)
+
+
+@pytest.mark.parametrize("seed", range(20))
+@pytest.mark.parametrize("target", [0.3, 0.5, 0.7])
+def test_lcb_rule_never_picks_a_lower_threshold_than_the_point_rule(seed, target):
+    """Requiring the lower bound to clear the floor can only move the threshold up."""
+    rng = np.random.default_rng(seed)
+    n_pos = int(rng.integers(10, 60))
+    y = np.array([1] * n_pos + [0] * (1500 - n_pos))
+    separation = rng.uniform(0.5, 3.0)
+    scores = rng.normal(size=y.size) + separation * y
+
+    point_thr, point_rule, _, _ = select_threshold(y, scores, target, precision_lcb_z=0.0)
+    for z in (0.5, 1.0, 2.0):
+        lcb_thr, lcb_rule, _, _ = select_threshold(y, scores, target, precision_lcb_z=z)
+        assert lcb_thr >= point_thr, (z, lcb_rule, point_rule)
+
+
+def test_lcb_rule_on_the_trained_oof_scores(trained_pair):
+    """The same guarantee on real out-of-fold scores, and the rule says what it did."""
+    split, model = trained_pair
+    point_thr, point_rule, _, _ = select_threshold(
+        split.y_train, model.oof_scores, 0.5, precision_lcb_z=0.0
+    )
+    assert "lower bound" not in point_rule
+    assert model.threshold >= point_thr
+    assert "Wilson" in model.threshold_rule
 
 
 def test_precision_at_k_and_recall_by_snr():

@@ -9,9 +9,12 @@ from transitml.config import PreprocessConfig
 from transitml.data.synthetic import trapezoid_transit
 from transitml.features import (
     FEATURE_NAMES,
+    _pair_sigma,
+    beta_inflation,
     extract_features,
     flat_bottom_fraction,
     period_grid,
+    red_noise_beta,
     run_bls,
     signal_detection_efficiency,
 )
@@ -174,6 +177,89 @@ def test_red_noise_beta_responds_to_correlated_noise(config, fast_bls):
 
     assert beta(white) == pytest.approx(1.0, abs=0.45)
     assert beta(red) > beta(white)
+
+
+def _raw_binary_sigmas(flat, bls_config):
+    """The odd/even and secondary significances against white-noise error bars,
+    plus the noise beta (primary and secondary windows masked) used to scale them.
+
+    Recomputed here, independently of ``extract_features``, from the same BLS
+    solution, so the tests can compare the shipped (beta-scaled) values to the
+    unscaled ones.
+    """
+    res = run_bls(flat, bls_config)
+    st = res["bls"].compute_stats(res["period"], res["duration"], res["transit_time"])
+    odd_even = _pair_sigma(st["depth_odd"], st["depth_even"])
+    sec_value, sec_err = (float(v) for v in np.ravel(st["depth_phased"])[:2])
+    secondary = sec_value / sec_err if sec_err > 0 else float("nan")
+    period, duration = res["period"], res["duration"]
+    phase = (flat.time - res["transit_time"] + 0.5 * period) % period - 0.5 * period
+    mask = (np.abs(phase) < duration) | (np.abs(np.abs(phase) - 0.5 * period) < duration)
+    beta = red_noise_beta(flat, duration, mask)
+    return odd_even, secondary, beta
+
+
+def test_feature_beta_is_inflated_by_transit_leakage_but_vetting_beta_is_not(config, fast_bls):
+    """Why the binary tests use their own, wider-masked beta.
+
+    With the exact-box mask of the ``red_noise_beta`` feature, ingress/egress
+    cadences leak into the out-of-transit bins and a white-noise planet light
+    curve reads beta well above 1.  Masking two box-widths brings it back to ~1.
+    """
+    lc, _ = clean_transit_curve(period=3.4, depth=3e-3, duration=0.16, sigma=2e-4, seed=11)
+    flat = flatten(lc, config.preprocess)
+    features = extract_features(flat, fast_bls)
+    _, _, vetting_beta = _raw_binary_sigmas(flat, fast_bls)
+    assert features["red_noise_beta"] > 1.5
+    assert vetting_beta == pytest.approx(1.0, abs=0.2)
+
+
+def test_beta_inflation_is_floored_at_one_and_ignores_nan():
+    assert beta_inflation(0.7) == 1.0
+    assert beta_inflation(1.0) == 1.0
+    assert beta_inflation(2.3) == pytest.approx(2.3)
+    assert beta_inflation(float("nan")) == 1.0
+
+
+def test_binary_tests_are_unchanged_on_white_noise(config, fast_bls):
+    """With white noise beta ~ 1, so the beta scaling must be (nearly) a no-op."""
+    lc, _ = clean_transit_curve(period=3.4, depth=3e-3, duration=0.12, sigma=2e-4, seed=11)
+    flat = flatten(lc, config.preprocess)
+    features = extract_features(flat, fast_bls)
+    odd_even_raw, secondary_raw, beta = _raw_binary_sigmas(flat, fast_bls)
+
+    assert beta == pytest.approx(1.0, abs=0.2)
+    inflation = beta_inflation(beta)
+    assert inflation < 1.2
+    assert features["odd_even_sigma"] == pytest.approx(odd_even_raw / inflation, rel=1e-9)
+    assert features["secondary_sigma"] == pytest.approx(secondary_raw / inflation, rel=1e-9)
+    # i.e. within the white-noise sampling scatter of beta, unchanged.
+    assert features["odd_even_sigma"] == pytest.approx(odd_even_raw, rel=0.2)
+    assert abs(features["secondary_sigma"]) == pytest.approx(abs(secondary_raw), rel=0.2)
+
+
+def test_binary_tests_are_deflated_by_beta_under_red_noise(config, fast_bls):
+    """Correlated noise inflates the raw binary statistics; dividing by beta undoes it.
+
+    This is failure mode 4 in the README: a genuine planet on a red-noise star
+    picking up a spurious odd/even difference and secondary eclipse.
+    """
+    from transitml.data.base import LightCurve
+    from transitml.data.synthetic import power_law_noise
+
+    lc, _ = clean_transit_curve(period=3.4, depth=3e-3, duration=0.12, sigma=2e-4, seed=11)
+    rng = np.random.default_rng(5)
+    red = power_law_noise(lc.time.size, 1 / 48, alpha=1.5, rms=5e-4, rng=rng)
+    noisy = LightCurve(lc.target_id, lc.time, lc.flux + red, lc.flux_err, 1, dict(lc.meta))
+    flat = flatten(noisy, config.preprocess)
+    features = extract_features(flat, fast_bls)
+    odd_even_raw, secondary_raw, beta = _raw_binary_sigmas(flat, fast_bls)
+
+    assert beta > 1.3, f"injected red noise should give beta > 1.3, got {beta:.2f}"
+    assert features["odd_even_sigma"] == pytest.approx(odd_even_raw / beta, rel=1e-9)
+    assert features["secondary_sigma"] == pytest.approx(secondary_raw / beta, rel=1e-9)
+    assert features["odd_even_sigma"] < odd_even_raw
+    assert abs(features["secondary_sigma"]) < abs(secondary_raw)
 
 
 def test_period_grid_is_log_spaced_and_bounded(config):

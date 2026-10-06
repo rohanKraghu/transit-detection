@@ -13,7 +13,7 @@ evaluate it the way an imbalanced detection problem has to be evaluated.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python run_pipeline.py            # ~2 min on 4 cores
-pytest                            # ~1 min, 86 tests
+pytest                            # ~1.5 min, 152 tests
 ```
 
 It writes `results/metrics.json`, `results/report.txt` and four PNGs to
@@ -30,10 +30,10 @@ It writes `results/metrics.json`, `results/report.txt` and four PNGs to
 | Random ranking (chance) | 0.040 | 0.500 | — |
 | Baseline: rank by BLS **depth** | 0.097 [0.080, 0.128] | 0.751 | 0.00 |
 | Baseline: rank by BLS **depth SNR** | 0.180 [0.149, 0.231] | 0.830 | 0.10 |
-| **Gradient boosting on vetting features** | **0.730** [0.659, 0.799] | 0.933 | **0.95** |
+| **Gradient boosting on vetting features** | **0.799** [0.732, 0.862] | 0.939 | **1.00** |
 
-**18× better than chance, 4.1× better than the strongest single-statistic
-baseline.** Of the 20 candidates the model ranks highest, 19 are real planets;
+**20× better than chance, 4.4× better than the strongest single-statistic
+baseline.** Of the 20 candidates the model ranks highest, all 20 are real planets;
 ranking the same light curves by BLS signal-to-noise gets 2.
 
 Intervals are 68% bootstrap intervals over 2000 paired resamples of the test
@@ -47,11 +47,11 @@ At the chosen operating threshold, on the 840 held-out light curves:
 
 ```
                     pred: no planet    pred: planet
-  truth: no planet          771              35
-  truth: planet              10              24
+  truth: no planet          778              28
+  truth: planet               8              26
 
-  precision 0.407    recall 0.706    F1 0.516
-  false positives by true object type -> eclipsing binary: 8, variable star: 27
+  precision 0.481    recall 0.765    F1 0.591
+  false positives by true object type -> eclipsing binary: 8, variable star: 20
 ```
 
 ---
@@ -73,15 +73,16 @@ follow-up, so precision-recall is the right plane and **average precision** is
 the headline number.
 
 Average precision has to be quoted against its own null: a random ranking
-scores AP = P(positive) = 0.040 here. An AP of 0.73 at a 4% positive rate is an
-18× lift; the same 0.73 at a 50% positive rate would be mediocre. The pipeline
+scores AP = P(positive) = 0.040 here. An AP of 0.80 at a 4% positive rate is a
+20× lift; the same 0.80 at a 50% positive rate would be mediocre. The pipeline
 always prints both.
 
 ### Choosing the threshold
 
 The threshold is not 0.5, and it is not tuned on the test set. It is chosen by
 5-fold cross-validation **inside the training split**, as the highest-recall
-point whose out-of-fold precision is at least 0.50, and then frozen.
+point whose out-of-fold precision is at least 0.50 *at a one-sided 1-sigma
+Wilson lower confidence bound*, and then frozen.
 
 The 0.50 target comes from what the decision costs. A candidate above the
 threshold buys a follow-up campaign: seeing-limited ground-based photometry to
@@ -91,16 +92,35 @@ in the archive and the next sector will find it. So the sensible policy is to
 cap the waste rate and take whatever recall that buys. Precision ≥ 0.50 means
 at most one wasted campaign per confirmed planet.
 
-**What did not work: the target was not met out of sample.** Cross-validation on
-the training split promised precision 0.500 at recall 0.726; the held-out set
-delivered precision **0.407** at recall 0.706. Recall generalised; precision did
-not. This is selection bias in the threshold itself — picking the operating
-point that just clears a precision floor, on out-of-fold predictions from only
-62 positives, is an optimisation, and the precision *at the selected point* is
-biased upward by roughly the amount seen here. The fix is to select on a lower
-confidence bound of the CV precision rather than its point estimate, or to
-repeat the CV over several seeds and take the median. Neither is implemented;
-the honest number is reported instead of a tuned one.
+**What did not work at first, and what was done about it.** The first version
+applied the 0.50 floor to the *point estimate* of out-of-fold precision.
+Cross-validation promised precision 0.500 at recall 0.726; the held-out set
+delivered **0.407** at recall 0.706. That gap is selection bias in the threshold
+itself: taking the deepest point that just clears a precision floor, on
+out-of-fold predictions from only 62 positives, picks a point whose precision
+happened to fluctuate upward.
+
+The rule now requires a one-sided Wilson score lower bound on the CV precision
+(TP over TP + FP at each candidate threshold, `precision_lcb_z = 1.0` in
+`EvalConfig`, i.e. one sigma, matching the 68% intervals used everywhere else)
+to clear 0.50. The bound never exceeds the point estimate, so this can only
+raise the threshold, and `tests/test_evaluation.py` asserts that on random and
+real out-of-fold scores. On this run the bound is 0.506 at 82 candidates, the
+CV point estimate there is 0.561 at recall 0.742, and the held-out set delivers
+precision **0.481** at recall 0.765.
+
+So the correction helped but did not close the gap: held-out precision is still
+below the 0.50 target, by less than the 68% sampling uncertainty of a 54-candidate
+test sample (about ±0.07), but below it nonetheless. Separating the two changes
+made in the same round, with the beta-scaled features (next sections) and the
+old point-estimate rule the threshold would have been 0.167 and held-out
+precision 0.426 (35 false positives); the Wilson rule moves it to 0.200 and 28
+false positives at unchanged recall. A one-sigma bound on 62 positives is a
+modest correction, and the CV-to-test drop (0.561 to 0.481) shows the bias is
+larger than one sigma here. Raising `precision_lcb_z` or taking the median over
+several CV seeds are the obvious next steps; neither was tried, because tuning
+the knob after seeing the test number would reintroduce exactly the bias it is
+meant to remove.
 
 ---
 
@@ -270,6 +290,10 @@ result into 23 features in four groups:
 - **False-positive discriminants** — `odd_even_sigma`, `secondary_sigma`,
   `half_period_depth_ratio`, `flat_bottom_fraction` (a trapezoid fit's T23/T14,
   ~0.8 for a box and ~0 for a V), `harmonic_delta_loglike`.
+  The two significances are divided by the red-noise β (below, floored at 1)
+  measured with both the primary and the phase-0.5 windows masked, so they are
+  judged against the empirical noise on the transit timescale rather than
+  white-noise error bars.
 - **Noise characterisation** — `red_noise_beta` (the Pont, Zucker & Queloz 2006
   beta factor: binned scatter over the white-noise expectation, so β ≫ 1 means
   the light curve has structure on exactly the timescale a transit lives on and
@@ -326,13 +350,15 @@ only their product hides which one binds:
   7 - 12             4     0.25     0.50        0.50
   12 - 20            1     1.00     1.00        1.00
   20 - 40            8     0.88     0.88        1.00
-  40 - inf          17     0.88     1.00        0.88
+  40 - inf          17     1.00     1.00        1.00
 ```
 
 Below SNR ~12 the search is the binding constraint and the classifier never gets
-a chance. Above SNR ~40 the search is perfect and **every remaining miss is the
-classifier's**. That crossover is the useful finding, and it says where effort
-should go next.
+a chance. Above SNR ~40 both stages are now perfect on the held-out set. In the
+first version they were not: the search found all 17 planets there, but the
+classifier rejected two of them (failure mode 4 below), which is what pointed
+at the classifier's binary tests as the place to put effort. Of the 8 planets
+still missed, 7 are search misses and 1 is a classifier rejection.
 
 **1. Low SNR.** Four test planets have injected SNR below 7; none are recovered,
 and none should be. That is not a defect, it is the detection limit, and a
@@ -351,13 +377,14 @@ surveys solve this by stacking sectors, not by better statistics on one.
 (b = 0.92) are both missed. A grazing planet produces exactly the V-shaped,
 short, shallow event that `flat_bottom_fraction` and the binary tests are built
 to reject. **This is a real cost of the eclipsing-binary discriminants, not a
-bug**: the features that let the model beat the SNR baseline by 4× are the same
+bug**: the features that let the model beat the SNR baseline by 4.4× are the same
 features that throw away grazing planets. Nothing in a single-sector light curve
 distinguishes a grazing planet from a grazing binary; that takes radial
 velocities.
 
-**4. Red noise faking a binary signature.** The two highest-SNR misses are the
-interesting ones, and the report names the reason for each:
+**4. Red noise faking a binary signature (fixed).** In the first version the
+two highest-SNR misses were planets the search found perfectly and the
+classifier rejected on binary grounds:
 
 ```
 SYN-001624  SNR  62  -> period recovered; classifier rejected it
@@ -366,18 +393,34 @@ SYN-001838  SNR 108  -> period recovered; classifier rejected it
                         (odd/even 5.0 sigma, secondary 4.1 sigma, red-noise beta 2.31)
 ```
 
-Both are unambiguous transits that the search found perfectly. Both have
-correlated noise on transit timescales (β = 1.5 and 2.3), which produced a
-spurious odd/even depth difference and a spurious secondary eclipse, and the
-model correctly applied binary logic to a false premise. The right fix is to
-compare the odd/even and secondary statistics against the *empirical* noise at
-that timescale — divide them by β — rather than against the white-noise error
-bars astropy returns. That is a concrete next step, not a hand-wave.
+Both stars have correlated noise on transit timescales, which produced a
+spurious odd/even depth difference and a spurious secondary eclipse measured
+against astropy's white-noise error bars. The odd/even and secondary
+statistics are now divided by β, floored at 1 (Pont, Zucker & Queloz 2006),
+which inflates their error bars to the empirical noise at that timescale.
+Their odd/even significances drop to 2.4 and 2.2 sigma and their secondaries
+to 1.6 and 1.8 sigma; the model scores them 0.99 and 0.97 and **both are now
+recovered**. Held-out average precision rose from 0.730 to 0.799, and the
+classifier now keeps every planet the search finds above SNR 12. Eclipsing
+binary false positives did not rise (8 before and after).
 
-**5. False positives are mostly variable stars, not binaries.** Of 35 false
-positives, 8 are eclipsing binaries and 27 are plain variable stars. Per object
-that is a **15.1%** false-positive rate on the 53 binaries against **3.6%** on
-the 753 variable stars — binaries are four times more likely to fool the model,
+One detail mattered. The `red_noise_beta` *feature* masks only the exact BLS
+box, and with that mask the ingress and egress cadences of a slightly
+mis-fitted period or duration leak into the out-of-transit bins; a single
+leaked cadence of a deep event dominates the binned scatter. On a pure
+white-noise light curve with a 3000 ppm transit it reads β = 1.5 to 2.4, so
+scaling by it would have discounted the binary tests of every deep event, real
+binaries included. The β used for scaling therefore masks two box-widths
+around both the primary and phase 0.5 (the latter so a real secondary eclipse
+cannot inflate the β that is then used to discount it), and returns β ≈ 1 on
+that same light curve. `tests/test_features.py` asserts both behaviours. The
+feature itself was left unchanged, so the β values printed in the report are
+the feature's; for these two planets the two estimates agree.
+
+**5. False positives are mostly variable stars, not binaries.** Of 28 false
+positives, 8 are eclipsing binaries and 20 are plain variable stars. Per object
+that is a **15.1%** false-positive rate on the 53 binaries against **2.7%** on
+the 753 variable stars. Binaries are more than five times more likely to fool the model,
 exactly as expected, but residual variability that survives detrending still
 dominates the candidate list by sheer weight of numbers. That matches the real
 TESS experience, where most rejected candidates are systematics rather than
@@ -390,7 +433,7 @@ astrophysical false positives.
 **What it establishes.** The pipeline is real and the numbers are real: the
 detrender provably preserves transit depth to 5% while removing variability ten
 times deeper; the search recovers every held-out injection above SNR 40 and 88%
-above SNR 20; the classifier beats a strong single-statistic baseline by 4× in
+above SNR 20; the classifier beats a strong single-statistic baseline by 4.4× in
 average precision on data it has never seen — in 100% of paired bootstrap
 resamples — with the threshold frozen from training-split cross-validation. The evaluation protocol — average precision against the
 positive-rate null, threshold from CV, recall decomposed into search and
@@ -424,8 +467,8 @@ Three further gaps:
   being benchmarked against, or from injection-recovery, which only measures
   completeness and not the false-positive rate.
 - **Sample size.** 96 positives in total and 34 in the test set. The bootstrap
-  interval on average precision is [0.659, 0.799] — ±0.07 — so the difference
-  between 0.73 and 0.70 is noise, and only the gap to the baselines is
+  interval on average precision is [0.732, 0.862], roughly ±0.065, so the difference
+  between 0.80 and 0.77 is noise, and only the gap to the baselines is
   meaningful. The pipeline reports the interval so this cannot be over-read.
 
 The honest summary: this demonstrates the *method* — correct detrending, correct
@@ -456,7 +499,7 @@ transit-detection/
 │   ├── model.py                # split, baselines, training, threshold selection
 │   ├── evaluate.py             # PR curves, AP, confusion matrix, failure analysis
 │   └── plots.py                # figures (matplotlib Agg, no display)
-├── tests/                      # 86 tests, ~1 min
+├── tests/                      # 152 tests, ~1.5 min
 │   ├── test_generator.py       # imbalance is exact; injected physics is consistent
 │   ├── test_preprocess.py      # depth preservation; why the median was rejected
 │   ├── test_features.py        # recovery vs SNR; the vetting statistics fire

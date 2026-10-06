@@ -177,6 +177,14 @@ class EvalConfig:
     #: Minimum precision an operating point must deliver.  Set by follow-up cost:
     #: at 0.5, at most one wasted follow-up campaign per confirmed planet.
     target_precision: float = 0.50
+    #: The floor is applied to a one-sided Wilson lower confidence bound on the
+    #: out-of-fold precision, not to its point estimate, with this many sigma.
+    #: Picking the deepest point that just clears a floor is an optimisation,
+    #: and the point-estimate precision there is biased upward (the original
+    #: run promised 0.500 in CV and delivered 0.407 on test).  1.0 is a
+    #: one-sided ~84% bound, matching the 68% intervals quoted elsewhere;
+    #: 0.0 recovers the point-estimate rule.
+    precision_lcb_z: float = 1.0
     #: Size of the "tonight's target list" used for precision@k.
     top_k: int = 20
 
