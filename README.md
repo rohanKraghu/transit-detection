@@ -15,7 +15,7 @@ detrends, searches and scores one target and writes a one-page report.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python run_pipeline.py            # ~2 min on 4 cores
-pytest                            # ~3 min, 270 tests
+pytest                            # ~3 min, 283 tests
 ```
 
 It writes `results/metrics.json`, `results/report.txt`, the trained model
@@ -483,6 +483,56 @@ folded views does beat this, because transit *shape* carries information that a
 handful of scalars throws away. The choice here is a consequence of the data
 volume, not a claim about architectures.
 
+### Transit Least Squares, and BLS on a GPU
+
+**TLS as the search.** `python run_pipeline.py --search tls` replaces BLS
+with Transit Least Squares (Hippke & Heller 2019;
+`pip install transitleastsquares`), which fits a limb-darkened transit shape
+instead of a box. Everything downstream is unchanged: TLS supplies the period,
+duration and epoch, its spectrum stands in for the BLS power in `bls_sde` and
+`power_contrast`, and depth and SNR are the same box statistics at TLS's
+ephemeris. Results go to `results/tls/`, and the choice is saved with the
+model, so `vet` searches the way training did.
+
+On the same 600 synthetic planets, detrended once and searched both ways
+(`python -m transitml.search_benchmark`, full report in
+[`results/search_comparison/report.txt`](results/search_comparison/report.txt)):
+
+| Injected SNR | Planets | BLS finds the period | TLS finds the period |
+| --- | --- | --- | --- |
+| below 7 | 91 | 19 | 15 |
+| 7 to 10 | 33 | 15 | 17 |
+| 10 to 15 | 41 | 29 | 31 |
+| 15 to 25 | 77 | 73 | 75 |
+| 25 to 50 | 120 | 112 | 115 |
+| above 50 | 238 | 237 | 238 |
+
+TLS finds 491 periods against 485 for BLS: 15 planets only TLS finds and 9
+only BLS does. That is the direction the TLS paper reports, but a 15 to 9
+split is well within chance (p = 0.31, two-sided sign test), and TLS takes
+437 ms per light curve against 100 ms. The full pipeline with TLS scores
+average precision 0.74 [0.67, 0.82] against 0.80 [0.73, 0.86] with BLS on
+the default seed ([`results/tls/report.txt`](results/tls/report.txt)). The
+intervals overlap, and nothing here says the template is worth four times
+the search time on this data, so BLS stays the default.
+
+**BLS on a GPU.** `transitml/fastbls.py` computes the same periodogram as
+whole-array operations: every cadence is folded at a block of periods at
+once, binned with one `bincount`, and every box of every duration is read off
+cumulative sums. It follows astropy's algorithm step for step and matches its
+periodogram to 1e-13 on planets, binaries and noise
+(`tests/test_fastbls.py`), so the features and the trained model do not
+depend on which engine ran. The code runs unchanged on NumPy or CuPy:
+`run_pipeline.py --bls-engine gpu` uses a CUDA GPU through CuPy.
+
+**It has not been run on a GPU**, because this environment has none.
+`python -m transitml.fastbls --engine gpu` times it against astropy and checks
+that the periodograms agree, so the first run on a GPU machine settles whether
+it works and how fast it is. On a CPU the array form is about 19 times slower
+than astropy (1.9 s against 0.1 s per light curve), because it builds every
+box of every period in memory instead of streaming them through a compiled
+loop. So astropy stays the default.
+
 ---
 
 ## Vetting one star
@@ -801,6 +851,9 @@ transit-detection/
 │   │   └── loader.py           # source -> feature matrix, parallel over curves
 │   ├── preprocess.py           # robust spline + rotation detrending
 │   ├── features.py             # BLS search and vetting statistics
+│   ├── fastbls.py              # the same BLS as array operations, NumPy or CuPy
+│   ├── tls.py                  # Transit Least Squares as the search
+│   ├── search_benchmark.py     # BLS against TLS on the same planets
 │   ├── search.py               # iterative multi-planet search
 │   ├── centroid.py             # difference-image and centroid-motion tests
 │   ├── model.py                # split, baselines, training, threshold, save/load
@@ -808,10 +861,12 @@ transit-detection/
 │   ├── benchmark.py            # the trained model scored on real TOI dispositions
 │   ├── vet.py                  # python -m transitml.vet: one star, one page
 │   └── plots.py                # figures (matplotlib Agg, no display)
-├── tests/                      # 270 tests, ~3 min
+├── tests/                      # 283 tests, ~3 min
 │   ├── test_generator.py       # imbalance is exact; injected physics is consistent
 │   ├── test_preprocess.py      # depth preservation; why the median was rejected
 │   ├── test_features.py        # recovery vs SNR; the vetting statistics fire
+│   ├── test_fastbls.py         # array BLS equals astropy's; engine changes nothing
+│   ├── test_tls.py             # TLS finds the period; same features; falls back
 │   ├── test_search.py          # two planets found; noise yields nothing
 │   ├── test_stitch.py          # sectors joined; marginal pair becomes a detection
 │   ├── test_evaluation.py      # no test-set leakage into threshold or metrics
@@ -831,7 +886,7 @@ transit-detection/
 ```
 
 `python run_pipeline.py --help` exposes `--seed`, `--n-curves`, `--n-jobs`,
-`--no-figures` and the output directories. Runtime scales linearly in
+`--no-figures`, `--search` and `--bls-engine`, and the output directories. Runtime scales linearly in
 `--n-curves`; the BLS search is the bottleneck and is parallel across curves.
 
 ## Roadmap
