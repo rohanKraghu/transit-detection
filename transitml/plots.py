@@ -15,7 +15,9 @@ from typing import Sequence
 
 import matplotlib
 
-matplotlib.use("Agg")  # must precede pyplot; there is no display in CI or in a container
+matplotlib.use(
+    "Agg"
+)  # must precede pyplot; there is no display in CI or in a container
 
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
@@ -89,9 +91,7 @@ def _save(fig: plt.Figure, path: Path) -> Path:
 
 
 # --------------------------------------------------------------------------
-def plot_light_curves(
-    curves: Sequence[LightCurve], config: Config, path: Path
-) -> Path:
+def plot_light_curves(curves: Sequence[LightCurve], config: Config, path: Path) -> Path:
     """Raw photometry with the fitted trend, beside the phase-folded result.
 
     One row per population.  The right-hand panels are folded on the period the
@@ -116,40 +116,76 @@ def plot_light_curves(
 
         # -- left: raw flux and the trend that was removed ------------------
         ax_raw.plot(
-            lc.time, (lc.flux - 1) * 1e3, ".", ms=1.8, color=NEUTRAL, alpha=0.7,
+            lc.time,
+            (lc.flux - 1) * 1e3,
+            ".",
+            ms=1.8,
+            color=NEUTRAL,
+            alpha=0.7,
             label="raw flux",
         )
         ax_raw.plot(
-            flat.time, (flat.trend - 1) * 1e3, "-", lw=1.8, color=SERIES[0],
+            flat.time,
+            (flat.trend - 1) * 1e3,
+            "-",
+            lw=1.8,
+            color=SERIES[0],
             label="fitted trend (robust spline + rotation harmonics)",
         )
         ax_raw.set_ylim(*_robust_limits((lc.flux - 1) * 1e3))
         ax_raw.set_ylabel("flux - 1 (ppt)")
-        ax_raw.set_title(_CLASS_LABEL.get(kind, kind), loc="left", fontsize=9.5,
-                         color=colour, fontweight="bold")
+        ax_raw.set_title(
+            _CLASS_LABEL.get(kind, kind),
+            loc="left",
+            fontsize=9.5,
+            color=colour,
+            fontweight="bold",
+        )
         ax_raw.set_title(_curve_caption(lc), loc="right", fontsize=8.5, color=INK_SOFT)
         if row == 0:
             ax_raw.legend(loc="upper right", ncols=1)
 
         # -- right: folded on the recovered period --------------------------
         period, duration = bls["period"], bls["duration"]
-        phase_days = (flat.time - bls["transit_time"] + 0.5 * period) % period - 0.5 * period
+        phase_days = (
+            flat.time - bls["transit_time"] + 0.5 * period
+        ) % period - 0.5 * period
         hours = phase_days * 24.0
         depth_ppt = (flat.flux - 1) * 1e3
         # Never fold past half a period, or the window wraps onto itself.
         half_window = min(4.0 * duration, 0.5 * period) * 24.0
 
         window = np.abs(hours) <= half_window
-        ax_fold.plot(hours[window], depth_ppt[window], ".", ms=2.4, color=NEUTRAL,
-                     alpha=0.45, label="folded cadences")
+        ax_fold.plot(
+            hours[window],
+            depth_ppt[window],
+            ".",
+            ms=2.4,
+            color=NEUTRAL,
+            alpha=0.45,
+            label="folded cadences",
+        )
         centres, means = _bin_means(
             hours[window], depth_ppt[window], bin_width=max(duration * 24.0 / 4.0, 1e-3)
         )
-        ax_fold.plot(centres, means, "o", ms=4.2, color=colour, mec=SURFACE, mew=0.5,
-                     label=f"binned to {duration * 360:.0f} min")
+        ax_fold.plot(
+            centres,
+            means,
+            "o",
+            ms=4.2,
+            color=colour,
+            mec=SURFACE,
+            mew=0.5,
+            label=f"binned to {duration * 360:.0f} min",
+        )
         ax_fold.axhline(0.0, lw=0.9, color=NEUTRAL)
-        ax_fold.axvspan(-0.5 * duration * 24.0, 0.5 * duration * 24.0,
-                        color=colour, alpha=0.14, lw=0)
+        ax_fold.axvspan(
+            -0.5 * duration * 24.0,
+            0.5 * duration * 24.0,
+            color=colour,
+            alpha=0.14,
+            lw=0,
+        )
         ax_fold.set_xlim(-half_window, half_window)
         ax_fold.set_ylim(*_robust_limits(means, pad=0.45))
         ax_fold.set_ylabel("flux - 1 (ppt)")
@@ -159,7 +195,9 @@ def plot_light_curves(
         )
         ax_fold.set_title(
             f"injected P = {truth:.3f} d" if truth else "nothing injected",
-            loc="right", fontsize=8.5, color=INK_SOFT,
+            loc="right",
+            fontsize=8.5,
+            color=INK_SOFT,
         )
         if row == 0:
             ax_fold.legend(loc="lower right", ncols=2, markerscale=1.5)
@@ -168,7 +206,11 @@ def plot_light_curves(
     axes[-1, 1].set_xlabel("hours from mid-transit (folded on the recovered period)")
     fig.suptitle(
         "Detrending removes the stellar variability and leaves the transit standing",
-        x=0.008, ha="left", fontsize=12.5, fontweight="bold", color=INK,
+        x=0.008,
+        ha="left",
+        fontsize=12.5,
+        fontweight="bold",
+        color=INK,
     )
     fig.tight_layout(rect=(0, 0, 1, 0.975))
     return _save(fig, path)
@@ -245,29 +287,44 @@ def plot_pr_curve(result: EvaluationResult, path: Path) -> Path:
 
     for curve, colour, label in entries:
         ax.plot(
-            curve.recall, curve.precision, lw=2.0, color=colour,
+            curve.recall,
+            curve.precision,
+            lw=2.0,
+            color=colour,
             label=f"{label}  (AP = {curve.average_precision:.3f})",
         )
 
     chance = result.chance_average_precision
     ax.axhline(chance, lw=1.4, ls="--", color=NEUTRAL)
     ax.text(
-        0.015, chance + 0.02,
+        0.015,
+        chance + 0.02,
         f"random ranking (AP = {chance:.3f})",
-        ha="left", va="bottom", color=INK_SOFT, fontsize=8.5,
+        ha="left",
+        va="bottom",
+        color=INK_SOFT,
+        fontsize=8.5,
     )
 
     # Direct-label the operating point; the aqua slot sits below 3:1 contrast on
     # this surface, so every series also gets a visible legend entry.
     ax.plot(
-        [result.test_recall], [result.test_precision], "o", ms=9,
-        color=SERIES[0], mec=SURFACE, mew=2.0, zorder=5,
+        [result.test_recall],
+        [result.test_precision],
+        "o",
+        ms=9,
+        color=SERIES[0],
+        mec=SURFACE,
+        mew=2.0,
+        zorder=5,
     )
     ax.annotate(
         f"operating point\nprecision {result.test_precision:.2f}, recall {result.test_recall:.2f}",
         xy=(result.test_recall, result.test_precision),
-        xytext=(12, 16), textcoords="offset points",
-        color=INK, fontsize=8.5,
+        xytext=(12, 16),
+        textcoords="offset points",
+        color=INK,
+        fontsize=8.5,
         arrowprops={"arrowstyle": "-", "color": NEUTRAL, "lw": 0.9},
     )
 
@@ -314,8 +371,13 @@ def plot_diagnostics(
     ax_left.bar(positions, values, width=0.62, color=SERIES[0])
     for x, v, n in zip(positions, values, counts):
         ax_left.text(
-            x, v + 0.03, f"{v:.0%}\nn={n}", ha="center", va="bottom",
-            color=INK_SOFT, fontsize=8.5,
+            x,
+            v + 0.03,
+            f"{v:.0%}\nn={n}",
+            ha="center",
+            va="bottom",
+            color=INK_SOFT,
+            fontsize=8.5,
         )
     ax_left.set_xticks(positions, labels)
     ax_left.set_ylim(0, 1.18)
@@ -338,17 +400,27 @@ def plot_diagnostics(
         if not sel.any():
             continue
         ax_right.scatter(
-            bls_snr[sel], scores[sel], s=26 if kind == "planet" else 14,
-            color=_CLASS_COLOR[kind], alpha=0.85 if kind == "planet" else 0.5,
+            bls_snr[sel],
+            scores[sel],
+            s=26 if kind == "planet" else 14,
+            color=_CLASS_COLOR[kind],
+            alpha=0.85 if kind == "planet" else 0.5,
             linewidths=0.6 if kind == "planet" else 0.0,
-            edgecolors=SURFACE, label=_CLASS_LABEL[kind], zorder=3 if kind == "planet" else 2,
+            edgecolors=SURFACE,
+            label=_CLASS_LABEL[kind],
+            zorder=3 if kind == "planet" else 2,
         )
     ax_right.set_ylim(-0.04, 1.2)  # headroom so the legend clears the points
     ax_right.axhline(trained.threshold, lw=1.4, ls="--", color=NEUTRAL)
     ax_right.text(
-        0.99, trained.threshold + 0.02, f"operating threshold = {trained.threshold:.3f}",
-        transform=ax_right.get_yaxis_transform(), ha="right", va="bottom",
-        color=INK_SOFT, fontsize=8.5,
+        0.99,
+        trained.threshold + 0.02,
+        f"operating threshold = {trained.threshold:.3f}",
+        transform=ax_right.get_yaxis_transform(),
+        ha="right",
+        va="bottom",
+        color=INK_SOFT,
+        fontsize=8.5,
     )
     positive = bls_snr[np.isfinite(bls_snr) & (bls_snr > 0)]
     ax_right.set_xscale("log")
@@ -376,12 +448,23 @@ def plot_feature_importance(
 
     fig, ax = plt.subplots(figsize=(8.2, 0.42 * len(rows) + 1.8))
     positions = np.arange(len(rows))
-    ax.barh(positions, values, height=0.62, color=SERIES[0], xerr=errors,
-            error_kw={"ecolor": NEUTRAL, "elinewidth": 1.0, "capsize": 2.5})
+    ax.barh(
+        positions,
+        values,
+        height=0.62,
+        color=SERIES[0],
+        xerr=errors,
+        error_kw={"ecolor": NEUTRAL, "elinewidth": 1.0, "capsize": 2.5},
+    )
     for y, v, e in zip(positions, values, errors):
         ax.text(
-            max(v, 0) + e + 0.004, y, f"{v:+.3f}", va="center", ha="left",
-            color=INK_SOFT, fontsize=8.5,
+            max(v, 0) + e + 0.004,
+            y,
+            f"{v:+.3f}",
+            va="center",
+            ha="left",
+            color=INK_SOFT,
+            fontsize=8.5,
         )
     ax.set_yticks(positions, names)
     ax.set_xlabel("drop in average precision when the feature is shuffled")
@@ -409,7 +492,9 @@ def plot_all(
     return [
         plot_light_curves(curves, config, figure_dir / "01_light_curves.png"),
         plot_pr_curve(result, figure_dir / "02_precision_recall.png"),
-        plot_diagnostics(dataset, split, trained, result, figure_dir / "03_diagnostics.png"),
+        plot_diagnostics(
+            dataset, split, trained, result, figure_dir / "03_diagnostics.png"
+        ),
         plot_feature_importance(result, figure_dir / "04_feature_importance.png"),
     ]
 
@@ -417,7 +502,9 @@ def plot_all(
 # --------------------------------------------------------------------------
 # Single-star vetting report (``python -m transitml.vet``)
 # --------------------------------------------------------------------------
-def _fold_hours(time: NDArray[np.float64], period: float, epoch: float) -> NDArray[np.float64]:
+def _fold_hours(
+    time: NDArray[np.float64], period: float, epoch: float
+) -> NDArray[np.float64]:
     """Hours from the nearest mid-transit."""
     return ((time - epoch + 0.5 * period) % period - 0.5 * period) * 24.0
 
@@ -427,9 +514,9 @@ def _format_feature(name: str, value: float) -> tuple[str, str]:
     if not np.isfinite(value):
         return name, "n/a"
     if name == "log_depth":
-        return "depth (ppm)", f"{10.0 ** value * 1e6:.0f}"
+        return "depth (ppm)", f"{10.0**value * 1e6:.0f}"
     if name == "log_period":
-        return "period (d)", f"{10.0 ** value:.4f}"
+        return "period (d)", f"{10.0**value:.4f}"
     if name == "bls_duration":
         return "duration (h)", f"{value * 24.0:.2f}"
     if name == "n_transits":
@@ -457,21 +544,35 @@ def plot_vetting_report(lc: LightCurve, flat, result, path: Path) -> Path:
     bin_width = max(duration_h / 4.0, 1e-3)
     ppt = (flat.flux - 1.0) * 1e3
 
-    fig = plt.figure(figsize=(13.0, 14.0))
-    grid = fig.add_gridspec(4, 3, height_ratios=(1.0, 1.0, 1.2, 1.5), hspace=0.42, wspace=0.28)
+    centroid = _centroid_to_show(result)
+    ratios = (1.0, 1.0, 1.2, 1.5) + ((1.5,) if centroid is not None else ())
+    fig = plt.figure(figsize=(13.0, 14.0 if centroid is None else 17.5))
+    grid = fig.add_gridspec(
+        len(ratios), 3, height_ratios=ratios, hspace=0.42, wspace=0.28
+    )
 
     # -- row 1: raw flux and the trend that was removed ----------------------
     ax_raw = fig.add_subplot(grid[0, :])
     raw_ppt = (lc.flux / np.median(lc.flux) - 1.0) * 1e3
-    ax_raw.plot(lc.time, raw_ppt, ".", ms=1.8, color=NEUTRAL, alpha=0.7, label="raw flux")
-    ax_raw.plot(flat.time, (flat.trend - 1.0) * 1e3, "-", lw=1.6, color=SERIES[0],
-                label="fitted trend (removed)")
+    ax_raw.plot(
+        lc.time, raw_ppt, ".", ms=1.8, color=NEUTRAL, alpha=0.7, label="raw flux"
+    )
+    ax_raw.plot(
+        flat.time,
+        (flat.trend - 1.0) * 1e3,
+        "-",
+        lw=1.6,
+        color=SERIES[0],
+        label="fitted trend (removed)",
+    )
     ax_raw.set_ylim(*_robust_limits(raw_ppt))
     ax_raw.set_ylabel("flux - 1 (ppt)")
     ax_raw.set_title("Raw light curve", loc="left")
     ax_raw.set_title(
         f"{result.n_cadences} cadences over {result.baseline_days:.1f} d",
-        loc="right", fontsize=8.5, color=INK_SOFT,
+        loc="right",
+        fontsize=8.5,
+        color=INK_SOFT,
     )
     ax_raw.legend(loc="upper right", ncols=2)
 
@@ -485,18 +586,28 @@ def plot_vetting_report(lc: LightCurve, flat, result, path: Path) -> Path:
         n_first = np.ceil((flat.time[0] - cand.epoch) / cand.period)
         n_last = np.floor((flat.time[-1] - cand.epoch) / cand.period)
         times = cand.epoch + cand.period * np.arange(n_first, n_last + 1)
-        ax_flat.plot(times, np.full(times.size, high - 0.06 * (high - low) * (i + 1)), "v",
-                     ms=6, color=colour,
-                     label=f"signal {cand.rank}: P = {cand.period:.3f} d, SDE {cand.sde:.1f}")
+        ax_flat.plot(
+            times,
+            np.full(times.size, high - 0.06 * (high - low) * (i + 1)),
+            "v",
+            ms=6,
+            color=colour,
+            label=f"signal {cand.rank}: P = {cand.period:.3f} d, SDE {cand.sde:.1f}",
+        )
     ax_flat.set_ylabel("flux - 1 (ppt)")
     ax_flat.set_xlabel("time (days)")
-    ax_flat.set_title("Detrended, with every significant signal from the iterative search",
-                      loc="left")
+    ax_flat.set_title(
+        "Detrended, with every significant signal from the iterative search", loc="left"
+    )
     if result.candidates:
         ax_flat.legend(loc="lower right", ncols=min(len(result.candidates), 3))
     else:
-        ax_flat.set_title("no signal above the significance threshold", loc="right",
-                          fontsize=8.5, color=INK_SOFT)
+        ax_flat.set_title(
+            "no signal above the significance threshold",
+            loc="right",
+            fontsize=8.5,
+            color=INK_SOFT,
+        )
 
     # -- row 3a: fold on the primary signal ----------------------------------
     hours = _fold_hours(flat.time, period, epoch)
@@ -505,7 +616,9 @@ def plot_vetting_report(lc: LightCurve, flat, result, path: Path) -> Path:
     ax_fold.plot(hours[window], ppt[window], ".", ms=2.2, color=NEUTRAL, alpha=0.45)
     centres, means = _bin_means(hours[window], ppt[window], bin_width)
     ax_fold.plot(centres, means, "o", ms=4.0, color=SERIES[0], mec=SURFACE, mew=0.5)
-    ax_fold.axvspan(-0.5 * duration_h, 0.5 * duration_h, color=SERIES[0], alpha=0.12, lw=0)
+    ax_fold.axvspan(
+        -0.5 * duration_h, 0.5 * duration_h, color=SERIES[0], alpha=0.12, lw=0
+    )
     ax_fold.axhline(0.0, lw=0.9, color=NEUTRAL)
     ax_fold.set_xlim(-half_window, half_window)
     ax_fold.set_ylim(*_robust_limits(means, pad=0.45))
@@ -521,14 +634,24 @@ def plot_vetting_report(lc: LightCurve, flat, result, path: Path) -> Path:
         if not sel.any():
             continue
         c, m = _bin_means(hours[sel], ppt[sel], bin_width)
-        ax_oe.plot(c, m, "o-", ms=3.6, lw=1.0, color=colour, mec=SURFACE, mew=0.5,
-                   label=f"{label} transits")
+        ax_oe.plot(
+            c,
+            m,
+            "o-",
+            ms=3.6,
+            lw=1.0,
+            color=colour,
+            mec=SURFACE,
+            mew=0.5,
+            label=f"{label} transits",
+        )
     ax_oe.axhline(0.0, lw=0.9, color=NEUTRAL)
     ax_oe.set_xlim(-half_window, half_window)
     ax_oe.set_xlabel("hours from mid-transit")
     ax_oe.set_title(
         f"Odd vs even ({_format_feature('odd_even_sigma', result.features['odd_even_sigma'])[1]}"
-        " sigma)", loc="left",
+        " sigma)",
+        loc="left",
     )
     ax_oe.legend(loc="lower right")
 
@@ -536,16 +659,21 @@ def plot_vetting_report(lc: LightCurve, flat, result, path: Path) -> Path:
     ax_sec = fig.add_subplot(grid[2, 2], sharey=ax_fold)
     sec_hours = _fold_hours(flat.time, period, epoch + 0.5 * period)
     sec_window = np.abs(sec_hours) <= half_window
-    ax_sec.plot(sec_hours[sec_window], ppt[sec_window], ".", ms=2.2, color=NEUTRAL, alpha=0.45)
+    ax_sec.plot(
+        sec_hours[sec_window], ppt[sec_window], ".", ms=2.2, color=NEUTRAL, alpha=0.45
+    )
     c, m = _bin_means(sec_hours[sec_window], ppt[sec_window], bin_width)
     ax_sec.plot(c, m, "o", ms=4.0, color=SERIES[2], mec=SURFACE, mew=0.5)
-    ax_sec.axvspan(-0.5 * duration_h, 0.5 * duration_h, color=SERIES[2], alpha=0.12, lw=0)
+    ax_sec.axvspan(
+        -0.5 * duration_h, 0.5 * duration_h, color=SERIES[2], alpha=0.12, lw=0
+    )
     ax_sec.axhline(0.0, lw=0.9, color=NEUTRAL)
     ax_sec.set_xlim(-half_window, half_window)
     ax_sec.set_xlabel("hours from phase 0.5")
     ax_sec.set_title(
         f"Secondary window ({_format_feature('secondary_sigma', result.features['secondary_sigma'])[1]}"
-        " sigma)", loc="left",
+        " sigma)",
+        loc="left",
     )
 
     # -- row 4a: key numbers -------------------------------------------------
@@ -555,8 +683,13 @@ def plot_vetting_report(lc: LightCurve, flat, result, path: Path) -> Path:
     ax_table.axis("off")
     rows = [("score", f"{result.score:.3f}"), ("threshold", f"{result.threshold:.3f}")]
     rows += [_format_feature(name, result.features[name]) for name in KEY_FEATURES]
-    table = ax_table.table(cellText=rows, colLabels=("quantity", "value"),
-                           cellLoc="left", colWidths=(0.65, 0.35), bbox=(0.0, 0.0, 1.0, 1.0))
+    table = ax_table.table(
+        cellText=rows,
+        colLabels=("quantity", "value"),
+        cellLoc="left",
+        colWidths=(0.65, 0.35),
+        bbox=(0.0, 0.0, 1.0, 1.0),
+    )
     table.auto_set_font_size(False)
     table.set_fontsize(8.5)
     for cell in table.get_celld().values():
@@ -573,30 +706,233 @@ def plot_vetting_report(lc: LightCurve, flat, result, path: Path) -> Path:
             for r in reasons
         ]
         positions = np.arange(len(reasons)) * 1.6
-        ax_why.barh(positions, deltas, height=0.7,
-                    color=[SERIES[0] if d >= 0 else SERIES[1] for d in deltas])
+        ax_why.barh(
+            positions,
+            deltas,
+            height=0.7,
+            color=[SERIES[0] if d >= 0 else SERIES[1] for d in deltas],
+        )
         for y, d, label in zip(positions, deltas, labels):
-            ax_why.text(0.0, y + 0.45, f"{label}: {d:+.3f}", va="bottom", ha="left",
-                        fontsize=8.5, color=INK, transform=ax_why.get_yaxis_transform())
+            ax_why.text(
+                0.0,
+                y + 0.45,
+                f"{label}: {d:+.3f}",
+                va="bottom",
+                ha="left",
+                fontsize=8.5,
+                color=INK,
+                transform=ax_why.get_yaxis_transform(),
+            )
         ax_why.set_yticks([])
         ax_why.set_ylim(-0.6, positions[-1] + 1.3)
         ax_why.axvline(0.0, lw=0.9, color=NEUTRAL)
         ax_why.grid(axis="y", visible=False)
         ax_why.margins(x=0.15)
-    ax_why.set_xlabel("score change vs. this feature at its training median (approximate)")
+    ax_why.set_xlabel(
+        "score change vs. this feature at its training median (approximate)"
+    )
     ax_why.set_title("Top reasons: features that moved the score most", loc="left")
+
+    if centroid is not None:
+        _plot_centroid_row(fig, grid, 4, result, centroid)
 
     verdict_colour = SERIES[0] if result.above_threshold else SERIES[1]
     fig.suptitle(
         f"{result.target_id}: score {result.score:.3f} vs threshold {result.threshold:.3f}, "
         f"{result.verdict}",
-        x=0.01, ha="left", fontsize=12.5, fontweight="bold", color=verdict_colour,
+        x=0.01,
+        ha="left",
+        fontsize=12.5,
+        fontweight="bold",
+        color=verdict_colour,
     )
     fig.text(
-        0.01, 0.01,
+        0.01,
+        0.01,
         "Reasons are approximate: each bar replaces one feature by its training-split "
         "median and leaves the rest; bars are not additive. Only the primary signal is scored.",
-        fontsize=8, color=INK_SOFT,
+        fontsize=8,
+        color=INK_SOFT,
     )
-    fig.subplots_adjust(top=0.95, bottom=0.06, left=0.07, right=0.98)
+    fig.subplots_adjust(
+        top=0.95 if centroid is None else 0.94, bottom=0.06, left=0.07, right=0.98
+    )
     return _save(fig, path)
+
+
+# --------------------------------------------------------------------------
+# Centroid row of the vetting report (``vet --tpf`` / ``--centroids``)
+# --------------------------------------------------------------------------
+def _centroid_to_show(result):
+    """The centroid test the report draws: a flagged one first, then a measured one."""
+    tests = list(getattr(result, "centroids", None) or [])
+    if not tests:
+        return None
+    for wanted in (lambda c: c.significant, lambda c: c.status == "ok"):
+        for test in tests:
+            if wanted(test) and test.difference_image is not None:
+                return test
+    return tests[0]
+
+
+def _two_hue_map(name: str, low: str, mid: str, high: str):
+    from matplotlib.colors import LinearSegmentedColormap
+
+    return LinearSegmentedColormap.from_list(name, [low, mid, high])
+
+
+def _mark_positions(ax, centroid) -> None:
+    """Target, out-of-transit centroid and difference-image centroid, each labelled."""
+    marks = (
+        (centroid.target_position, "+", INK, "target (catalogue)"),
+        (centroid.out_of_transit_centroid, "x", INK_SOFT, "out-of-transit centroid"),
+        (centroid.difference_centroid, "o", INK, "difference-image centroid"),
+    )
+    for position, marker, colour, label in marks:
+        if position is None or not np.all(np.isfinite(position)):
+            continue
+        ax.plot(
+            *position, marker, ms=10, mew=2.0, color=colour, mfc="none", label=label
+        )
+    start = centroid.reference_position
+    end = centroid.difference_centroid
+    if start is not None and end is not None and np.all(np.isfinite([*start, *end])):
+        ax.annotate(
+            "",
+            xy=end,
+            xytext=start,
+            arrowprops={"arrowstyle": "->", "color": INK, "lw": 1.4},
+        )
+
+
+def _outline(ax, mask, colour: str) -> None:
+    """Draw the outline of a boolean pixel mask."""
+    rows, cols = mask.shape
+    for r in range(rows):
+        for c in range(cols):
+            if not mask[r, c]:
+                continue
+            for (dr, dc), segment in (
+                ((-1, 0), ([c - 0.5, c + 0.5], [r - 0.5, r - 0.5])),
+                ((1, 0), ([c - 0.5, c + 0.5], [r + 0.5, r + 0.5])),
+                ((0, -1), ([c - 0.5, c - 0.5], [r - 0.5, r + 0.5])),
+                ((0, 1), ([c + 0.5, c + 0.5], [r - 0.5, r + 0.5])),
+            ):
+                rr, cc = r + dr, c + dc
+                if not (0 <= rr < rows and 0 <= cc < cols and mask[rr, cc]):
+                    ax.plot(*segment, "-", lw=1.2, color=colour)
+
+
+def _plot_centroid_row(fig, grid, row: int, result, centroid) -> None:
+    """Out-of-transit image, difference image and the centroid numbers."""
+    ax_oot = fig.add_subplot(grid[row, 0])
+    ax_diff = fig.add_subplot(grid[row, 1])
+    ax_text = fig.add_subplot(grid[row, 2])
+    ax_text.axis("off")
+
+    if centroid.difference_image is not None:
+        oot = centroid.out_of_transit_image
+        diff = centroid.difference_image
+        sequential = _two_hue_map("oot", SURFACE, "#9cc2ee", SERIES[0])
+        diverging = _two_hue_map("diff", SERIES[1], "#e9e8e4", SERIES[0])
+        image = ax_oot.imshow(
+            oot, origin="lower", cmap=sequential, interpolation="nearest"
+        )
+        fig.colorbar(image, ax=ax_oot, fraction=0.046, pad=0.03, label="e-/s")
+        scale = float(np.nanmax(np.abs(diff))) if np.isfinite(diff).any() else 1.0
+        image = ax_diff.imshow(
+            diff,
+            origin="lower",
+            cmap=diverging,
+            vmin=-scale,
+            vmax=scale,
+            interpolation="nearest",
+        )
+        fig.colorbar(
+            image,
+            ax=ax_diff,
+            fraction=0.046,
+            pad=0.03,
+            label="flux lost in transit (e-/s)",
+        )
+        for ax in (ax_oot, ax_diff):
+            ax.grid(False)
+            if centroid.aperture is not None:
+                _outline(ax, centroid.aperture, INK_SOFT)
+            _mark_positions(ax, centroid)
+            ax.set_xlabel("column (pixels)")
+            ax.set_xlim(-0.5, oot.shape[1] - 0.5)
+            ax.set_ylim(-0.5, oot.shape[0] - 0.5)
+        ax_oot.set_ylabel("row (pixels)")
+        ax_oot.legend(
+            loc="upper left", fontsize=7.5, handletextpad=0.4, borderaxespad=0.2
+        )
+    else:
+        for ax in (ax_oot, ax_diff):
+            ax.axis("off")
+            ax.text(
+                0.0,
+                0.5,
+                f"no image: {centroid.message}",
+                fontsize=9,
+                color=INK_SOFT,
+                wrap=True,
+                transform=ax.transAxes,
+            )
+    sector = centroid.meta.get("sector")
+    where = f", sector {sector}" if sector is not None else ""
+    ax_oot.set_title(f"Out of transit{where} (aperture outlined)", loc="left")
+    ax_diff.set_title("Difference image (out minus in transit)", loc="left")
+
+    def fmt(value, spec=".2f"):
+        return "n/a" if value is None or not np.isfinite(value) else format(value, spec)
+
+    offset = centroid.offset_pixels or (float("nan"), float("nan"))
+    error = centroid.offset_error_pixels or (float("nan"), float("nan"))
+    lines = [
+        ("reference", centroid.reference.replace("_", " ") or "n/a"),
+        ("offset (column, row)", f"{fmt(offset[0])}, {fmt(offset[1])} px"),
+        ("1-sigma error", f"{fmt(error[0])}, {fmt(error[1])} px"),
+        ("offset", f"{fmt(centroid.offset_arcsec, '.1f')} arcsec"),
+        ("significance", f"{fmt(centroid.offset_sigma, '.1f')} sigma"),
+        (
+            "from out-of-transit centroid",
+            f"{fmt(centroid.offset_from_oot_sigma, '.1f')} sigma",
+        ),
+        ("dip in difference image", f"SNR {fmt(centroid.difference_snr, '.0f')}"),
+        ("transits used", str(centroid.n_transits)),
+    ]
+    table = ax_text.table(
+        cellText=lines,
+        colLabels=("centroid test", "value"),
+        cellLoc="left",
+        colWidths=(0.55, 0.45),
+        bbox=(0.0, 0.22, 1.0, 0.78),
+    )
+    table.auto_set_font_size(False)
+    table.set_fontsize(8.5)
+    for cell in table.get_celld().values():
+        cell.set_edgecolor(GRID)
+    flagged = any(c.significant for c in result.centroids)
+    ax_text.text(
+        0.0,
+        0.0,
+        centroid.verdict,
+        fontsize=9,
+        fontweight="bold" if flagged else None,
+        color=SERIES[1] if flagged else INK,
+        wrap=True,
+        va="bottom",
+        transform=ax_text.transAxes,
+    )
+    ax_text.set_title("Centroid test (not in the score)", loc="left")
+    if flagged:
+        fig.text(
+            0.01,
+            0.962,
+            "Centroid test flags an offset: the dip is likely on a neighbouring star "
+            "(bottom row). The score above does not include this test.",
+            fontsize=10.5,
+            fontweight="bold",
+            color=SERIES[1],
+        )

@@ -6,6 +6,8 @@ dip lasting a few hours, and it sits on top of stellar variability ten to a
 hundred times deeper. This repository is an end-to-end pipeline for that
 problem — generate the photometry, detrend it, search it, classify it, and
 evaluate it the way an imbalanced detection problem has to be evaluated.
+It also vets single real stars: `python -m transitml.vet "TIC ..."` downloads,
+detrends, searches and scores one target and writes a one-page report.
 
 **One command reproduces everything in this README:**
 
@@ -13,7 +15,7 @@ evaluate it the way an imbalanced detection problem has to be evaluated.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python run_pipeline.py            # ~2 min on 4 cores
-pytest                            # ~3 min, 223 tests
+pytest                            # ~3 min, 270 tests
 ```
 
 It writes `results/metrics.json`, `results/report.txt`, the trained model
@@ -168,10 +170,10 @@ implementations:
 
 - `transitml/data/synthetic.py` — `SyntheticTESSSource`, used by the demo.
 - `transitml/data/mast.py` — `MASTLightCurveSource`, which pulls real TESS or
-  Kepler photometry from MAST through `lightkurve`. It is fully written and
-  implements the same interface; it is not exercised by the demo because real
-  light curves need labels from injection-recovery (see below). Switching is
-  one line in `run_pipeline.py`:
+  Kepler photometry from MAST through `lightkurve`. It implements the same
+  interface. The synthetic demo does not use it, because real light curves
+  need labels; the real-photometry injection run below and the `vet` command
+  do. Pointing the pipeline at it directly looks like this:
 
 ```python
 source = MASTLightCurveSource(
@@ -311,8 +313,9 @@ Two causes are visible in the report, and they point at the next work:
   the model keeps have median odd/even and secondary significances of 0.8 and
   0.2 sigma, indistinguishable from the planets'. That is what a background
   eclipsing binary diluted by a brighter neighbour looks like.
-  Separating them needs centroid tests from target pixel files (roadmap item
-  T8); no light-curve feature will.
+  Separating them needs pixel data. `vet --centroids` now runs a centroid
+  test from target pixel files (see "Centroid test" below), but the model and
+  this benchmark see light curves only.
 
 The search is the other ceiling: BLS recovers the catalogued period for 73% of
 planets in one sector (88% above TOI SNR 40, 32% below 10), and when it
@@ -530,6 +533,98 @@ together do. The grid keeps its 2000 periods however long the baseline, so
 sectors far apart in time are searched too coarsely; consecutive sectors
 are fine.
 
+### Centroid test: is the dip on the target?
+
+The largest astrophysical false-positive class in real TESS data is a
+background eclipsing binary a pixel or two from the target, diluted by the
+target's light into a shallow, planet-like dip. The light curve cannot tell
+the two apart; the pixels can, because the missing light goes missing from
+where its source is. `vet` takes target pixel files for this:
+
+```bash
+python -m transitml.vet star.csv --tpf star_tpf.npz               # saved pixels
+python -m transitml.vet "TIC 307210830" --sector 14 --centroids   # downloads them
+```
+
+`--tpf` reads a file written by `transitml.data.tpf.save_tpf` (plain arrays,
+no pickle; repeat the flag for several sectors). `--centroids` downloads the
+star's target pixel files through lightkurve with the light curve's author,
+cadence and sector. The pixel times must be on the light curve's time system
+(BTJD for anything from MAST). On the primary signal's ephemeris,
+`transitml/centroid.py` runs two tests, after the Kepler and TESS
+data-validation reports:
+
+- **Difference image.** For each transit, the mean image of the cadences
+  just before and after it (a quarter-duration gap, then 1.5 durations on
+  each side) minus the mean in-transit image, averaged over transits. Its
+  flux-weighted centroid is where the dip happens. It is compared with the
+  target's catalogue position from the file's WCS, and also reported against
+  the out-of-transit centroid. The catalogue position is the reference for
+  the flag because the out-of-transit centroid of a crowded stamp is the
+  light-weighted mean of every star in it, so an on-target transit sits off
+  it too; a test asserts exactly that. Without a catalogue position the
+  out-of-transit centroid is used, and that bias applies.
+- **Centroid motion.** The flux-weighted centroid of each cadence, in transit
+  against the flanking baseline, beside the shift an on-target transit of
+  the measured depth would cause. Reported, not used for the flag.
+
+Centroids are measured over the pixels within 3 pixels of the reference, so
+noise in far pixels with long lever arms does not dominate. Errors come from
+a bootstrap over transits when there are at least 5, or over cadences within
+transits when there are fewer (labelled as such, and optimistic when the
+noise is correlated). The covariance of a handful of transits is itself
+uncertain, so the offset's Mahalanobis distance is referred to Hotelling's
+T-squared distribution, `F(2, n - 2)`, with `n` the number of transits or
+the Welch-Satterthwaite effective sample size of the cadence bootstrap, and
+quoted as a Gaussian-equivalent sigma. Treating the bootstrap covariance as
+exact was badly miscalibrated: a nominal 3-sigma offset was reached by 7% of
+on-target transits with 9 transits and by 43% with 3. An offset is flagged
+when the dip is detected in the difference image (SNR at least 3), the
+offset is at least 3 sigma, and it is at least 0.1 pixel (2 arcsec; TESS
+pixels are 21 arcsec), a floor for what the bootstrap cannot see: an
+undersampled, asymmetric real PRF and catalogue and WCS errors.
+
+On synthetic stamps (`transitml/data/synthetic_tpf.py`: Gaussian stars
+integrated over pixels, photon, sky and read noise, 0.005-pixel pointing
+jitter), a T = 10 target with a neighbour 2 magnitudes fainter and 1.8
+pixels away, 150 scenes each:
+
+| Scenario | Transits | Flagged | Above 2 sigma |
+|---|---|---|---|
+| Planet on the target | 9 | 0% | 6% (nominal 4.6%) |
+| Planet on the target | 1 to 3 | 0 to 0.7% | 4.7 to 5.3% |
+| Binary on the neighbour (0.6% dip in the aperture) | 9 | 100% | 100% |
+| Binary on the neighbour | 5 | 65% | 100% |
+| Binary on the neighbour | 1 to 3 | 81 to 100% | 99 to 100% |
+
+Five transits is the weakest case: the transit bootstrap is in use but an
+`F(2, 3)` reference has heavy tails. Pointing jitter is the main nuisance:
+at 0.03 pixel per cadence the blend is flagged in 11% of scenes, because a
+bright star moving by a fraction of a pixel changes every pixel by more than
+a 0.6% dip does. The flux-weighted centroid of an off-centre source is also
+pulled towards the window's centre (a neighbour 1.8 pixels away measures at
+1.5 to 1.7), so the direction and the significance are what to read and the
+length is a lower bound.
+
+The result goes into the JSON as a `centroid` section (`offset_flag`, one
+entry per file with every number above, and a status such as
+`no_in_transit_cadences` or `weak_difference_image` when the test cannot
+be run or is not meaningful) and into the PNG as a fifth row: the
+out-of-transit image with the aperture outlined, the difference image, and
+the numbers. A flagged offset is also called out under the title and printed.
+**The score is unchanged**: the model was never trained on centroid
+features, so the centroid result is a separate vetting test reported beside
+it, not folded into it.
+
+**The download has only been tested offline**, with lightkurve replaced by
+stand-ins, as for the light curves: this environment could not reach MAST.
+The conversion reads the pipeline aperture (falling back to lightkurve's
+threshold mask), the CCD origin, and the target position from the WCS.
+Nothing has been run on a real target pixel file, and the synthetic PSF is a
+circular Gaussian, much tidier than the TESS PRF. The test also uses only the
+primary signal and one ephemeris per run, and is not applied in the
+`run_pipeline.py` evaluation, which has no pixels.
+
 ---
 
 ## Failure modes
@@ -655,10 +750,12 @@ Three further gaps:
 - **Blends.** The single largest astrophysical false-positive class in real TESS
   data is a background eclipsing binary diluted by a bright foreground star
   inside the same pixel. It looks exactly like a shallow planet transit and is
-  separated by *centroid motion* — the flux-weighted centroid shifts during the
-  event — which requires pixel-level data this pipeline never sees. Every real
-  vetting system uses centroid tests; none are here, and adding them would need
-  target pixel files rather than light curves.
+  separated by *centroid motion*: the flux-weighted centroid shifts during the
+  event, which takes pixel-level data to see. The classifier and the headline
+  numbers still see light curves only. `vet` can now run a difference-image
+  centroid test from target pixel files beside the score (see "Centroid test"
+  above), but it has been checked only on synthetic pixels with a Gaussian
+  PSF, not on real TESS data, and it is not part of the evaluation.
 - **Labels.** Ground truth is known by construction here. On real data it has to
   come from a catalogue that inherits the selection function of the pipelines
   being benchmarked against, or from injection-recovery, which only measures
@@ -672,11 +769,12 @@ Three further gaps:
 
 The honest summary: this demonstrates the *method* — correct detrending, correct
 features, correct metric, correct protocol, honest failure analysis — on data
-whose noise is easier than reality. The next step on real data is
-injection-recovery into genuine TESS out-of-transit photometry, which keeps the
-systematics real while keeping the labels trustworthy. The code for that is in
-place (see "Injection-recovery on real photometry" above); the run itself is
-what remains.
+whose noise is easier than reality. Injection-recovery into genuine TESS
+photometry, which keeps the systematics real while keeping the labels
+trustworthy, has now been run on sector 14 (see "Injection-recovery on real
+photometry" above), and it confirmed the prediction: average precision fell
+from 0.80 to 0.51, with most false positives coming from real stars that had
+nothing injected.
 
 ---
 
@@ -697,16 +795,19 @@ transit-detection/
 │   │   ├── injection.py        # synthetic eclipses injected into real curves
 │   │   ├── toi.py              # TOI table -> per-star CP/KP vs FP/FA labels
 │   │   ├── files.py            # CSV and npz light-curve files
+│   │   ├── tpf.py              # target pixel files: container, npz, lightkurve
+│   │   ├── synthetic_tpf.py    # synthetic pixels: on-target transits and blends
 │   │   └── loader.py           # source -> feature matrix, parallel over curves
 │   ├── preprocess.py           # robust spline + rotation detrending
 │   ├── features.py             # BLS search and vetting statistics
 │   ├── search.py               # iterative multi-planet search
+│   ├── centroid.py             # difference-image and centroid-motion tests
 │   ├── model.py                # split, baselines, training, threshold, save/load
 │   ├── evaluate.py             # PR curves, AP, confusion matrix, failure analysis
 │   ├── benchmark.py            # the trained model scored on real TOI dispositions
 │   ├── vet.py                  # python -m transitml.vet: one star, one page
 │   └── plots.py                # figures (matplotlib Agg, no display)
-├── tests/                      # 223 tests, ~3 min
+├── tests/                      # 270 tests, ~3 min
 │   ├── test_generator.py       # imbalance is exact; injected physics is consistent
 │   ├── test_preprocess.py      # depth preservation; why the median was rejected
 │   ├── test_features.py        # recovery vs SNR; the vetting statistics fire
@@ -719,6 +820,10 @@ transit-detection/
 │   ├── test_files.py           # CSV and npz input
 │   ├── test_model_io.py        # saved model reloads with threshold and features
 │   ├── test_vet.py             # vet end to end on CSV, npz and a stubbed TIC
+│   ├── test_tpf.py             # pixel files: npz round trip, stubbed download
+│   ├── test_synthetic_tpf.py   # synthetic pixels put the light where it belongs
+│   ├── test_centroid.py        # blends flagged, on-target not; bad input survives
+│   ├── test_vet_centroid.py    # centroid section in JSON and PNG; score unchanged
 │   └── test_pipeline.py        # end to end, reproducible, figures on disk
 ├── figures/                    # committed, so this README renders
 └── results/                    # metrics.json + report.txt, committed
@@ -728,6 +833,35 @@ transit-detection/
 `--no-figures` and the output directories. Runtime scales linearly in
 `--n-curves`; the BLS search is the bottleneck and is parallel across curves.
 
+## Roadmap
+
+What is built and what is planned, roughly in the order it is being worked
+on. Sizes are rough: S is a few hours, M a day or two, L longer.
+
+**Done**
+
+- Odd/even and secondary-eclipse significances divided by the red-noise β.
+- Operating threshold chosen on a Wilson lower bound of CV precision.
+- Injection-recovery on real TESS photometry (sector 14, AP 0.51).
+- `python -m transitml.vet`: one star in, a one-page vetting report out.
+- Iterative multi-planet search for the vetting report.
+- Multi-sector stitching (`--stitch`, `stitch_light_curves`).
+- Benchmark against real TOI dispositions (`--benchmark-tois`; 746 hosts in
+  sectors 14 to 26, AP 0.62 against a chance level of 0.50).
+
+**Planned**
+
+| Item | What it adds | Size |
+| --- | --- | --- |
+| Centroid-shift tests from target pixel files | A test for background blended binaries, the largest real false-positive class | L |
+| Structured systematics in the generator | 13.7-day scattered light, camera-correlated jitter and focus drift, so the synthetic noise stops flattering the result | M |
+| Single-transit and duo-transit search | Events the period grid excludes by construction today | M |
+| Transit Least Squares and GPU BLS | An alternative search and a faster one; BLS is the runtime bottleneck | M |
+| Kepler DR25 training set, then an optional CNN | About 34k labels, enough to train on transit shape | L |
+| Probability calibration and per-candidate SHAP | A calibrated score and an exact reason per object | S |
+| Batch mode over a whole sector | On-disk caching and a candidate list | M |
+| Planet parameter fits | batman and emcee fits for candidates that pass | M |
+
 ## References
 
 - Kovács, Zucker & Mazeh (2002) — Box Least Squares.
@@ -735,4 +869,8 @@ transit-detection/
 - Vanderburg & Johnson (2014) — robust spline detrending with iterative outlier
   rejection.
 - Shallue & Vanderburg (2018) — AstroNet; the CNN comparison point.
+- Bryson et al. (2013): difference-image centroid offsets for Kepler false
+  positives.
+- Twicken et al. (2018): the Kepler data validation tests, including the
+  centroid tests.
 - Astropy `BoxLeastSquares` and `LombScargle` implementations.
