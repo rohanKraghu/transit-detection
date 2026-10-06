@@ -6,6 +6,8 @@ dip lasting a few hours, and it sits on top of stellar variability ten to a
 hundred times deeper. This repository is an end-to-end pipeline for that
 problem — generate the photometry, detrend it, search it, classify it, and
 evaluate it the way an imbalanced detection problem has to be evaluated.
+It also vets single real stars: `python -m transitml.vet "TIC ..."` downloads,
+detrends, searches and scores one target and writes a one-page report.
 
 **One command reproduces everything in this README:**
 
@@ -168,10 +170,10 @@ implementations:
 
 - `transitml/data/synthetic.py` — `SyntheticTESSSource`, used by the demo.
 - `transitml/data/mast.py` — `MASTLightCurveSource`, which pulls real TESS or
-  Kepler photometry from MAST through `lightkurve`. It is fully written and
-  implements the same interface; it is not exercised by the demo because real
-  light curves need labels from injection-recovery (see below). Switching is
-  one line in `run_pipeline.py`:
+  Kepler photometry from MAST through `lightkurve`. It implements the same
+  interface. The synthetic demo does not use it, because real light curves
+  need labels; the real-photometry injection run below and the `vet` command
+  do. Pointing the pipeline at it directly looks like this:
 
 ```python
 source = MASTLightCurveSource(
@@ -580,11 +582,12 @@ Three further gaps:
 
 The honest summary: this demonstrates the *method* — correct detrending, correct
 features, correct metric, correct protocol, honest failure analysis — on data
-whose noise is easier than reality. The next step on real data is
-injection-recovery into genuine TESS out-of-transit photometry, which keeps the
-systematics real while keeping the labels trustworthy. The code for that is in
-place (see "Injection-recovery on real photometry" above); the run itself is
-what remains.
+whose noise is easier than reality. Injection-recovery into genuine TESS
+photometry, which keeps the systematics real while keeping the labels
+trustworthy, has now been run on sector 14 (see "Injection-recovery on real
+photometry" above), and it confirmed the prediction: average precision fell
+from 0.80 to 0.51, with most false positives coming from real stars that had
+nothing injected.
 
 ---
 
@@ -631,6 +634,34 @@ transit-detection/
 `python run_pipeline.py --help` exposes `--seed`, `--n-curves`, `--n-jobs`,
 `--no-figures` and the output directories. Runtime scales linearly in
 `--n-curves`; the BLS search is the bottleneck and is parallel across curves.
+
+## Roadmap
+
+What is built and what is planned, roughly in the order it is being worked
+on. Sizes are rough: S is a few hours, M a day or two, L longer.
+
+**Done**
+
+- Odd/even and secondary-eclipse significances divided by the red-noise β.
+- Operating threshold chosen on a Wilson lower bound of CV precision.
+- Injection-recovery on real TESS photometry (sector 14, AP 0.51).
+- `python -m transitml.vet`: one star in, a one-page vetting report out.
+- Iterative multi-planet search for the vetting report.
+- Multi-sector stitching (`--stitch`, `stitch_light_curves`).
+
+**Planned**
+
+| Item | What it adds | Size |
+| --- | --- | --- |
+| Benchmark against real TOI labels (in progress) | Precision and recall against ExoFOP dispositions, not only labels known by construction | M |
+| Centroid-shift tests from target pixel files | A test for background blended binaries, the largest real false-positive class | L |
+| Structured systematics in the generator | 13.7-day scattered light, camera-correlated jitter and focus drift, so the synthetic noise stops flattering the result | M |
+| Single-transit and duo-transit search | Events the period grid excludes by construction today | M |
+| Transit Least Squares and GPU BLS | An alternative search and a faster one; BLS is the runtime bottleneck | M |
+| Kepler DR25 training set, then an optional CNN | About 34k labels, enough to train on transit shape | L |
+| Probability calibration and per-candidate SHAP | A calibrated score and an exact reason per object | S |
+| Batch mode over a whole sector | On-disk caching and a candidate list | M |
+| Planet parameter fits | batman and emcee fits for candidates that pass | M |
 
 ## References
 
