@@ -102,3 +102,26 @@ def expected_duration_for(period: float, radius_ratio: float, impact: float) -> 
     """T14 for a solar-density host, used to sanity-check the generator."""
     a_rs = scaled_semi_major_axis(period, RHO_SUN_CGS)
     return transit_durations(period, a_rs, radius_ratio, impact)[0]
+
+
+@pytest.fixture(scope="session")
+def tiny_model_config() -> Config:
+    """A miniature run for tests that need a trained model, not a good one."""
+    base = default_config()
+    return replace(
+        base,
+        dataset=replace(base.dataset, n_curves=120, positive_rate=0.15, eclipsing_binary_rate=0.1),
+        bls=replace(base.bls, n_periods=400),
+    )
+
+
+@pytest.fixture(scope="session")
+def tiny_trained(tiny_model_config):
+    """``(split, trained)`` on 120 synthetic curves, 18 of them planets."""
+    from transitml.data.loader import build_default_dataset
+    from transitml.model import make_split, train
+
+    dataset = build_default_dataset(tiny_model_config, n_jobs=2)
+    split = make_split(dataset, test_size=0.35, seed=tiny_model_config.seed)
+    trained = train(split, n_folds=3, seed=tiny_model_config.seed, target_precision=0.5)
+    return split, trained

@@ -24,15 +24,17 @@ detail that a handful of scalars throws away.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Protocol
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Protocol
 
+import joblib
 import numpy as np
 from numpy.typing import NDArray
 from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.model_selection import StratifiedKFold, train_test_split
 
-from .config import EvalConfig
+from .config import BLSConfig, EvalConfig, PreprocessConfig
 from .data.loader import Dataset
 from .features import FEATURE_NAMES
 
@@ -325,4 +327,101 @@ def train(
         threshold_rule=rule,
         achieved_cv_precision=precision,
         achieved_cv_recall=recall,
+    )
+
+
+# --------------------------------------------------------------------------
+# Persistence: the fitted model, for scoring single stars with ``vet``
+# --------------------------------------------------------------------------
+#: Bumped whenever the saved layout changes, so an old file fails loudly.
+MODEL_FORMAT_VERSION = 1
+
+
+def feature_medians(X: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Per-column median over finite values; NaN for a column with none.
+
+    Stored with the model as the "typical training curve" that ``vet``
+    replaces one feature at a time with to show which features moved a score.
+    """
+    medians = np.full(X.shape[1], np.nan)
+    for j in range(X.shape[1]):
+        column = X[:, j][np.isfinite(X[:, j])]
+        if column.size:
+            medians[j] = float(np.median(column))
+    return medians
+
+
+@dataclass
+class SavedModel:
+    """Everything ``vet`` needs to score a new light curve the way training did."""
+
+    estimator: HistGradientBoostingClassifier
+    threshold: float
+    threshold_rule: str
+    feature_names: tuple[str, ...]
+    train_medians: NDArray[np.float64]
+    preprocess: PreprocessConfig = field(default_factory=PreprocessConfig)
+    bls: BLSConfig = field(default_factory=BLSConfig)
+    provenance: dict[str, Any] = field(default_factory=dict)
+
+    def score(self, X: NDArray[np.float64]) -> NDArray[np.float64]:
+        return self.estimator.predict_proba(np.atleast_2d(X))[:, 1]
+
+
+def save_model(
+    trained: TrainedModel,
+    split: Split,
+    path: str | Path,
+    *,
+    preprocess: PreprocessConfig,
+    bls: BLSConfig,
+    provenance: dict[str, Any] | None = None,
+) -> Path:
+    """Write the fitted classifier, its threshold and feature order with joblib.
+
+    joblib files are pickles: load only ones you wrote yourself.
+    """
+    import sklearn
+
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "format_version": MODEL_FORMAT_VERSION,
+        "estimator": trained.estimator,
+        "threshold": float(trained.threshold),
+        "threshold_rule": trained.threshold_rule,
+        "feature_names": list(FEATURE_NAMES),
+        "train_medians": feature_medians(split.X_train),
+        "preprocess": preprocess,
+        "bls": bls,
+        "provenance": {
+            "sklearn": sklearn.__version__,
+            "n_train": int(len(split.y_train)),
+            "n_train_positive": split.n_train_positive,
+            **(provenance or {}),
+        },
+    }
+    joblib.dump(payload, path, compress=3)
+    return path
+
+
+def load_model(path: str | Path) -> SavedModel:
+    """Inverse of :func:`save_model`.  Refuses a file whose features do not match."""
+    payload = joblib.load(Path(path))
+    if not isinstance(payload, dict) or payload.get("format_version") != MODEL_FORMAT_VERSION:
+        raise ValueError(f"{path}: not a transitml model file (or an old format)")
+    names = tuple(payload["feature_names"])
+    if names != FEATURE_NAMES:
+        raise ValueError(
+            f"{path}: saved with a different feature set; retrain with run_pipeline.py"
+        )
+    return SavedModel(
+        estimator=payload["estimator"],
+        threshold=float(payload["threshold"]),
+        threshold_rule=str(payload["threshold_rule"]),
+        feature_names=names,
+        train_medians=np.asarray(payload["train_medians"], dtype=float),
+        preprocess=payload["preprocess"],
+        bls=payload["bls"],
+        provenance=dict(payload["provenance"]),
     )
