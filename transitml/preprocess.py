@@ -96,6 +96,10 @@ class FlattenedLightCurve:
     rotation_periods:
         Periods given Fourier terms in the trend model.  Empty when the star
         showed no coherent fast variability.
+    n_masked:
+        Retained cadences the caller asked to keep out of the trend fit (zero
+        for a blind detrend).  A few may have been given back to keep the fit
+        constrained; see :func:`release_starved`.
     """
 
     target_id: str
@@ -107,6 +111,7 @@ class FlattenedLightCurve:
     n_clipped: int
     label: int | None = None
     rotation_periods: tuple[float, ...] = ()
+    n_masked: int = 0
 
     @property
     def baseline_days(self) -> float:
@@ -165,6 +170,7 @@ def robust_least_squares(
     *,
     iterations: int = 6,
     tuning: float = 4.685,
+    exclude: NDArray[np.bool_] | None = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Fit ``design @ c ~ values`` with a Tukey biweight loss.  Returns ``(c, weights)``.
 
@@ -174,8 +180,13 @@ def robust_least_squares(
     one-signed residuals -- drops out of the fit within two or three
     iterations, with no externally supplied noise scale and no threshold to
     tune.
+
+    ``exclude`` marks rows known in advance to hold signal (the cadences of a
+    transit already found).  They carry zero weight from the first, otherwise
+    unweighted, iteration on, and are left out of the residual scale.
     """
-    weights = np.ones(values.size)
+    include = np.ones(values.size) if exclude is None else (~exclude).astype(float)
+    weights = include.copy()
     coefficients = np.zeros(design.shape[1])
     for _ in range(max(iterations, 1)):
         root = np.sqrt(weights)
@@ -183,11 +194,11 @@ def robust_least_squares(
             design * root[:, None], values * root, rcond=None
         )
         residual = values - design @ coefficients
-        scale = robust_sigma(residual)
+        scale = robust_sigma(residual if exclude is None else residual[~exclude])
         if not np.isfinite(scale) or scale <= 0:
             break
         u = residual / (tuning * scale)
-        updated = np.where(np.abs(u) < 1.0, (1.0 - u**2) ** 2, 0.0)
+        updated = np.where(np.abs(u) < 1.0, (1.0 - u**2) ** 2, 0.0) * include
         if updated.sum() < design.shape[1] + 8:
             break
         converged = np.allclose(updated, weights, atol=1e-3)
@@ -304,8 +315,34 @@ def bayesian_information_criterion(
     return n * np.log(rss / n) + n_params * np.log(n)
 
 
+def release_starved(
+    design: NDArray[np.float64], exclude: NDArray[np.bool_], min_support: float
+) -> NDArray[np.bool_]:
+    """Unmask the cadences of any basis function a mask leaves almost unconstrained.
+
+    The cubic B-spline at a segment edge is concentrated on the first knot
+    interval: ``(1 - t)**3`` keeps under 1% of its squared weight beyond the
+    interval's midpoint.  A mask over the start of a segment can therefore
+    leave that coefficient fixed by a few cadences where its basis function is
+    nearly zero, and the trend inside the mask becomes an unconstrained
+    extrapolation.  Any column keeping less than ``min_support`` of its squared
+    weight outside the mask gets its cadences back, so there the fit is the
+    blind one again rather than an arbitrary one.
+    """
+    mass = np.sum(design**2, axis=0)
+    kept = np.sum(design[~exclude] ** 2, axis=0)
+    starved = kept < min_support * mass
+    if not starved.any():
+        return exclude
+    return exclude & ~np.any(design[:, starved] != 0.0, axis=1)
+
+
 def fit_trend(
-    time: NDArray[np.float64], signal: NDArray[np.float64], config: PreprocessConfig
+    time: NDArray[np.float64],
+    signal: NDArray[np.float64],
+    config: PreprocessConfig,
+    *,
+    exclude: NDArray[np.bool_] | None = None,
 ) -> tuple[NDArray[np.float64], list[float]]:
     """Fit ``spline + rotation harmonics`` robustly.  Returns ``(trend, periods)``.
 
@@ -325,17 +362,29 @@ def fit_trend(
     Step 3 is what protects a quiet star: with the transit down-weighted out of
     the fit there is nothing coherent left, the harmonics buy no improvement,
     and the trend stays spline-only.
+
+    ``exclude`` marks cadences to keep out of every fit (see :func:`flatten`).
+    The trend is still evaluated there.
     """
     design = spline_basis(time, config)
+    if exclude is not None:
+        exclude = release_starved(design, exclude, config.mask_min_support)
+        if not exclude.any():
+            exclude = None
+    fitted = slice(None) if exclude is None else ~exclude
     coefficients, _ = robust_least_squares(
-        design, signal, iterations=config.irls_iterations, tuning=config.biweight_tuning
+        design,
+        signal,
+        iterations=config.irls_iterations,
+        tuning=config.biweight_tuning,
+        exclude=exclude,
     )
     trend = design @ coefficients
-    scale = robust_sigma(signal - trend)
+    scale = robust_sigma((signal - trend)[fitted])
     periods: list[float] = []
 
     for _ in range(config.rotation_max_terms):
-        peak = dominant_period(time, winsorize(signal - trend), config)
+        peak = dominant_period(time[fitted], winsorize((signal - trend)[fitted]), config)
         if not np.isfinite(peak) or any(abs(peak / p - 1.0) < 0.05 for p in periods):
             break
 
@@ -350,7 +399,7 @@ def fit_trend(
             # Cheap scan: the candidates only need ranking, and three IRLS
             # cycles are enough for the weights to settle on the transit.
             trial_coefficients, trial_weights = robust_least_squares(
-                trial, signal, iterations=3, tuning=config.biweight_tuning
+                trial, signal, iterations=3, tuning=config.biweight_tuning, exclude=exclude
             )
             trial_trend = trial @ trial_coefficients
             criterion = bayesian_information_criterion(
@@ -368,9 +417,10 @@ def fit_trend(
             signal,
             iterations=config.irls_iterations,
             tuning=config.biweight_tuning,
+            exclude=exclude,
         )
         trial_trend = trial_design @ trial_coefficients
-        trial_scale = robust_sigma(signal - trial_trend)
+        trial_scale = robust_sigma((signal - trial_trend)[fitted])
         if trial_scale > (1.0 - config.rotation_min_improvement) * scale:
             break  # the rotation term does not pay for itself
 
@@ -412,8 +462,19 @@ def running_median_trend(
 
 
 # --------------------------------------------------------------------------
-def flatten(lc: LightCurve, config: PreprocessConfig | None = None) -> FlattenedLightCurve:
+def flatten(
+    lc: LightCurve,
+    config: PreprocessConfig | None = None,
+    *,
+    exclude: NDArray[np.bool_] | None = None,
+) -> FlattenedLightCurve:
     """Detrend a light curve.  See the module docstring for the reasoning.
+
+    ``exclude`` (aligned with ``lc.time``) marks cadences to keep out of the
+    trend fit altogether, such as the transits of a signal already found.  The
+    trend is interpolated across them instead of being fitted to them, which
+    the robust weights alone cannot guarantee at the edge of a segment (see
+    :func:`transitml.features.flatten_masked`).
 
     Raises
     ------
@@ -422,6 +483,11 @@ def flatten(lc: LightCurve, config: PreprocessConfig | None = None) -> Flattened
         to clipping to be worth searching.
     """
     config = config or PreprocessConfig()
+    if exclude is not None:
+        exclude = np.asarray(exclude, dtype=bool)
+        if exclude.shape != lc.time.shape:
+            raise ValueError(f"{lc.target_id}: exclude must match the cadences")
+        exclude = exclude[np.isfinite(lc.time) & np.isfinite(lc.flux) & np.isfinite(lc.flux_err)]
     lc = lc.finite()
     if lc.n_cadences < 64:
         raise ValueError(f"{lc.target_id}: too few finite cadences ({lc.n_cadences})")
@@ -440,7 +506,7 @@ def flatten(lc: LightCurve, config: PreprocessConfig | None = None) -> Flattened
     noise = point_to_point_sigma(signal)
     keep = np.ones(time.size, dtype=bool)
     n_clipped = 0
-    trend, periods = fit_trend(time, signal, config)
+    trend, periods = fit_trend(time, signal, config, exclude=exclude)
 
     if np.isfinite(noise) and noise > 0:
         for _ in range(max(config.clip_iterations, 1)):
@@ -451,7 +517,12 @@ def flatten(lc: LightCurve, config: PreprocessConfig | None = None) -> Flattened
             keep[np.flatnonzero(keep)[outlier]] = False
             if int(keep.sum()) < 64:
                 raise ValueError(f"{lc.target_id}: too few cadences survive clipping")
-            trend, periods = fit_trend(time[keep], signal[keep], config)
+            trend, periods = fit_trend(
+                time[keep],
+                signal[keep],
+                config,
+                exclude=None if exclude is None else exclude[keep],
+            )
 
     time, signal, flux_err = time[keep], signal[keep], flux_err[keep]
     flat = signal - trend + 1.0
@@ -466,4 +537,5 @@ def flatten(lc: LightCurve, config: PreprocessConfig | None = None) -> Flattened
         n_clipped=n_clipped,
         label=lc.label,
         rotation_periods=tuple(periods),
+        n_masked=0 if exclude is None else int(exclude[keep].sum()),
     )
