@@ -59,7 +59,7 @@ transits.
 
 The flux-weighted centroid of a source near the edge of the window is pulled
 towards the window's centre, so the offset to a neighbour is underestimated
-(a neighbour 1.8 pixels away is measured at about 1.6): the direction and the
+(a neighbour 1.8 pixels away is measured at 1.5 to 1.7): the direction and the
 significance are what to read, the length is a lower bound.
 
 An offset is flagged when the dip itself is detected in the difference image
