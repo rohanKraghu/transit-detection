@@ -29,3 +29,7 @@ results/real_injection/base_curves.npz
 
 # OS noise
 .DS_Store
+# Downloaded TOI-host curves for the real-label benchmark; rebuilt from the
+# TOI table in data/toi_benchmark/ by one run.
+results/**/toi_curves.npz
+results/**/toi_curves.tried.json
