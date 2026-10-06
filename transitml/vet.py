@@ -23,10 +23,12 @@ The iterative search in :mod:`transitml.search` additionally lists every
 significant signal, so a second planet is reported even though it is not
 scored.
 
-The "top reasons" are an approximation and are labelled as one: for each
-feature, the change in score when that feature alone is replaced by its median
-over the training split.  They are not additive and do not sum to the score;
-they show which measured values the model reacted to most for this star.
+Beside the score, the report gives a calibrated probability that the star
+hosts a planet (:mod:`transitml.calibration`), at the planet rate of the
+training population unless ``--planet-rate`` names another, and the "top
+reasons": SHAP values (:mod:`transitml.treeshap`) in calibrated log-odds.
+They are exact and additive: the base log-odds plus every feature's value
+is the star's log-odds, so a reason of +1.0 multiplies the odds by e.
 
 With ``--tpf`` (a saved :class:`~transitml.data.tpf.TargetPixelData`) or, for
 a TIC, ``--centroids`` (download the target pixel files), the primary signal's
@@ -84,8 +86,13 @@ CENTROID_NOTE = (
 )
 
 CONTRIBUTION_METHOD = (
-    "approximate: change in score when this feature alone is replaced by its "
-    "training-split median; not additive"
+    "SHAP values (exact path-dependent TreeSHAP) in calibrated log-odds; "
+    "base_log_odds plus the sum over every feature equals log_odds"
+)
+
+PROBABILITY_NOTE = (
+    "calibrated on out-of-fold training scores; the chance this star hosts a planet "
+    "if a fraction planet_rate of stars like it do"
 )
 
 
@@ -102,6 +109,10 @@ class VetResult:
     contributions: list[dict[str, float | str]]
     n_cadences: int
     baseline_days: float
+    probability: float = float("nan")
+    planet_rate: float = float("nan")
+    log_odds: float = float("nan")
+    base_log_odds: float = float("nan")
     model_provenance: dict[str, Any] = field(default_factory=dict)
     #: ``None`` when no centroid test was asked for; else one per target pixel file.
     centroids: list[CentroidResult] | None = None
@@ -135,10 +146,16 @@ class VetResult:
             "threshold": self.threshold,
             "above_threshold": self.above_threshold,
             "verdict": self.verdict,
+            "probability": self.probability,
+            "planet_rate": self.planet_rate,
+            "probability_note": PROBABILITY_NOTE,
             "primary_signal": self.primary,
             "candidates": [c.to_dict() for c in self.candidates],
             "features": self.features,
+            "log_odds": self.log_odds,
+            "base_log_odds": self.base_log_odds,
             "top_reasons": self.reasons,
+            "contributions": self.contributions,
             "contribution_method": CONTRIBUTION_METHOD,
             "n_cadences": self.n_cadences,
             "baseline_days": self.baseline_days,
@@ -171,32 +188,27 @@ def _json_safe(value: Any) -> Any:
 def feature_contributions(
     model: SavedModel, x: np.ndarray
 ) -> list[dict[str, float | str]]:
-    """Score change from replacing each feature, one at a time, by its training median.
+    """Every feature's SHAP value for one star, largest in size first.
 
-    ``delta = score(x) - score(x with feature j set to its median)``: positive
-    means this star's value of feature ``j`` pushed the score up relative to a
-    typical training curve.  Features whose median is undefined are skipped.
-    Sorted by ``|delta|``, largest first.
+    ``shap`` is in calibrated log-odds: positive pushed this star towards
+    "planet", and ``model.base_log_odds`` plus the sum over all rows is the
+    star's log-odds.  ``odds_factor = exp(shap)`` is the same number as a
+    multiplier on the odds.  The training-split median is given beside each
+    value for context; it plays no part in the calculation.
     """
     x = np.asarray(x, dtype=float).reshape(1, -1)
-    base = float(model.score(x)[0])
-    usable = [j for j in range(x.shape[1]) if np.isfinite(model.train_medians[j])]
-    if not usable:
-        return []
-    probes = np.repeat(x, len(usable), axis=0)
-    for row, j in enumerate(usable):
-        probes[row, j] = model.train_medians[j]
-    replaced = model.score(probes)
+    values = model.explain(x)[0]
     rows = [
         {
             "feature": model.feature_names[j],
             "value": float(x[0, j]),
             "training_median": float(model.train_medians[j]),
-            "delta_score": base - float(replaced[row]),
+            "shap": float(values[j]),
+            "odds_factor": float(np.exp(values[j])),
         }
-        for row, j in enumerate(usable)
+        for j in range(x.shape[1])
     ]
-    rows.sort(key=lambda r: abs(float(r["delta_score"])), reverse=True)
+    rows.sort(key=lambda r: abs(float(r["shap"])), reverse=True)
     return rows
 
 
@@ -206,8 +218,14 @@ def vet_light_curve(
     multi: MultiPlanetConfig | None = None,
     tpfs: list[TargetPixelData] | None = None,
     centroid_config: CentroidConfig | None = None,
+    planet_rate: float | None = None,
 ) -> tuple[VetResult, FlattenedLightCurve]:
     """Detrend, search, featurise and score one light curve.
+
+    ``planet_rate`` re-targets the calibrated probability to a population in
+    which that fraction of stars host a planet; ``None`` keeps the training
+    population's rate.  It moves the probability only, never the score or
+    the verdict.
 
     With ``tpfs`` (an empty list counts: it records that none was found), the
     primary signal's ephemeris is also run through :func:`centroid_test` on
@@ -221,6 +239,11 @@ def vet_light_curve(
 
     x = np.array([features[name] for name in FEATURE_NAMES], dtype=float)
     score = float(model.score(x)[0])
+    rate = model.calibration.train_positive_rate if planet_rate is None else planet_rate
+    log_odds = float(model.log_odds(x, planet_rate)[0])
+    # A different planet rate moves every star's log-odds by the same amount,
+    # so it shifts the base value and leaves each SHAP value as it is.
+    shift = log_odds - float(model.log_odds(x)[0])
     result = VetResult(
         target_id=lc.target_id,
         score=score,
@@ -239,6 +262,10 @@ def vet_light_curve(
         n_cadences=int(flat.time.size),
         baseline_days=float(flat.baseline_days),
         model_provenance={"threshold_rule": model.threshold_rule, **model.provenance},
+        probability=float(model.probability(x, planet_rate)[0]),
+        planet_rate=float(rate),
+        log_odds=log_odds,
+        base_log_odds=model.base_log_odds + shift,
     )
     if tpfs is not None:
         result.centroids = [
@@ -406,6 +433,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "sector as the light curve) and run the centroid test.",
     )
     parser.add_argument(
+        "--planet-rate",
+        type=float,
+        default=None,
+        help="Fraction of stars like this one that host a planet, for the calibrated "
+        "probability; None means the training population's rate. The score and verdict "
+        "do not depend on it.",
+    )
+    parser.add_argument(
         "--max-signals",
         type=int,
         default=MultiPlanetConfig.max_signals,
@@ -442,13 +477,21 @@ def main(argv: list[str] | None = None) -> int:
     tpfs = load_target_pixels(args.target, args)
     model = load_model(args.model)
     multi = MultiPlanetConfig(max_signals=args.max_signals, min_sde=args.min_sde)
-    result, flat = vet_light_curve(lc, model, multi, tpfs)
+    if args.planet_rate is not None and not 0.0 < args.planet_rate < 1.0:
+        raise SystemExit(f"--planet-rate must lie between 0 and 1, got {args.planet_rate}")
+    result, flat = vet_light_curve(lc, model, multi, tpfs, planet_rate=args.planet_rate)
     png, js = write_report(lc, flat, result, args.out_dir)
 
     print(
         f"{result.target_id}: score {result.score:.3f}, threshold {result.threshold:.3f}"
     )
     print(f"  verdict: {result.verdict}")
+    print(
+        f"  P(planet) = {result.probability:.3f} at a {result.planet_rate:.1%} planet rate "
+        "(calibrated)"
+    )
+    reasons = ", ".join(f"{r['feature']} {float(r['shap']):+.2f}" for r in result.reasons[:3])
+    print(f"  top reasons (SHAP, log-odds from a base of {result.base_log_odds:+.2f}): {reasons}")
     for cand in result.candidates:
         print(
             f"  signal {cand.rank}: P = {cand.period:.4f} d, depth {cand.depth * 1e6:.0f} ppm, "
