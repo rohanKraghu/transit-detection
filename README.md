@@ -14,8 +14,8 @@ detrends, searches and scores one target and writes a one-page report.
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-python run_pipeline.py            # ~2 min on 4 cores
-pytest                            # ~3 min, 282 tests
+python run_pipeline.py            # ~3 min on 4 cores
+pytest                            # ~4 min, 295 tests
 ```
 
 It writes `results/metrics.json`, `results/report.txt`, the trained model
@@ -31,11 +31,11 @@ Fixed seed (42), pinned dependencies, deterministic output.
 | Scorer | Average precision (68% CI) | ROC-AUC | Precision@20 |
 |---|---|---|---|
 | Random ranking (chance) | 0.040 | 0.500 | — |
-| Baseline: rank by BLS **depth** | 0.097 [0.080, 0.128] | 0.751 | 0.00 |
-| Baseline: rank by BLS **depth SNR** | 0.180 [0.149, 0.231] | 0.830 | 0.10 |
-| **Gradient boosting on vetting features** | **0.799** [0.732, 0.862] | 0.939 | **1.00** |
+| Baseline: rank by BLS **depth** | 0.097 [0.081, 0.129] | 0.752 | 0.00 |
+| Baseline: rank by BLS **depth SNR** | 0.179 [0.149, 0.230] | 0.831 | 0.10 |
+| **Gradient boosting on vetting features** | **0.802** [0.737, 0.864] | 0.935 | **1.00** |
 
-**20× better than chance, 4.4× better than the strongest single-statistic
+**20× better than chance, 4.5× better than the strongest single-statistic
 baseline.** Of the 20 candidates the model ranks highest, all 20 are real planets;
 ranking the same light curves by BLS signal-to-noise gets 2.
 
@@ -50,11 +50,11 @@ At the chosen operating threshold, on the 840 held-out light curves:
 
 ```
                     pred: no planet    pred: planet
-  truth: no planet          778              28
+  truth: no planet          782              24
   truth: planet               8              26
 
-  precision 0.481    recall 0.765    F1 0.591
-  false positives by true object type -> eclipsing binary: 8, variable star: 20
+  precision 0.520    recall 0.765    F1 0.619
+  false positives by true object type -> eclipsing binary: 7, variable star: 17
 ```
 
 ---
@@ -108,22 +108,24 @@ The rule now requires a one-sided Wilson score lower bound on the CV precision
 `EvalConfig`, i.e. one sigma, matching the 68% intervals used everywhere else)
 to clear 0.50. The bound never exceeds the point estimate, so this can only
 raise the threshold, and `tests/test_evaluation.py` asserts that on random and
-real out-of-fold scores. On this run the bound is 0.506 at 82 candidates, the
-CV point estimate there is 0.561 at recall 0.742, and the held-out set delivers
-precision **0.481** at recall 0.765.
+real out-of-fold scores. On this run the bound is 0.501 at 77 candidates, the
+CV point estimate there is 0.558 at recall 0.694, and the held-out set delivers
+precision **0.520** at recall 0.765.
 
-So the correction helped but did not close the gap: held-out precision is still
-below the 0.50 target, by less than the 68% sampling uncertainty of a 54-candidate
-test sample (about ±0.07), but below it nonetheless. Separating the two changes
-made in the same round, with the beta-scaled features (next sections) and the
-old point-estimate rule the threshold would have been 0.167 and held-out
-precision 0.426 (35 false positives); the Wilson rule moves it to 0.200 and 28
-false positives at unchanged recall. A one-sigma bound on 62 positives is a
-modest correction, and the CV-to-test drop (0.561 to 0.481) shows the bias is
-larger than one sigma here. Raising `precision_lcb_z` or taking the median over
-several CV seeds are the obvious next steps; neither was tried, because tuning
-the knob after seeing the test number would reintroduce exactly the bias it is
-meant to remove.
+So the correction helped, but one run cannot show that it is enough. On the run
+before this one held-out precision was 0.481, below the 0.50 target; on this one
+it is 0.520, above it. Both are within the 68% sampling uncertainty of a
+50-candidate test sample (about ±0.07) of the target. In the round that
+introduced the rule, the two changes made together were also separated: with the
+beta-scaled features (next sections) and the old point-estimate rule the
+threshold would have been 0.167 and held-out precision 0.426 (35 false
+positives), and the Wilson rule moved it to 0.200 and 28 false positives at
+unchanged recall. A one-sigma bound on 62 positives is a modest correction. On
+the previous run the CV-to-test drop (0.561 to 0.481) was larger than it; on
+this one (0.558 to 0.520) it is smaller. Raising `precision_lcb_z` or taking the
+median over several CV seeds are the obvious next steps if later runs keep
+landing below 0.50; neither was tried, because tuning the knob after seeing the
+test number would reintroduce exactly the bias it is meant to remove.
 
 ---
 
@@ -317,16 +319,23 @@ injected. Held-out set: 980 curves, 39 planets. Full report in
 
 | | Synthetic | Real sector 14 |
 |---|---|---|
-| Model average precision | 0.80 | **0.51** [0.44, 0.60] |
+| Model average precision | 0.80 | **0.44** [0.36, 0.53] |
 | Best baseline (BLS SNR) | | 0.10 |
-| Held-out precision / recall | | 0.48 / 0.54 |
-| Precision of top 20 | | 0.75 |
+| Held-out precision / recall | | 0.40 / 0.56 |
+| Precision of top 20 | | 0.65 |
 
 The prediction held: real noise costs a lot of average precision. Most of
 the loss is at low SNR, where the search itself stops finding the period
 (30% recovered below SNR 7, 83% at SNR 7 to 12, 16 of 17 above 12), and on the
-false-positive side, where 15 of the 23 false positives at the operating
+false-positive side, where 22 of the 33 false positives at the operating
 point are real stars with nothing injected rather than binaries.
+
+The held-out AP was 0.51 before the binary-test changes described under the
+TOI benchmark below, and that drop is the split, not the change. With 39
+planets in the held-out set, one ranking swap moves AP by several points.
+Repeated 5-fold cross-validation over all 2800 curves (four reshuffles) puts
+the same features at 0.544 ± 0.004 before the changes and 0.561 ± 0.023
+after.
 
 To reproduce (the TOI table is the NASA Exoplanet Archive `toi` table, the
 same list ExoFOP serves):
@@ -375,45 +384,96 @@ and [`results/toi_benchmark.txt`](results/toi_benchmark.txt).
 
 | Model trained on | Planets kept | False positives rejected | AP (chance 0.50) | ROC-AUC | Top 20 |
 |---|---|---|---|---|---|
-| Injections into real sector 14 noise | 0.55 | 0.62 | **0.62** [0.59, 0.64] | 0.59 | 0.85 |
-| Synthetic light curves | 0.57 | 0.59 | 0.61 [0.58, 0.63] | 0.59 | 0.65 |
+| Injections into real sector 14 noise | 0.55 | 0.62 | 0.61 [0.59, 0.64] | 0.60 | 0.60 |
+| Synthetic light curves | 0.58 | 0.58 | **0.62** [0.59, 0.65] | 0.59 | 0.85 |
 | Baseline: rank by BLS SNR | | | 0.60 [0.57, 0.63] | 0.58 | 0.65 |
 
 ![TOI benchmark](figures/real_injection/05_toi_benchmark.png)
 
 **The model barely separates confirmed planets from TOI false positives.**
-It beats ranking by BLS signal-to-noise in only 76% of paired bootstrap
-resamples, and the table of what it keeps by catalogued depth shows why: the
-fraction of planets kept and the fraction of false positives kept rise
-together, from 0.28 and 0.16 below 1000 ppm to 0.77 and 0.71 at 6000 to 10000
-ppm. On this population the model is mostly a signal-strength ranking. Its
-top 20 are 85% real planets (65% for the synthetic-trained model and for the
-BLS SNR ranking), so the most confident end of the ranking is still useful.
-Training on real noise rather than synthetic noise makes no difference here
-that the intervals can resolve.
+The synthetic-trained model beats ranking by BLS signal-to-noise in 81% of
+paired bootstrap resamples and the injection-trained one in 69%, and the
+fraction of planets kept still rises with depth together with the fraction of
+false positives kept: for the injection-trained model, from 0.29 and 0.23
+below 1000 ppm to 0.75 and 0.53 at 6000 to 10000 ppm. On this population the
+model is mostly a signal-strength ranking, if less so at depth than before the
+fixes below, when those last two were 0.77 and 0.71. The top 20 are 85% real
+planets for the synthetic-trained model and 60% for the injection-trained one,
+the reverse of the run before the fixes (65% and 85%). Twenty stars is a small
+sample, and training on real noise rather than synthetic noise still makes no
+difference the intervals can resolve.
 
-Two causes are visible in the report, and they point at the next work:
+**What the first run found, and what was fixed.** The confirmed planets the
+model rejected with the most confidence were bright hot Jupiters, read as
+binaries:
 
-- **The odd/even test fails at high SNR on real data.** The confirmed planets
-  the model rejects with the most confidence are bright hot Jupiters (TOI
-  1151.01 at SNR 1017, TOI 1431.01, TOI 1682.01), and they carry odd/even
-  depth differences of 8 to 37 sigma even after the red-noise beta correction.
-  At SNR in the hundreds, a fraction of a per cent of systematic depth
-  difference between alternate transits is many sigma. The training data had
-  no such systematics, so the model learned that a large odd/even sigma means
-  a binary. A floor on the odd/even and secondary uncertainty proportional to
-  the depth would fix this, and is a change to `features.py`.
+- **Their transits scatter more than their error bars allow.** The odd/even
+  and secondary tests compare groups of transits against white-noise error
+  bars. On bright real TOIs the individual transit depths scatter two to
+  seven times more than those errors allow, even after a clean detrend: red
+  noise, flux errors that understate the real scatter, pulsating hosts, and
+  the 30-minute cadence sampling each ingress differently. A third of the
+  confirmed planets above TOI SNR 100 read as odd/even binaries, at up to 39
+  sigma. Each test is now also scaled by the Birge ratio of its per-event
+  depths, sqrt(χ²/dof), when that is larger than β (`depth_scatter_ratio`;
+  odd and even events are each compared with their own mean, so a real
+  alternation does not count as scatter). The share of those planets over 3
+  sigma fell from 36% to 6%, and a binary whose eclipses alternate by 30%
+  under the same 5% event scatter still reads above 5 sigma.
+- **One transit was erased at a data gap.** TOI 1682.01's 37 sigma came from
+  a single missing event that the detrend removed, which is what the masked
+  second pass under "Preprocessing" fixes.
+
+Each change was also run on its own, all trained on synthetic light curves.
+Synthetic AP here is repeated 5-fold cross-validation over all 2400 curves,
+which is steadier than the 34-planet held-out set. The last column counts the
+94 confirmed planets above TOI SNR 100 whose period the search recovered:
+
+| Version | Synthetic CV AP | TOI AP | TOI top 20 | Odd/even over 3σ, planets above TOI SNR 100 |
+|---|---|---|---|---|
+| Before (#7) | 0.748 ± 0.009 | 0.61 | 0.65 | 36% |
+| Event-scatter scaling only | 0.729 ± 0.011 | 0.62 | 0.70 | 6% |
+| Masked second pass only | 0.754 ± 0.004 | 0.62 | 0.70 | 33% |
+| **Both (this version)** | 0.744 ± 0.006 | 0.62 | 0.85 | 6% |
+
+The scaling does the odd/even fix. It costs a little on synthetic data, whose
+events scatter only as much as their error bars say, and the masked pass wins
+that back. On the TOI benchmark all three versions sit inside one another's
+intervals: fixing the most confident rejections moved planets across the
+threshold, but not enough of them to move average precision on 746 stars.
+
+**What still fails.**
+
+- **Hot Jupiters' own occultations.** With odd/even fixed, the brightest
+  rejected planets (TOI 1682.01, 2131.01, 1150.01, 1161.01) are rejected on
+  the secondary-eclipse test instead. A hot Jupiter's dayside goes behind the
+  star at phase 0.5, a dip of about 1 to 4% of the transit depth on these,
+  which a bright star makes significant, and no planet in the training set
+  has one. Giving synthetic planets an occultation, and counting only the
+  part of a secondary deeper than the hottest plausible planet could produce,
+  was tried: it kept those four and TOI 1599.01, but an allowance that
+  generous (a quarter of the transit depth at a one-day period) forgave
+  binaries' shallow secondaries too. Synthetic CV AP fell to 0.717, and on
+  this benchmark AP fell to 0.60 and the top 20 to 60% real planets, so it is
+  not in this version. The allowance needs each star's temperature and
+  density, which the TOI table carries, rather than the hottest host anyone
+  could have.
+- **Two or three transits.** With one odd and one even event, or two and one,
+  there are no degrees of freedom left to measure the event scatter, so the
+  scaling falls back to β alone. Of the 13 rejected planets whose odd/even
+  still reads over 3 sigma, 10 have periods long enough for at most three
+  transits in the sector (TOI 1283.01 at 10.3 days reads 10.5 sigma).
 - **Blended binaries look like planets in a light curve.** The false positives
-  the model keeps have median odd/even and secondary significances of 0.8 and
-  0.2 sigma, indistinguishable from the planets'. That is what a background
-  eclipsing binary diluted by a brighter neighbour looks like.
-  Separating them needs pixel data. `vet --centroids` now runs a centroid
-  test from target pixel files (see "Centroid test" below), but the model and
-  this benchmark see light curves only.
+  the model keeps have median odd/even and secondary significances well under
+  1 sigma, indistinguishable from the planets'. That is what a background
+  eclipsing binary diluted by a brighter neighbour looks like. Separating them
+  needs pixel data. `vet --centroids` runs a centroid test from target pixel
+  files (see "Centroid test" below), but the model and this benchmark see
+  light curves only.
 
 The search is the other ceiling: BLS recovers the catalogued period for 73% of
 planets in one sector (88% above TOI SNR 40, 32% below 10), and when it
-misses the period the planet is kept 8% of the time.
+misses the period the planet is kept 6 to 8% of the time.
 
 To reproduce (downloads about 750 curves the first time and caches them to
 `toi_curves.npz` beside the results):
@@ -513,6 +573,40 @@ variability amplitudes from 0 to 0.8% and periods from 0.5 to 20 days — 20
 parametrised test cases — and the detrended scatter comes back at the injected
 white-noise floor.
 
+### A second pass, with the transits masked
+
+The discovered mask has one blind spot, and real TESS data found it. At the
+edge of a segment (either side of a data gap, or the ends of the sector) the
+spline's end basis function lives on the last knot interval only, so it is free
+enough to bend into a deep transit on the first, unweighted iteration, exactly
+as over-tight knots would. The baseline cadences between the transit and the
+gap then sit above the bent trend, the upward clip removes them, and the refit
+erases the event. In sector 19, TOI 1682.01 (a known planet, TOI SNR 592) lost
+one of its eight 8000 ppm transits this way: the event ends 0.1 d before the
+mid-sector gap, the detrended curve shows no dip there at all, and that one
+missing event made the odd/even test read 37 sigma.
+
+So every light curve is now detrended twice (`flatten_masked` in
+`transitml/features.py`). The first pass is the blind fit above. BLS then finds
+the strongest signal, and the second pass keeps every cadence within one BLS
+duration of its transits out of the fit altogether (`flatten(..., exclude=...)`),
+so the trend is interpolated across the events instead of fitted to them.
+Three guards keep the mask from doing harm. Only a signal the search believes
+in is masked: the first-pass peak must reach a `bls_sde` of 5.5, the
+multi-planet search's threshold. Masking a noise peak protects nothing and
+feeds on itself, because with the fit no longer allowed to follow those
+cadences the same peak comes back stronger; without this gate the share of
+plain variable stars clearing 5.5 on the synthetic run doubled, from 3.7% to
+7.8%. There is no second pass when the mask would cover more than 25% of the
+cadences (a long box at a short period is not a transit worth protecting). And
+a spline basis function that would keep less than 5% of its weight outside the
+mask gets its cadences back, so the trend is never an unconstrained
+extrapolation. The classifier, the TOI benchmark, `vet` and the example figure
+all use the second pass.
+`test_a_transit_against_a_gap_is_erased_unless_it_is_masked` rebuilds the TOI
+1682.01 geometry: the blind fit keeps 7% of the edge event's depth and clips 12
+baseline cadences beside it; the masked fit keeps 97% and clips none.
+
 ---
 
 ## Features and model
@@ -534,9 +628,11 @@ result into 23 features in four groups:
   `half_period_depth_ratio`, `flat_bottom_fraction` (a trapezoid fit's T23/T14,
   ~0.8 for a box and ~0 for a V), `harmonic_delta_loglike`.
   The two significances are divided by the red-noise β (below, floored at 1)
-  measured with both the primary and the phase-0.5 windows masked, so they are
-  judged against the empirical noise on the transit timescale rather than
-  white-noise error bars.
+  measured with both the primary and the phase-0.5 windows masked, or by how
+  much more the individual events scatter than their error bars allow,
+  whichever is larger, so they are judged against the empirical noise on the
+  transit timescale rather than white-noise error bars (the TOI benchmark above
+  shows why the event scatter matters).
 - **Noise characterisation** — `red_noise_beta` (the Pont, Zucker & Queloz 2006
   beta factor: binned scatter over the white-noise expectation, so β ≫ 1 means
   the light curve has structure on exactly the timescale a transit lives on and
@@ -611,7 +707,7 @@ and the headline numbers are unchanged. `transitml/search.py` adds an
 iterative search for the vetting report: find the best signal, mask 1.5
 durations around each of its transits, search again, up to three signals,
 stopping at the first peak whose `bls_sde` is below 5.5. On the synthetic run
-3.7% of plain variable stars clear 5.5 on their first search, against 62% of
+3.6% of plain variable stars clear 5.5 on their first search, against 61% of
 planets. A light curve with nothing significant yields an empty list.
 
 **More than one sector.** `stitch_light_curves` (in `transitml/data/base.py`)
@@ -763,7 +859,7 @@ surveys solve this by stacking sectors, not by better statistics on one.
 (b = 0.92) are both missed. A grazing planet produces exactly the V-shaped,
 short, shallow event that `flat_bottom_fraction` and the binary tests are built
 to reject. **This is a real cost of the eclipsing-binary discriminants, not a
-bug**: the features that let the model beat the SNR baseline by 4.4× are the same
+bug**: the features that let the model beat the SNR baseline by 4.5× are the same
 features that throw away grazing planets. Nothing in a single-sector light curve
 distinguishes a grazing planet from a grazing binary; that takes radial
 velocities.
@@ -803,10 +899,10 @@ that same light curve. `tests/test_features.py` asserts both behaviours. The
 feature itself was left unchanged, so the β values printed in the report are
 the feature's; for these two planets the two estimates agree.
 
-**5. False positives are mostly variable stars, not binaries.** Of 28 false
-positives, 8 are eclipsing binaries and 20 are plain variable stars. Per object
-that is a **15.1%** false-positive rate on the 53 binaries against **2.7%** on
-the 753 variable stars. Binaries are more than five times more likely to fool the model,
+**5. False positives are mostly variable stars, not binaries.** Of 24 false
+positives, 7 are eclipsing binaries and 17 are plain variable stars. Per object
+that is a **13.2%** false-positive rate on the 53 binaries against **2.3%** on
+the 753 variable stars. Binaries are nearly six times more likely to fool the model,
 exactly as expected, but residual variability that survives detrending still
 dominates the candidate list by sheer weight of numbers. That matches the real
 TESS experience, where most rejected candidates are systematics rather than
@@ -819,7 +915,7 @@ astrophysical false positives.
 **What it establishes.** The pipeline is real and the numbers are real: the
 detrender provably preserves transit depth to 5% while removing variability ten
 times deeper; the search recovers every held-out injection above SNR 40 and 88%
-above SNR 20; the classifier beats a strong single-statistic baseline by 4.4× in
+above SNR 20; the classifier beats a strong single-statistic baseline by 4.5× in
 average precision on data it has never seen — in 100% of paired bootstrap
 resamples — with the threshold frozen from training-split cross-validation. The evaluation protocol — average precision against the
 positive-rate null, threshold from CV, recall decomposed into search and
@@ -863,7 +959,7 @@ Three further gaps:
   the first, and shows the model separates real planets from real TOI false
   positives only slightly better than a signal-to-noise ranking.
 - **Sample size.** 96 positives in total and 34 in the test set. The bootstrap
-  interval on average precision is [0.732, 0.862], roughly ±0.065, so the difference
+  interval on average precision is [0.737, 0.864], roughly ±0.065, so the difference
   between 0.80 and 0.77 is noise, and only the gap to the baselines is
   meaningful. The pipeline reports the interval so this cannot be over-read.
 
@@ -873,7 +969,8 @@ whose noise is easier than reality. Injection-recovery into genuine TESS
 photometry, which keeps the systematics real while keeping the labels
 trustworthy, has now been run on sector 14 (see "Injection-recovery on real
 photometry" above), and it confirmed the prediction: average precision fell
-from 0.80 to 0.51, with most false positives coming from real stars that had
+from 0.80 to 0.44 on the held-out split (about 0.56 in cross-validation over
+all 2800 curves), with most false positives coming from real stars that had
 nothing injected.
 
 ---
@@ -907,7 +1004,7 @@ transit-detection/
 │   ├── benchmark.py            # the trained model scored on real TOI dispositions
 │   ├── vet.py                  # python -m transitml.vet: one star, one page
 │   └── plots.py                # figures (matplotlib Agg, no display)
-├── tests/                      # 282 tests, ~3 min
+├── tests/                      # 295 tests, ~4 min
 │   ├── test_generator.py       # imbalance is exact; injected physics is consistent
 │   ├── test_preprocess.py      # depth preservation; why the median was rejected
 │   ├── test_features.py        # recovery vs SNR; the vetting statistics fire

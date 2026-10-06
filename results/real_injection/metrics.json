@@ -91,7 +91,12 @@
       "rotation_max_terms": 1,
       "rotation_min_improvement": 0.05,
       "upper_clip_sigma": 4.0,
-      "clip_iterations": 2
+      "clip_iterations": 2,
+      "mask_signal": true,
+      "mask_half_width_durations": 1.0,
+      "mask_min_sde": 5.5,
+      "mask_max_fraction": 0.25,
+      "mask_min_support": 0.05
     },
     "bls": {
       "min_period_days": 0.5,
@@ -105,13 +110,19 @@
         0.24
       ]
     },
+    "multi_planet": {
+      "max_signals": 3,
+      "min_sde": 5.5,
+      "mask_half_width_durations": 1.5,
+      "min_cadences": 200
+    },
     "evaluation": {
       "target_precision": 0.5,
       "precision_lcb_z": 1.0,
       "top_k": 20
     }
   },
-  "runtime_seconds": 1577.7,
+  "runtime_seconds": 253.7,
   "dataset": {
     "source": "InjectionSource",
     "n_curves": 2800,
@@ -128,59 +139,59 @@
     "model": {
       "name": "gradient_boosting",
       "description": "HistGradientBoostingClassifier on BLS + vetting features",
-      "average_precision": 0.5139165630869437,
+      "average_precision": 0.43488798763865444,
       "average_precision_ci68": [
-        0.43566458089242155,
-        0.6002375710168629
+        0.3610656649661952,
+        0.5324963635276039
       ],
-      "roc_auc": 0.8357720918826126
+      "roc_auc": 0.8195863647510832
     },
     "baselines": [
       {
         "name": "depth_threshold",
         "description": "Rank by the depth of the best BLS box. The naive heuristic: deeper dip = more likely a planet.",
-        "average_precision": 0.07286181443897669,
+        "average_precision": 0.07324514681405069,
         "average_precision_ci68": [
-          0.06093550236587679,
-          0.0964168465876863
+          0.06131655438113872,
+          0.09683071939349927
         ],
-        "roc_auc": 0.6747322815335568
+        "roc_auc": 0.677429902722145
       },
       {
         "name": "bls_snr",
         "description": "Rank by BLS depth signal-to-noise. The classical single-statistic transit search, and a genuinely strong baseline.",
-        "average_precision": 0.09884694050517237,
+        "average_precision": 0.09971037009197027,
         "average_precision_ci68": [
-          0.08427928437641247,
-          0.12649438048586334
+          0.08504512173740217,
+          0.12709335124965052
         ],
-        "roc_auc": 0.7707021989699993
+        "roc_auc": 0.7731000844709665
       }
     ],
-    "lift_over_chance": 12.913800816030893,
+    "lift_over_chance": 10.927954561176445,
     "operating_point": {
-      "threshold": 0.43780891263306926,
+      "threshold": 0.4586864739572276,
       "rule": "max recall subject to Wilson 1-sigma lower bound on CV precision >= 0.50 (bound 0.503 at 73 candidates)",
       "cv_precision_on_train": 0.5616438356164384,
       "cv_recall_on_train": 0.5616438356164384,
-      "test_precision": 0.4772727272727273,
-      "test_recall": 0.5384615384615384,
-      "test_f1": 0.5060240963855421,
+      "test_precision": 0.4,
+      "test_recall": 0.5641025641025641,
+      "test_f1": 0.46808510638297873,
       "confusion_matrix": {
-        "true_negative": 918,
-        "false_positive": 23,
-        "false_negative": 18,
-        "true_positive": 21
+        "true_negative": 908,
+        "false_positive": 33,
+        "false_negative": 17,
+        "true_positive": 22
       }
     },
     "precision_at_k": {
-      "model_top20": 0.75,
+      "model_top20": 0.65,
       "depth_threshold_top20": 0.0,
       "bls_snr_top20": 0.05
     },
     "false_positive_breakdown": {
-      "eclipsing_binary": 8,
-      "noise": 15
+      "eclipsing_binary": 11,
+      "noise": 22
     },
     "missed_planets": [
       {
@@ -191,7 +202,7 @@
         "duration_hours": 0.7789858002824287,
         "impact_parameter": 0.7973745105394073,
         "n_transits_in_window": 26.0,
-        "model_score": 0.02509412449643542,
+        "model_score": 0.03713091996340156,
         "period_recovered": false,
         "odd_even_sigma": 0.47686393400691524,
         "secondary_sigma": -1.0177726014466004,
@@ -206,7 +217,7 @@
         "duration_hours": 1.3423916606711515,
         "impact_parameter": 0.813705483705038,
         "n_transits_in_window": 10.0,
-        "model_score": 0.15085343076423544,
+        "model_score": 0.14370580757124074,
         "period_recovered": false,
         "odd_even_sigma": 0.24001099710354176,
         "secondary_sigma": 0.14073268462727648,
@@ -221,7 +232,7 @@
         "duration_hours": 4.8383220063832795,
         "impact_parameter": 0.5499029966330348,
         "n_transits_in_window": 1.0,
-        "model_score": 0.01932616239800904,
+        "model_score": 0.07453767303793823,
         "period_recovered": true,
         "odd_even_sigma": 1.20435374190527,
         "secondary_sigma": 1.5080481280268954,
@@ -236,7 +247,7 @@
         "duration_hours": 1.7752810073133323,
         "impact_parameter": 0.22287028551211702,
         "n_transits_in_window": 11.0,
-        "model_score": 0.11027278507085642,
+        "model_score": 0.0866517082935707,
         "period_recovered": true,
         "odd_even_sigma": 0.1329632735532176,
         "secondary_sigma": -0.2887140648020545,
@@ -251,7 +262,7 @@
         "duration_hours": 3.0196007644651504,
         "impact_parameter": 0.5737287900127029,
         "n_transits_in_window": 2.0,
-        "model_score": 0.06214872591244679,
+        "model_score": 0.044976746535898664,
         "period_recovered": false,
         "odd_even_sigma": 1.07140874502997,
         "secondary_sigma": 0.7206332506225114,
@@ -266,7 +277,7 @@
         "duration_hours": 2.4721344042377162,
         "impact_parameter": 0.7533956505255054,
         "n_transits_in_window": 7.0,
-        "model_score": 0.0007973415553443593,
+        "model_score": 0.0004732992236585866,
         "period_recovered": false,
         "odd_even_sigma": 0.7515339925081879,
         "secondary_sigma": -1.1701123147494115,
@@ -281,7 +292,7 @@
         "duration_hours": 1.872552820435248,
         "impact_parameter": 0.7971231205741549,
         "n_transits_in_window": 5.0,
-        "model_score": 0.0012205871458677727,
+        "model_score": 0.002553597356380394,
         "period_recovered": false,
         "odd_even_sigma": 0.9095903669402832,
         "secondary_sigma": -0.6088843968139361,
@@ -296,9 +307,9 @@
         "duration_hours": 2.369385537342722,
         "impact_parameter": 0.7664312613518517,
         "n_transits_in_window": 8.0,
-        "model_score": 0.0027007778440443215,
+        "model_score": 0.0013433909034673696,
         "period_recovered": true,
-        "odd_even_sigma": 0.23868871820574783,
+        "odd_even_sigma": 0.2096055169723967,
         "secondary_sigma": 1.3217159721545444,
         "red_noise_beta": 1.106490008948324,
         "reason": "period recovered; classifier rejected it"
@@ -311,7 +322,7 @@
         "duration_hours": 1.7240406178693988,
         "impact_parameter": 0.7279760445405877,
         "n_transits_in_window": 4.0,
-        "model_score": 0.0007097473490354988,
+        "model_score": 0.0007787483298566849,
         "period_recovered": false,
         "odd_even_sigma": 0.5853705304506863,
         "secondary_sigma": -0.14599722402569834,
@@ -326,27 +337,12 @@
         "duration_hours": 2.9820310513052775,
         "impact_parameter": 0.39742871810905045,
         "n_transits_in_window": 3.0,
-        "model_score": 0.017870928318593764,
+        "model_score": 0.0010644398006982394,
         "period_recovered": false,
-        "odd_even_sigma": 2.8798377772484143,
-        "secondary_sigma": 14.274477329796262,
+        "odd_even_sigma": 0.5847673347661935,
+        "secondary_sigma": 3.2887894971564986,
         "red_noise_beta": 1.376968430076548,
         "reason": "search did not recover the period"
-      },
-      {
-        "target_id": "TIC 148931838 inj01125",
-        "true_snr": 7.784309292352406,
-        "depth_ppm": 1040.3139258506528,
-        "period_days": 4.136559170690518,
-        "duration_hours": 3.18902483535339,
-        "impact_parameter": 0.09097511577279059,
-        "n_transits_in_window": 6.0,
-        "model_score": 0.19642045306826697,
-        "period_recovered": true,
-        "odd_even_sigma": 0.008057679396835105,
-        "secondary_sigma": -0.2884391278433778,
-        "red_noise_beta": 0.9782336970078377,
-        "reason": "period recovered; classifier rejected it"
       },
       {
         "target_id": "TIC 233730201 inj00394",
@@ -356,7 +352,7 @@
         "duration_hours": 1.7697221254307216,
         "impact_parameter": 0.3003515018212737,
         "n_transits_in_window": 6.0,
-        "model_score": 0.002280300068240722,
+        "model_score": 0.002700251047753372,
         "period_recovered": true,
         "odd_even_sigma": 0.0,
         "secondary_sigma": 0.1995893863213078,
@@ -371,7 +367,7 @@
         "duration_hours": 3.182554326181327,
         "impact_parameter": 0.6132125966523725,
         "n_transits_in_window": 6.0,
-        "model_score": 0.16694345120782222,
+        "model_score": 0.059318433187477954,
         "period_recovered": false,
         "odd_even_sigma": 0.7758206350844776,
         "secondary_sigma": 0.04422750134965801,
@@ -386,7 +382,7 @@
         "duration_hours": 2.063277874503327,
         "impact_parameter": 0.6102549142451318,
         "n_transits_in_window": 4.0,
-        "model_score": 0.05070931009278923,
+        "model_score": 0.10705849491808153,
         "period_recovered": true,
         "odd_even_sigma": 1.1655732286947333,
         "secondary_sigma": 0.5664415648683307,
@@ -401,27 +397,12 @@
         "duration_hours": 2.1501148638699474,
         "impact_parameter": 0.14922307073895666,
         "n_transits_in_window": 3.0,
-        "model_score": 0.08700232735866553,
+        "model_score": 0.01745317825080799,
         "period_recovered": false,
-        "odd_even_sigma": 2.5127820982952356,
-        "secondary_sigma": -7.051083949076851,
+        "odd_even_sigma": 1.0159444221703526,
+        "secondary_sigma": -2.9194890943896024,
         "red_noise_beta": 1.7952465203186698,
         "reason": "search did not recover the period"
-      },
-      {
-        "target_id": "TIC 229497827 inj02725",
-        "true_snr": 9.262603908358662,
-        "depth_ppm": 658.9177139947757,
-        "period_days": 1.0926652842796838,
-        "duration_hours": 1.4393502329114864,
-        "impact_parameter": 0.6232360256129645,
-        "n_transits_in_window": 24.0,
-        "model_score": 0.3872420260604916,
-        "period_recovered": true,
-        "odd_even_sigma": 0.21506498943199628,
-        "secondary_sigma": -2.1442339873007112,
-        "red_noise_beta": 1.516177816370499,
-        "reason": "period recovered; classifier rejected it"
       },
       {
         "target_id": "TIC 406197780 inj02524",
@@ -431,7 +412,7 @@
         "duration_hours": 2.5122703377481734,
         "impact_parameter": 0.7122814294503849,
         "n_transits_in_window": 2.0,
-        "model_score": 0.2907362671407815,
+        "model_score": 0.15681635220137885,
         "period_recovered": true,
         "odd_even_sigma": 3.067506828191632,
         "secondary_sigma": 0.0,
@@ -446,12 +427,27 @@
         "duration_hours": 5.465018053576168,
         "impact_parameter": 0.3305268103331786,
         "n_transits_in_window": 3.0,
-        "model_score": 0.003009194522007015,
+        "model_score": 0.001908762125612015,
         "period_recovered": false,
         "odd_even_sigma": 72.28774762424301,
         "secondary_sigma": 0.8267718994033469,
         "red_noise_beta": 4.895763039487562,
         "reason": "search did not recover the period"
+      },
+      {
+        "target_id": "TIC 232563914 inj01989",
+        "true_snr": 51.14659576695494,
+        "depth_ppm": 975.241769565184,
+        "period_days": 1.5727556300635597,
+        "duration_hours": 2.097251998969391,
+        "impact_parameter": 0.1776635908462029,
+        "n_transits_in_window": 14.0,
+        "model_score": 0.3306076604747785,
+        "period_recovered": true,
+        "odd_even_sigma": 0.15815822707595367,
+        "secondary_sigma": 1.797901040276198,
+        "red_noise_beta": 1.3597149634332732,
+        "reason": "period recovered; classifier rejected it"
       }
     ],
     "recall_by_true_snr": [
@@ -467,9 +463,9 @@
         "snr_low": 7.0,
         "snr_high": 12.0,
         "n_planets": 12,
-        "recall": 0.5,
+        "recall": 0.6666666666666666,
         "search_recovery": 0.8333333333333334,
-        "classifier_recall_given_search": 0.6
+        "classifier_recall_given_search": 0.8
       },
       {
         "snr_low": 12.0,
@@ -491,9 +487,9 @@
         "snr_low": 40.0,
         "snr_high": 1000000000.0,
         "n_planets": 7,
-        "recall": 1.0,
+        "recall": 0.8571428571428571,
         "search_recovery": 1.0,
-        "classifier_recall_given_search": 1.0
+        "classifier_recall_given_search": 0.8571428571428571
       }
     ],
     "search_recovery_rate": 0.7435897435897436,
@@ -501,118 +497,118 @@
     "feature_importance": [
       {
         "feature": "bls_sde",
-        "importance": 0.11589847779793765,
-        "std": 0.03682253253729708
+        "importance": 0.10061189814202795,
+        "std": 0.027080593226128588
       },
       {
         "feature": "secondary_sigma",
-        "importance": 0.0809387943113656,
-        "std": 0.029287429906228186
-      },
-      {
-        "feature": "power_contrast",
-        "importance": 0.07374562975529064,
-        "std": 0.023268333284094323
+        "importance": 0.09028600158772213,
+        "std": 0.03740774727657496
       },
       {
         "feature": "log_depth",
-        "importance": 0.04650622815424692,
-        "std": 0.031781699574470045
-      },
-      {
-        "feature": "harmonic_delta_loglike",
-        "importance": 0.04403769341073728,
-        "std": 0.018707844988411878
+        "importance": 0.04588770612369651,
+        "std": 0.026745804915951226
       },
       {
         "feature": "log_period",
-        "importance": 0.04127740532479414,
-        "std": 0.028213754098262094
-      },
-      {
-        "feature": "log_duration_ratio",
-        "importance": 0.038697557963082684,
-        "std": 0.015657283813234925
-      },
-      {
-        "feature": "flux_skew",
-        "importance": 0.024241982747246905,
-        "std": 0.022132590954235403
-      },
-      {
-        "feature": "duration_over_period",
-        "importance": 0.020855623401738455,
-        "std": 0.01290555837122888
+        "importance": 0.03692731922135361,
+        "std": 0.023623449061804747
       },
       {
         "feature": "clipped_fraction",
-        "importance": 0.020236177263452993,
-        "std": 0.005565201845890203
+        "importance": 0.035756249023358735,
+        "std": 0.015336277908994212
       },
       {
-        "feature": "harmonic_amp_over_depth",
-        "importance": 0.017147354288191096,
-        "std": 0.019616920189498375
-      },
-      {
-        "feature": "red_noise_beta",
-        "importance": 0.0150851910694297,
-        "std": 0.021200930959906033
+        "feature": "power_contrast",
+        "importance": 0.02498923813579069,
+        "std": 0.018807056538620085
       },
       {
         "feature": "bls_depth_snr",
-        "importance": 0.008735315866514581,
-        "std": 0.009775046011239666
+        "importance": 0.023050053695478717,
+        "std": 0.015888716086130038
       },
       {
-        "feature": "max_single_event_fraction",
-        "importance": 0.007199134771867566,
-        "std": 0.011237951898664266
+        "feature": "harmonic_delta_loglike",
+        "importance": 0.02243978030280705,
+        "std": 0.01901649817686271
       },
       {
-        "feature": "flat_bottom_fraction",
-        "importance": 0.0068642474628523575,
-        "std": 0.004952924098091096
-      },
-      {
-        "feature": "min_points_per_transit",
-        "importance": 0.005344176042725207,
-        "std": 0.004598919524075364
-      },
-      {
-        "feature": "bls_depth_over_scatter",
-        "importance": 0.005305794390305313,
-        "std": 0.010083620324313319
-      },
-      {
-        "feature": "log_scatter",
-        "importance": 0.003701494189890042,
-        "std": 0.0038053670829288956
-      },
-      {
-        "feature": "bls_duration",
-        "importance": -0.00010802237053736397,
-        "std": 0.0018957847238075887
-      },
-      {
-        "feature": "half_period_depth_ratio",
-        "importance": -0.0004792372610149309,
-        "std": 0.014321073483524615
+        "feature": "duration_over_period",
+        "importance": 0.021463379197574968,
+        "std": 0.013839591008150442
       },
       {
         "feature": "odd_even_sigma",
-        "importance": -0.00210046198209069,
-        "std": 0.013667827848413134
+        "importance": 0.021058816311849103,
+        "std": 0.02674992450420243
+      },
+      {
+        "feature": "harmonic_amp_over_depth",
+        "importance": 0.0192254066158676,
+        "std": 0.02086863368916168
+      },
+      {
+        "feature": "flux_skew",
+        "importance": 0.01805011497995802,
+        "std": 0.026739076112585403
+      },
+      {
+        "feature": "red_noise_beta",
+        "importance": 0.011590226733313008,
+        "std": 0.01071256389879168
+      },
+      {
+        "feature": "bls_depth_over_scatter",
+        "importance": 0.010432542933696127,
+        "std": 0.014190518441423022
+      },
+      {
+        "feature": "log_duration_ratio",
+        "importance": 0.009260354490932715,
+        "std": 0.011806386883120912
+      },
+      {
+        "feature": "max_single_event_fraction",
+        "importance": 0.008160031254290184,
+        "std": 0.011246714023695516
+      },
+      {
+        "feature": "log_scatter",
+        "importance": 0.006815440626751523,
+        "std": 0.006113303086837282
       },
       {
         "feature": "n_transits",
-        "importance": -0.0030102181223100044,
-        "std": 0.009121465067963507
+        "importance": 0.00646944283693413,
+        "std": 0.005114180719629545
       },
       {
         "feature": "delta_loglike",
-        "importance": -0.0036253080384366144,
-        "std": 0.0033800690328814943
+        "importance": 0.00517531235785938,
+        "std": 0.0033517487080133605
+      },
+      {
+        "feature": "flat_bottom_fraction",
+        "importance": 0.003729831596861727,
+        "std": 0.003015871734107842
+      },
+      {
+        "feature": "min_points_per_transit",
+        "importance": 0.0017640597139772173,
+        "std": 0.0026490190272531015
+      },
+      {
+        "feature": "bls_duration",
+        "importance": 0.0008557603239080114,
+        "std": 0.007172615090116982
+      },
+      {
+        "feature": "half_period_depth_ratio",
+        "importance": -0.004925213707012499,
+        "std": 0.018890144959388466
       }
     ]
   },
@@ -630,8 +626,9 @@
     "n_stars": 746,
     "n_planets": 376,
     "chance_average_precision": 0.5040214477211796,
-    "average_precision": 0.6161416553468357,
-    "planet_recall": 0.5478723404255319,
+    "average_precision": 0.610067798120429,
+    "planet_recall": 0.550531914893617,
     "false_positive_rejection": 0.6162162162162163
-  }
+  },
+  "model": "results/real_injection/model.joblib"
 }

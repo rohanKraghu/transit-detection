@@ -21,6 +21,7 @@ from transitml.preprocess import (
     fit_trend,
     harmonic_basis,
     point_to_point_sigma,
+    release_starved,
     robust_least_squares,
     robust_sigma,
     running_median_trend,
@@ -317,3 +318,87 @@ def test_flatten_rejects_degenerate_input():
         flatten(
             LightCurve("ZERO", time, np.zeros(time.size), np.full(time.size, 1e-4))
         )
+
+
+# --------------------------------------------------------------------------
+# Masked detrending: the second pass, with known transits kept out of the fit
+# --------------------------------------------------------------------------
+def transit_against_a_gap(seed: int = 3):
+    """A deep box transit whose last cadence touches the mid-sector gap.
+
+    Returns ``(lc, period, epoch, duration, depth)``.  The sixth event ends
+    one cadence before the data stop, as TOI 1682.01's did in sector 19.
+    """
+    rng = np.random.default_rng(seed)
+    gap_start = 13.7
+    time = np.arange(0.0, 27.4, 1 / 48)
+    time = time[(time < gap_start) | (time > gap_start + 1.0)]
+    period, duration, depth = 2.7, 0.112, 7e-3
+    epoch = gap_start - 0.06 - 5 * period
+    phase = (time - epoch + 0.5 * period) % period - 0.5 * period
+    flux = 1.0 - depth * (np.abs(phase) < duration / 2) + rng.normal(0.0, 1.7e-4, time.size)
+    lc = LightCurve("gap-edge", time, flux, np.full(time.size, 1.7e-4), 1, {})
+    return lc, period, epoch, duration, depth
+
+
+def test_a_transit_against_a_gap_is_erased_unless_it_is_masked():
+    """The robust weights cannot protect a transit at the edge of a segment.
+
+    The edge basis function is free enough to bend into the dip on the first,
+    unweighted iteration; the baseline cadences beside it then sit above the
+    trend and are clipped as upward outliers, and the refit erases the event.
+    Kept out of the fit, the event survives at its full depth.
+    """
+    lc, period, epoch, duration, depth = transit_against_a_gap()
+    phase = (lc.time - epoch + 0.5 * period) % period - 0.5 * period
+    config = PreprocessConfig()
+    blind = flatten(lc, config)
+    masked = flatten(lc, config, exclude=np.abs(phase) < duration)
+
+    def edge_event(flat):
+        near = np.abs(flat.time - (epoch + 5 * period)) < duration / 2
+        return 1.0 - float(np.mean(flat.flux[near]))
+
+    assert edge_event(blind) < 0.2 * depth
+    assert blind.n_clipped > 0
+    assert edge_event(masked) == pytest.approx(depth, rel=0.1)
+    assert masked.n_masked == int(np.sum(np.abs(phase) < duration))
+
+
+def test_excluded_rows_are_the_same_as_dropped_rows():
+    rng = np.random.default_rng(0)
+    time = np.sort(rng.uniform(0.0, 10.0, 600))
+    config = PreprocessConfig()
+    design = spline_basis(time, config)
+    values = 1e-3 * np.sin(time) + rng.normal(0.0, 1e-4, time.size)
+    exclude = (time > 4.0) & (time < 4.3)
+
+    c_excluded, w_excluded = robust_least_squares(design, values, exclude=exclude)
+    c_dropped, w_dropped = robust_least_squares(design[~exclude], values[~exclude])
+    np.testing.assert_allclose(c_excluded, c_dropped, rtol=1e-8, atol=1e-12)
+    assert np.all(w_excluded[exclude] == 0.0)
+    np.testing.assert_allclose(w_excluded[~exclude], w_dropped, atol=1e-12)
+
+
+def test_an_empty_mask_is_the_blind_detrend():
+    lc, _ = clean_transit_curve(variability_amplitude=3e-3, seed=4)
+    blind = flatten(lc)
+    same = flatten(lc, exclude=np.zeros(lc.time.size, dtype=bool))
+    np.testing.assert_array_equal(same.flux, blind.flux)
+    assert same.n_masked == 0
+    with pytest.raises(ValueError, match="exclude must match"):
+        flatten(lc, exclude=np.zeros(lc.time.size - 1, dtype=bool))
+
+
+def test_a_mask_never_leaves_a_basis_function_unconstrained():
+    """A segment covered by the mask gets its cadences back."""
+    time = np.concatenate([np.arange(0.0, 5.0, 1 / 48), np.arange(5.5, 5.8, 1 / 48)])
+    design = spline_basis(time, PreprocessConfig())
+    short = time > 5.25
+    released = release_starved(design, short.copy(), 0.05)
+    assert not released[short].any()
+
+    # A mask inside a long segment is left alone.
+    inner = (time > 2.0) & (time < 2.2)
+    np.testing.assert_array_equal(release_starved(design, inner, 0.05), inner)
+
