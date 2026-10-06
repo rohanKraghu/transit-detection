@@ -28,7 +28,6 @@ from .data.base import LightCurve  # noqa: E402
 from .data.loader import Dataset  # noqa: E402
 from .evaluate import EvaluationResult  # noqa: E402
 from .model import Split, TrainedModel  # noqa: E402
-from .preprocess import flatten  # noqa: E402
 
 # --- Design tokens ---------------------------------------------------------
 # Categorical slots 1-3 of a CVD-validated palette (worst all-pairs deuteranope
@@ -101,14 +100,15 @@ def plot_light_curves(curves: Sequence[LightCurve], config: Config, path: Path) 
     noise until ~20 cadences are folded together, and that folding gain is the
     entire reason a periodic search works.
     """
-    from .features import run_bls  # local import: keeps module import cheap
+    # local import: keeps module import cheap
+    from .features import flatten_masked, run_bls
 
     _style()
     fig, axes = plt.subplots(len(curves), 2, figsize=(13.0, 2.7 * len(curves)))
     axes = np.atleast_2d(axes)
 
     for row, lc in enumerate(curves):
-        flat = flatten(lc, config.preprocess)
+        flat = flatten_masked(lc, config.preprocess, config.bls)
         bls = run_bls(flat, config.bls)
         kind = str(lc.meta.get("kind", "noise"))
         colour = _CLASS_COLOR.get(kind, NEUTRAL)

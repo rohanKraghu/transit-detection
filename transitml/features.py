@@ -35,9 +35,10 @@ from astropy.timeseries import BoxLeastSquares
 from numpy.typing import NDArray
 from scipy import stats
 
-from .config import BLSConfig
+from .config import BLSConfig, PreprocessConfig
+from .data.base import LightCurve
 from .physics import RHO_SUN_CGS, expected_central_duration
-from .preprocess import FlattenedLightCurve, robust_sigma
+from .preprocess import FlattenedLightCurve, flatten, robust_sigma
 
 #: Fixed column order.  The model, the permutation-importance plot and the
 #: dataset all key off this, so it is defined once, here.
@@ -114,6 +115,45 @@ def run_bls(lc: FlattenedLightCurve, config: BLSConfig | None = None) -> dict[st
         "depth_snr": float(result.depth_snr[best]),
         "log_likelihood": float(result.log_likelihood[best]),
     }
+
+
+def flatten_masked(
+    lc: LightCurve,
+    preprocess: PreprocessConfig | None = None,
+    bls: BLSConfig | None = None,
+) -> FlattenedLightCurve:
+    """Detrend, find the strongest signal, then detrend again with it masked.
+
+    The robust fit keeps a transit out of the trend by giving its cadences zero
+    weight, but only if the first, unweighted iteration leaves them as
+    outliers.  Against a data gap it does not: the edge spline function bends
+    into the dip, the baseline cadences beside it are then clipped as upward
+    outliers, and the refit erases the event.  The second pass keeps every
+    cadence within ``mask_half_width_durations`` BLS durations of a transit
+    out of the fit, so the trend is interpolated across the events instead of
+    fitted to them.
+
+    Returns the blind detrend when masking is switched off, when the strongest
+    peak is not a dip or is weaker than ``mask_min_sde``, or when the mask
+    would cover more than ``mask_max_fraction`` of the cadences.
+    """
+    preprocess = preprocess or PreprocessConfig()
+    bls = bls or BLSConfig()
+    lc = lc.finite()
+    blind = flatten(lc, preprocess)
+    if not preprocess.mask_signal:
+        return blind
+    found = run_bls(blind, bls)
+    if not found["depth"] > 0:
+        return blind
+    if not signal_detection_efficiency(found["power"]) >= preprocess.mask_min_sde:
+        return blind
+    period, epoch = found["period"], found["transit_time"]
+    phase = (lc.time - epoch + 0.5 * period) % period - 0.5 * period
+    exclude = np.abs(phase) < preprocess.mask_half_width_durations * found["duration"]
+    if not exclude.any() or exclude.mean() > preprocess.mask_max_fraction:
+        return blind
+    return flatten(lc, preprocess, exclude=exclude)
 
 
 def signal_detection_efficiency(power: NDArray[np.float64]) -> float:

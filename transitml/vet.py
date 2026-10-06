@@ -54,9 +54,9 @@ from .data.base import LightCurve, stitch_light_curves
 from .data.files import read_light_curves
 from .data.mast import MASTLightCurveSource
 from .data.tpf import TargetPixelData, download_tpfs, load_tpf
-from .features import FEATURE_NAMES, extract_features, run_bls
+from .features import FEATURE_NAMES, extract_features, flatten_masked, run_bls
 from .model import SavedModel, load_model
-from .preprocess import FlattenedLightCurve, flatten
+from .preprocess import FlattenedLightCurve
 from .search import CandidateSignal, iterative_search
 
 #: Features shown in the report table, in display order.
@@ -214,7 +214,7 @@ def vet_light_curve(
     each target pixel file.  The score is computed before and without it.
     """
     lc = lc.finite()
-    flat = flatten(lc, model.preprocess)
+    flat = flatten_masked(lc, model.preprocess, model.bls)
     features = extract_features(flat, model.bls)
     primary = run_bls(flat, model.bls)
     candidates = iterative_search(flat, model.bls, multi)
