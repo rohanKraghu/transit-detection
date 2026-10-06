@@ -75,3 +75,17 @@ def test_the_pipeline_flag_selects_tls_and_its_own_results(tmp_path):
     assert plain.bls.search == "bls"
     args = run_pipeline.parse_args(["--search", "tls", "--results-dir", str(tmp_path)])
     assert args.results_dir == tmp_path
+
+
+def test_the_search_comparison_runs_end_to_end(tmp_path):
+    pytest.importorskip("transitleastsquares")
+    import json
+
+    from transitml import search_benchmark
+
+    argv = ["--n-curves", "3", "--n-jobs", "1", "--results-dir", str(tmp_path)]
+    assert search_benchmark.main(argv) == 0
+    summary = json.loads((tmp_path / "metrics.json").read_text())
+    assert sum(row["n"] for row in summary["by_snr"]) == 3
+    assert summary["tls_ms_per_curve"] > 0 and summary["bls_ms_per_curve"] > 0
+    assert "BLS against TLS" in (tmp_path / "report.txt").read_text()
