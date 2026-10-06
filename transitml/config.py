@@ -158,6 +158,28 @@ class PreprocessConfig:
     upper_clip_sigma: float = 4.0
     clip_iterations: int = 2
 
+    # -- second pass with the strongest signal masked --
+    #: Detrend twice: blind, then with the cadences of the strongest BLS signal
+    #: kept out of the fit.  The robust weights alone cannot keep a transit out
+    #: when it sits against a data gap: the spline is free enough there to bend
+    #: into it on the first, unweighted iteration.
+    mask_signal: bool = True
+    #: Half-width of the window masked around each transit, in BLS durations.
+    mask_half_width_durations: float = 1.0
+    #: Only a signal the search believes in is masked: the first-pass peak must
+    #: reach this ``bls_sde`` (the multi-planet search's threshold).  Masking a
+    #: noise peak protects nothing and feeds on itself: with the fit no longer
+    #: allowed to follow those cadences, the same peak comes back stronger.
+    #: Ungated, the share of plain variable stars clearing SDE 5.5 on the
+    #: synthetic run went from 3.7% to 7.8%.
+    mask_min_sde: float = 5.5
+    #: No second pass when the mask would cover more than this fraction of the
+    #: cadences: a long box at a short period is not a transit worth protecting.
+    mask_max_fraction: float = 0.25
+    #: A spline basis function keeping less than this fraction of its squared
+    #: weight outside the mask gets its cadences back.
+    mask_min_support: float = 0.05
+
 
 @dataclass(frozen=True)
 class BLSConfig:
