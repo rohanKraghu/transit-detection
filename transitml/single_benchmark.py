@@ -40,10 +40,11 @@ from typing import Any
 import numpy as np
 from joblib import Parallel, delayed
 
-from .config import PlanetConfig, PreprocessConfig, SingleEventConfig, default_config
+from .config import BLSConfig, PlanetConfig, PreprocessConfig, SingleEventConfig, default_config
 from .data.base import LightCurve
 from .data.synthetic import SyntheticTESSSource, planet_signal, trapezoid_transit
-from .preprocess import FlattenedLightCurve, flatten
+from .features import flatten_masked
+from .preprocess import FlattenedLightCurve
 from .single import _BoxStats, binned_noise_factor, search_single_events
 
 SNR_BINS: tuple[float, ...] = (0.0, 7.0, 10.0, 15.0, 25.0, np.inf)
@@ -120,6 +121,7 @@ def _one(
     inject: bool,
     planet: PlanetConfig,
     preprocess: PreprocessConfig,
+    bls: BLSConfig,
     config: SingleEventConfig,
     seed: int,
 ) -> dict[str, Any]:
@@ -128,7 +130,8 @@ def _one(
     if inject:
         lc, truth = inject_long_period(lc, np.random.default_rng([seed, index, 7]), planet)
     try:
-        flat = flatten(lc, preprocess)
+        # Detrended as vet detrends, the strongest periodic signal masked.
+        flat = flatten_masked(lc, preprocess, bls)
         found = search_single_events(flat, config)
     except ValueError:
         return {"index": index, "injected": inject, "error": True}
@@ -179,7 +182,7 @@ def run(n_curves: int, seed: int, n_jobs: int, config: SingleEventConfig) -> dic
     )
     planet = replace(base.planet, period_range_days=(14.0, 400.0))
     rows = Parallel(n_jobs=n_jobs, batch_size=8)(
-        delayed(_one)(i, source, i % 2 == 0, planet, base.preprocess, config, seed)
+        delayed(_one)(i, source, i % 2 == 0, planet, base.preprocess, base.bls, config, seed)
         for i in range(n_curves)
     )
     clean = [r for r in rows if not r["injected"] and not r["error"]]
