@@ -749,13 +749,15 @@ on. Sizes are rough: S is a few hours, M a day or two, L longer.
 - `python -m transitml.vet`: one star in, a one-page vetting report out.
 - Iterative multi-planet search for the vetting report.
 - Multi-sector stitching (`--stitch`, `stitch_light_curves`).
+- Centroid vetting from target pixel files (`vet --tpf`, `--centroids`):
+  a difference-image offset and centroid motion, reported beside the score.
+  Checked on synthetic pixels only so far.
 
 **Planned**
 
 | Item | What it adds | Size |
 | --- | --- | --- |
-| Benchmark against real TOI labels (in progress) | Precision and recall against ExoFOP dispositions, not only labels known by construction | M |
-| Centroid-shift tests from target pixel files | A test for background blended binaries, the largest real false-positive class | L |
+| Benchmark against real TOI labels, in review | Precision and recall against ExoFOP dispositions, not only labels known by construction | M |
 | Structured systematics in the generator | 13.7-day scattered light, camera-correlated jitter and focus drift, so the synthetic noise stops flattering the result | M |
 | Single-transit and duo-transit search | Events the period grid excludes by construction today | M |
 | Transit Least Squares and GPU BLS | An alternative search and a faster one; BLS is the runtime bottleneck | M |
