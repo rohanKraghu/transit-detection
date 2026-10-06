@@ -278,21 +278,27 @@ def save_curves(curves: Sequence[LightCurve], path: str | Path) -> None:
 
 
 def load_curves(path: str | Path) -> list[LightCurve]:
-    """Inverse of :func:`save_curves`."""
+    """Inverse of :func:`save_curves`.
+
+    Every array is read once.  Indexing an open ``.npz`` decompresses the whole
+    array again on each access, so reading it per curve made a 2800-curve
+    cache take minutes to load instead of a fraction of a second.
+    """
     with np.load(path, allow_pickle=False) as data:
-        bounds = np.concatenate([[0], np.cumsum(data["lengths"])])
-        curves = []
-        for i, target_id in enumerate(data["target_id"]):
-            sl = slice(bounds[i], bounds[i + 1])
-            label = int(data["label"][i])
-            curves.append(
-                LightCurve(
-                    target_id=str(target_id),
-                    time=data["time"][sl].astype(np.float64),
-                    flux=data["flux"][sl].astype(np.float64),
-                    flux_err=data["flux_err"][sl].astype(np.float64),
-                    label=None if label < 0 else label,
-                    meta=json.loads(str(data["meta"][i])),
-                )
+        arrays = {name: data[name] for name in data.files}
+    bounds = np.concatenate([[0], np.cumsum(arrays["lengths"])])
+    curves = []
+    for i, target_id in enumerate(arrays["target_id"]):
+        sl = slice(bounds[i], bounds[i + 1])
+        label = int(arrays["label"][i])
+        curves.append(
+            LightCurve(
+                target_id=str(target_id),
+                time=arrays["time"][sl].astype(np.float64),
+                flux=arrays["flux"][sl].astype(np.float64),
+                flux_err=arrays["flux_err"][sl].astype(np.float64),
+                label=None if label < 0 else label,
+                meta=json.loads(str(arrays["meta"][i])),
             )
+        )
     return curves
