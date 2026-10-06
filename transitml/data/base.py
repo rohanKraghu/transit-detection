@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import abc
 from dataclasses import dataclass, field
-from typing import Any, Iterator
+from typing import Any, Iterator, Sequence
 
 import numpy as np
 from numpy.typing import NDArray
@@ -76,6 +76,68 @@ class LightCurve:
             label=self.label,
             meta=dict(self.meta),
         )
+
+
+def stitch_light_curves(curves: Sequence[LightCurve]) -> LightCurve:
+    """Join several single-sector curves of one star into one multi-sector curve.
+
+    Each curve is divided by its own median flux (errors scaled alike) before
+    joining, so sectors observed through different apertures or with different
+    contamination land on the same relative scale.  The time series are
+    concatenated in time order and nothing is interpolated: the gaps between
+    sectors stay gaps.  Detrending splits on gaps, so no spline segment spans
+    one, and the BLS period grid then extends to half the stitched baseline.
+
+    A cadence time that appears in more than one curve is kept once (the first
+    occurrence in time order).
+
+    Raises
+    ------
+    ValueError
+        If ``curves`` is empty or the curves belong to different targets.
+    """
+    if not curves:
+        raise ValueError("nothing to stitch")
+    targets = {lc.target_id for lc in curves}
+    if len(targets) > 1:
+        raise ValueError(f"cannot stitch different targets: {sorted(targets)}")
+
+    times, fluxes, errors = [], [], []
+    for lc in curves:
+        lc = lc.finite()
+        if lc.n_cadences == 0:
+            continue
+        median = float(np.median(lc.flux))
+        if median == 0.0:
+            raise ValueError(f"{lc.target_id}: a sector has zero median flux")
+        times.append(lc.time)
+        fluxes.append(lc.flux / median)
+        errors.append(lc.flux_err / abs(median))
+    if not times:
+        raise ValueError(f"{curves[0].target_id}: no finite cadences to stitch")
+
+    time = np.concatenate(times)
+    order = np.argsort(time, kind="stable")
+    time, flux, flux_err = time[order], np.concatenate(fluxes)[order], np.concatenate(errors)[order]
+    keep = np.concatenate([[True], np.diff(time) > 0])
+
+    labels = {lc.label for lc in curves}
+    meta = dict(curves[0].meta)
+    meta.update(
+        {
+            "stitched": True,
+            "n_sectors": len(times),
+            "sectors": [lc.meta.get("sector") for lc in curves],
+        }
+    )
+    return LightCurve(
+        target_id=curves[0].target_id,
+        time=time[keep],
+        flux=flux[keep],
+        flux_err=flux_err[keep],
+        label=labels.pop() if len(labels) == 1 else None,
+        meta=meta,
+    )
 
 
 class LightCurveSource(abc.ABC):

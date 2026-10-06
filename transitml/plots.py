@@ -412,3 +412,191 @@ def plot_all(
         plot_diagnostics(dataset, split, trained, result, figure_dir / "03_diagnostics.png"),
         plot_feature_importance(result, figure_dir / "04_feature_importance.png"),
     ]
+
+
+# --------------------------------------------------------------------------
+# Single-star vetting report (``python -m transitml.vet``)
+# --------------------------------------------------------------------------
+def _fold_hours(time: NDArray[np.float64], period: float, epoch: float) -> NDArray[np.float64]:
+    """Hours from the nearest mid-transit."""
+    return ((time - epoch + 0.5 * period) % period - 0.5 * period) * 24.0
+
+
+def _format_feature(name: str, value: float) -> tuple[str, str]:
+    """Display label and value; log features are shown in natural units."""
+    if not np.isfinite(value):
+        return name, "n/a"
+    if name == "log_depth":
+        return "depth (ppm)", f"{10.0 ** value * 1e6:.0f}"
+    if name == "log_period":
+        return "period (d)", f"{10.0 ** value:.4f}"
+    if name == "bls_duration":
+        return "duration (h)", f"{value * 24.0:.2f}"
+    if name == "n_transits":
+        return name, f"{value:.0f}"
+    return name, f"{value:.3g}"
+
+
+def plot_vetting_report(lc: LightCurve, flat, result, path: Path) -> Path:
+    """One-page vetting report for one star.
+
+    ``flat`` is the :class:`~transitml.preprocess.FlattenedLightCurve` and
+    ``result`` the :class:`~transitml.vet.VetResult` from
+    :func:`transitml.vet.vet_light_curve`.  Panels: raw flux with the removed
+    trend; the detrended flux with every candidate's transits marked; the fold
+    on the primary signal; odd against even transits; the phase-0.5 window
+    where a secondary eclipse would sit; the key features with the score,
+    threshold and verdict; and the approximate per-feature score changes.
+    """
+    _style()
+    period = float(result.primary["period"])
+    epoch = float(result.primary["epoch"])
+    duration = float(result.primary["duration"])
+    duration_h = duration * 24.0
+    half_window = min(4.0 * duration, 0.5 * period) * 24.0
+    bin_width = max(duration_h / 4.0, 1e-3)
+    ppt = (flat.flux - 1.0) * 1e3
+
+    fig = plt.figure(figsize=(13.0, 14.0))
+    grid = fig.add_gridspec(4, 3, height_ratios=(1.0, 1.0, 1.2, 1.5), hspace=0.42, wspace=0.28)
+
+    # -- row 1: raw flux and the trend that was removed ----------------------
+    ax_raw = fig.add_subplot(grid[0, :])
+    raw_ppt = (lc.flux / np.median(lc.flux) - 1.0) * 1e3
+    ax_raw.plot(lc.time, raw_ppt, ".", ms=1.8, color=NEUTRAL, alpha=0.7, label="raw flux")
+    ax_raw.plot(flat.time, (flat.trend - 1.0) * 1e3, "-", lw=1.6, color=SERIES[0],
+                label="fitted trend (removed)")
+    ax_raw.set_ylim(*_robust_limits(raw_ppt))
+    ax_raw.set_ylabel("flux - 1 (ppt)")
+    ax_raw.set_title("Raw light curve", loc="left")
+    ax_raw.set_title(
+        f"{result.n_cadences} cadences over {result.baseline_days:.1f} d",
+        loc="right", fontsize=8.5, color=INK_SOFT,
+    )
+    ax_raw.legend(loc="upper right", ncols=2)
+
+    # -- row 2: detrended flux, every candidate's transits marked ------------
+    ax_flat = fig.add_subplot(grid[1, :], sharex=ax_raw)
+    ax_flat.plot(flat.time, ppt, ".", ms=1.8, color=NEUTRAL, alpha=0.7)
+    low, high = _robust_limits(ppt)
+    ax_flat.set_ylim(low, high)
+    for i, cand in enumerate(result.candidates):
+        colour = SERIES[i % len(SERIES)]
+        n_first = np.ceil((flat.time[0] - cand.epoch) / cand.period)
+        n_last = np.floor((flat.time[-1] - cand.epoch) / cand.period)
+        times = cand.epoch + cand.period * np.arange(n_first, n_last + 1)
+        ax_flat.plot(times, np.full(times.size, high - 0.06 * (high - low) * (i + 1)), "v",
+                     ms=6, color=colour,
+                     label=f"signal {cand.rank}: P = {cand.period:.3f} d, SDE {cand.sde:.1f}")
+    ax_flat.set_ylabel("flux - 1 (ppt)")
+    ax_flat.set_xlabel("time (days)")
+    ax_flat.set_title("Detrended, with every significant signal from the iterative search",
+                      loc="left")
+    if result.candidates:
+        ax_flat.legend(loc="lower right", ncols=min(len(result.candidates), 3))
+    else:
+        ax_flat.set_title("no signal above the significance threshold", loc="right",
+                          fontsize=8.5, color=INK_SOFT)
+
+    # -- row 3a: fold on the primary signal ----------------------------------
+    hours = _fold_hours(flat.time, period, epoch)
+    window = np.abs(hours) <= half_window
+    ax_fold = fig.add_subplot(grid[2, 0])
+    ax_fold.plot(hours[window], ppt[window], ".", ms=2.2, color=NEUTRAL, alpha=0.45)
+    centres, means = _bin_means(hours[window], ppt[window], bin_width)
+    ax_fold.plot(centres, means, "o", ms=4.0, color=SERIES[0], mec=SURFACE, mew=0.5)
+    ax_fold.axvspan(-0.5 * duration_h, 0.5 * duration_h, color=SERIES[0], alpha=0.12, lw=0)
+    ax_fold.axhline(0.0, lw=0.9, color=NEUTRAL)
+    ax_fold.set_xlim(-half_window, half_window)
+    ax_fold.set_ylim(*_robust_limits(means, pad=0.45))
+    ax_fold.set_xlabel("hours from mid-transit")
+    ax_fold.set_ylabel("flux - 1 (ppt)")
+    ax_fold.set_title(f"Primary fold, P = {period:.4f} d", loc="left")
+
+    # -- row 3b: odd against even transits -----------------------------------
+    ax_oe = fig.add_subplot(grid[2, 1], sharey=ax_fold)
+    number = np.round((flat.time - epoch) / period).astype(int)
+    for parity, colour, label in ((0, SERIES[0], "even"), (1, SERIES[1], "odd")):
+        sel = window & (number % 2 == parity)
+        if not sel.any():
+            continue
+        c, m = _bin_means(hours[sel], ppt[sel], bin_width)
+        ax_oe.plot(c, m, "o-", ms=3.6, lw=1.0, color=colour, mec=SURFACE, mew=0.5,
+                   label=f"{label} transits")
+    ax_oe.axhline(0.0, lw=0.9, color=NEUTRAL)
+    ax_oe.set_xlim(-half_window, half_window)
+    ax_oe.set_xlabel("hours from mid-transit")
+    ax_oe.set_title(
+        f"Odd vs even ({_format_feature('odd_even_sigma', result.features['odd_even_sigma'])[1]}"
+        " sigma)", loc="left",
+    )
+    ax_oe.legend(loc="lower right")
+
+    # -- row 3c: the phase-0.5 window ----------------------------------------
+    ax_sec = fig.add_subplot(grid[2, 2], sharey=ax_fold)
+    sec_hours = _fold_hours(flat.time, period, epoch + 0.5 * period)
+    sec_window = np.abs(sec_hours) <= half_window
+    ax_sec.plot(sec_hours[sec_window], ppt[sec_window], ".", ms=2.2, color=NEUTRAL, alpha=0.45)
+    c, m = _bin_means(sec_hours[sec_window], ppt[sec_window], bin_width)
+    ax_sec.plot(c, m, "o", ms=4.0, color=SERIES[2], mec=SURFACE, mew=0.5)
+    ax_sec.axvspan(-0.5 * duration_h, 0.5 * duration_h, color=SERIES[2], alpha=0.12, lw=0)
+    ax_sec.axhline(0.0, lw=0.9, color=NEUTRAL)
+    ax_sec.set_xlim(-half_window, half_window)
+    ax_sec.set_xlabel("hours from phase 0.5")
+    ax_sec.set_title(
+        f"Secondary window ({_format_feature('secondary_sigma', result.features['secondary_sigma'])[1]}"
+        " sigma)", loc="left",
+    )
+
+    # -- row 4a: key numbers -------------------------------------------------
+    from .vet import KEY_FEATURES  # local import: vet imports this package's siblings
+
+    ax_table = fig.add_subplot(grid[3, 0])
+    ax_table.axis("off")
+    rows = [("score", f"{result.score:.3f}"), ("threshold", f"{result.threshold:.3f}")]
+    rows += [_format_feature(name, result.features[name]) for name in KEY_FEATURES]
+    table = ax_table.table(cellText=rows, colLabels=("quantity", "value"),
+                           cellLoc="left", colWidths=(0.65, 0.35), bbox=(0.0, 0.0, 1.0, 1.0))
+    table.auto_set_font_size(False)
+    table.set_fontsize(8.5)
+    for cell in table.get_celld().values():
+        cell.set_edgecolor(GRID)
+    ax_table.set_title("Key features (primary signal)", loc="left")
+
+    # -- row 4b: approximate reasons -----------------------------------------
+    ax_why = fig.add_subplot(grid[3, 1:])
+    reasons = result.reasons[::-1]
+    if reasons:
+        deltas = np.array([float(r["delta_score"]) for r in reasons])
+        labels = [
+            f"{r['feature']} = {float(r['value']):.3g} (median {float(r['training_median']):.3g})"
+            for r in reasons
+        ]
+        positions = np.arange(len(reasons)) * 1.6
+        ax_why.barh(positions, deltas, height=0.7,
+                    color=[SERIES[0] if d >= 0 else SERIES[1] for d in deltas])
+        for y, d, label in zip(positions, deltas, labels):
+            ax_why.text(0.0, y + 0.45, f"{label}: {d:+.3f}", va="bottom", ha="left",
+                        fontsize=8.5, color=INK, transform=ax_why.get_yaxis_transform())
+        ax_why.set_yticks([])
+        ax_why.set_ylim(-0.6, positions[-1] + 1.3)
+        ax_why.axvline(0.0, lw=0.9, color=NEUTRAL)
+        ax_why.grid(axis="y", visible=False)
+        ax_why.margins(x=0.15)
+    ax_why.set_xlabel("score change vs. this feature at its training median (approximate)")
+    ax_why.set_title("Top reasons: features that moved the score most", loc="left")
+
+    verdict_colour = SERIES[0] if result.above_threshold else SERIES[1]
+    fig.suptitle(
+        f"{result.target_id}: score {result.score:.3f} vs threshold {result.threshold:.3f}, "
+        f"{result.verdict}",
+        x=0.01, ha="left", fontsize=12.5, fontweight="bold", color=verdict_colour,
+    )
+    fig.text(
+        0.01, 0.01,
+        "Reasons are approximate: each bar replaces one feature by its training-split "
+        "median and leaves the rest; bars are not additive. Only the primary signal is scored.",
+        fontsize=8, color=INK_SOFT,
+    )
+    fig.subplots_adjust(top=0.95, bottom=0.06, left=0.07, right=0.98)
+    return _save(fig, path)

@@ -43,7 +43,7 @@ from typing import Iterator, Sequence
 
 import numpy as np
 
-from .base import LightCurve, LightCurveSource
+from .base import LightCurve, LightCurveSource, stitch_light_curves
 
 _LIGHTKURVE_HINT = (
     "MASTLightCurveSource requires `lightkurve` and outbound network access to "
@@ -75,6 +75,11 @@ class MASTLightCurveSource(LightCurveSource):
         Restrict to one TESS sector (or Kepler quarter).  Injection-recovery
         uses one sector per star so the same star cannot land in both the
         training and the test split.  ``None`` yields every sector found.
+    stitch_sectors:
+        When true, every sector found for a target is joined into one curve
+        with :func:`~transitml.data.base.stitch_light_curves` (each sector
+        normalised to its own median, gaps kept), so the source yields one
+        curve per target.  Off by default: one curve per sector.
     """
 
     def __init__(
@@ -88,6 +93,7 @@ class MASTLightCurveSource(LightCurveSource):
         flux_column: str = "pdcsap_flux",
         sector: int | None = None,
         n_workers: int = 1,
+        stitch_sectors: bool = False,
     ) -> None:
         self.targets = list(targets)
         self.mission = mission
@@ -97,6 +103,7 @@ class MASTLightCurveSource(LightCurveSource):
         self.flux_column = flux_column
         self.sector = sector
         self.n_workers = n_workers
+        self.stitch_sectors = stitch_sectors
 
     def __len__(self) -> int:
         return len(self.targets)
@@ -134,7 +141,10 @@ class MASTLightCurveSource(LightCurveSource):
             if len(search) == 0:
                 return []
             collection = search.download_all(quality_bitmask=self.quality_bitmask)
-            return [self._to_lightcurve(lc, target_id, label) for lc in collection]
+            curves = [self._to_lightcurve(lc, target_id, label) for lc in collection]
+            if self.stitch_sectors and len(curves) > 1:
+                return [stitch_light_curves(curves)]
+            return curves
         except Exception as exc:  # noqa: BLE001 - network and FITS errors vary
             warnings.warn(f"{target_id}: skipped ({type(exc).__name__}: {exc})", stacklevel=2)
             return []
