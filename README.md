@@ -56,7 +56,7 @@ At the chosen operating threshold, on the 840 held-out light curves:
 
 ---
 
-## Why accuracy is meaningless here, and ROC-AUC nearly so
+## Why accuracy and ROC-AUC are somewhat trivial metrics
 
 At a 4% positive rate, the classifier `return 0` scores **96% accuracy** and
 finds nothing. Any metric a constant function can win is not measuring the
