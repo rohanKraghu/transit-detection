@@ -1759,7 +1759,7 @@ to next:
 | Item | Why | Size |
 | --- | --- | --- |
 | Centroid test on the real TOI benchmark, in progress | Blended binaries are the false positives the light-curve model cannot separate, and the centroid test has only been checked on synthetic pixels | M |
-| CNN on the full 34,032 DR25 TCEs, or on centroid images | On 9,075 TCEs the CNN ties boosting; its case rests on more data or views boosting cannot use | L |
+| Both models on the full 34,032 DR25 TCEs, in progress | On 9,075 TCEs the CNN ties boosting; its case rests on more data or views boosting cannot use | L |
 
 ## References
 
