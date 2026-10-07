@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import json
 import warnings
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -162,6 +162,45 @@ class TargetPixelData:
         meta = dict(self.meta)
         meta["source"] = "target pixel file aperture sum"
         return LightCurve(self.target_id, time, flux, err, label=None, meta=meta)
+
+
+def bin_target_pixels(tpf: TargetPixelData, cadence_seconds: float) -> TargetPixelData:
+    """The pixels averaged onto a slower cadence, as
+    :func:`~transitml.data.base.bin_light_curve` does for a light curve.
+
+    Each pixel of a binned frame is the mean of its finite values over the
+    bin's frames (NaN where it has none), with the error of that mean.  Bins
+    holding fewer than half the frames of a full one are dropped.  Pixels
+    already at ``cadence_seconds`` or slower come back as they are.
+    """
+    if tpf.n_cadences < 2:
+        return tpf
+    width = cadence_seconds / 86400.0
+    native = float(np.median(np.diff(tpf.time)))
+    if native >= 0.9 * width:
+        return tpf
+    index = np.floor((tpf.time - tpf.time[0] + 0.5 * native) / width).astype(np.int64)
+    starts = np.flatnonzero(np.concatenate([[True], np.diff(index) > 0]))
+    counts = np.diff(np.append(starts, tpf.n_cadences))
+    keep = counts >= 0.5 * width / native
+    finite = np.isfinite(tpf.flux)
+    n = np.add.reduceat(finite, starts, axis=0)[keep]
+    total = np.add.reduceat(np.where(finite, tpf.flux, 0.0), starts, axis=0)[keep]
+    with np.errstate(invalid="ignore", divide="ignore"):
+        flux = np.where(n > 0, total / n, np.nan)
+        flux_err = None
+        if tpf.flux_err is not None:
+            square = np.where(finite, tpf.flux_err**2, 0.0)
+            flux_err = np.where(n > 0, np.sqrt(np.add.reduceat(square, starts, axis=0)[keep]) / n, np.nan)
+    meta = dict(tpf.meta)
+    meta["binned_from_seconds"] = round(native * 86400.0)
+    return replace(
+        tpf,
+        time=np.add.reduceat(tpf.time, starts)[keep] / counts[keep],
+        flux=flux,
+        flux_err=flux_err,
+        meta=meta,
+    )
 
 
 # --------------------------------------------------------------------------
