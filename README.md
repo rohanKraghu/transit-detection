@@ -1748,12 +1748,18 @@ on. Sizes are rough: S is a few hours, M a day or two, L longer.
   secondary test forgives only what the hottest plausible planet could make
   around that star (TIC temperature and density). 90 of 94 confirmed planets
   above TOI SNR 100 are kept, up from 86.
+- A CNN on the DR25 views (`python -m transitml.cnn`, PyTorch optional):
+  AP 0.919 against 0.915 for boosting on the same 2,720 held-out TCEs, a tie.
 
-**Planned**
+**Next**
 
-| Item | What it adds | Size |
+Every item on the original roadmap is built. What the results above point
+to next:
+
+| Item | Why | Size |
 | --- | --- | --- |
-| CNN on the DR25 folded views, in progress | A model that learns transit shape, now that there are enough labels | L |
+| Centroid test on the real TOI benchmark, in progress | Blended binaries are the false positives the light-curve model cannot separate, and the centroid test has only been checked on synthetic pixels | M |
+| CNN on the full 34,032 DR25 TCEs, or on centroid images | On 9,075 TCEs the CNN ties boosting; its case rests on more data or views boosting cannot use | L |
 
 ## References
 
