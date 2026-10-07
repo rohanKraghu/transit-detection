@@ -1643,13 +1643,15 @@ on. Sizes are rough: S is a few hours, M a day or two, L longer.
   labelled TCEs with folded views; a gradient-boosting model on the views
   scores AP 0.905 on held-out stars, against 0.312 for ranking by MES and
   0.339 by chance.
+- Transit fits for candidates (`vet --fit`, `batch --fit`): a batman
+  transit model sampled with emcee, with interval coverage measured by injection
+  (`python -m transitml.fit_coverage`).
 
 **Planned**
 
 | Item | What it adds | Size |
 | --- | --- | --- |
 | CNN on the DR25 folded views, in progress | A model that learns transit shape, now that there are enough labels | L |
-| Planet parameter fits, in review | batman and emcee fits for candidates that pass | M |
 | Per-star occultation allowance, in review | Stop rejecting hot Jupiters on their own secondary eclipse, using each host's temperature and density from the TOI table | M |
 
 ## References
