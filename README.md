@@ -7,7 +7,9 @@ hundred times deeper. This repository is an end-to-end pipeline for that
 problem — generate the photometry, detrend it, search it, classify it, and
 evaluate it the way an imbalanced detection problem has to be evaluated.
 It also vets single real stars: `python -m transitml.vet "TIC ..."` downloads,
-detrends, searches and scores one target and writes a one-page report.
+detrends, searches and scores one target and writes a one-page report, and
+`python -m transitml.batch` does the same for a whole sector, with a cache
+and a dashboard of ranked candidates.
 
 **One command reproduces everything in this README:**
 
@@ -15,11 +17,11 @@ detrends, searches and scores one target and writes a one-page report.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python run_pipeline.py            # ~3 min on 4 cores
-pytest                            # ~4 min, 295 tests
+pytest                            # ~6 min, 394 tests
 ```
 
 It writes `results/metrics.json`, `results/report.txt`, the trained model
-(`results/model.joblib`, used by `vet` below) and four PNGs to `figures/`.
+(`results/model.joblib`, used by `vet` below) and six PNGs to `figures/`.
 Fixed seed (42), pinned dependencies, deterministic output.
 
 ---
@@ -43,6 +45,10 @@ Intervals are 68% bootstrap intervals over 2000 paired resamples of the test
 set. With 34 positives the point estimate carries ±0.07, so the third decimal
 means nothing — but the model out-scores the baseline in **100.0%** of paired
 resamples, so the gap does.
+
+That test set is one draw. On three fresh sectors of 2000 stars from the same
+generator, which the model never saw, average precision was 0.62, 0.73 and
+0.66; see "Vetting a whole sector" below.
 
 ![Precision-recall](figures/02_precision_recall.png)
 
@@ -656,6 +662,86 @@ the same reason the headline metric is: permuting a feature barely moves
 accuracy at a 4% positive rate, so an accuracy-scored importance plot would be
 flat and uninformative.
 
+### Calibrated probabilities and SHAP reasons
+
+The score ranks stars well but is not a probability. With
+`class_weight="balanced"` the trees are trained as if planets were as common
+as everything else, so a score of 0.5 does not mean half such stars are
+planets. `transitml/calibration.py` fits Platt scaling, one logistic map
+`P(planet) = 1 / (1 + exp(-(a s + b)))` on the trees' log-odds `s`, to the
+same out-of-fold training scores the threshold is chosen from. Here
+`a = 0.582, b = -1.245`. The map is strictly increasing, so the ranking,
+average precision, the threshold and every verdict are unchanged (the
+regenerated `results/metrics.json` matches the previous run on all of them);
+only the number attached to each star moves. The operating threshold
+becomes P(planet) = 0.117. Isotonic regression was not used: with 62
+training planets it is a staircase of a few steps, each set by two or three
+stars.
+
+On the 840 held-out stars:
+
+| Probability | Brier | Log loss | ECE |
+|---|---|---|---|
+| Constant training planet rate (3.97%) | 0.0388 | 0.1695 | 0.0007 |
+| Score read as a probability | 0.0172 | 0.0757 | 0.0204 |
+| **Calibrated** | **0.0150** | **0.0711** | 0.0166 |
+
+Brier and log loss reward calibration and separation together, so they lead;
+expected calibration error on its own would crown the constant forecast,
+which is perfectly calibrated and tells you nothing about any star.
+Calibration cuts the log loss by 6% and the Brier score by 13% against the
+raw score.
+
+![Calibration](figures/06_calibration.png)
+
+**The calibrated probabilities are not spread out enough.** They expect 38.3
+planets in the test set, which holds 34, within one standard deviation of
+the binomial scatter (4.8). But the excess sits between P = 0.03 and 0.3,
+where 166 stars expect 11.4 planets and hold 5, while the 50 flagged stars
+expect 23.7 and hold 26, and all 19 stars above P = 0.6 are planets. A
+logistic fit of the outcome on the calibrated log-odds gives slope 1.30 and
+intercept +0.37 (1 and 0 ideal): the many unlikely stars get a little too
+much probability and the few likely ones too little. Two things push this
+way: the map is fitted to the scores of fold models trained on 80% of the
+training split and applied to the model refit on all of it, and 62 planets
+set it.
+
+The probability is for a star drawn from the training population, where 4%
+of stars host a detectable planet. For any other population Bayes' rule
+shifts the log-odds by `logit(rate) - logit(0.0397)`; `vet --planet-rate`
+does that.
+
+**SHAP reasons.** `transitml/treeshap.py` computes exact SHAP values from the
+fitted trees: per star, one number per feature, in calibrated log-odds, that
+add up with a base value (-4.32, P = 0.013) to the star's own log-odds. It is
+the quantity path-dependent TreeSHAP computes, written as a closed form per
+leaf (a few vectorised lines; trees of depth 3 have at most three features
+on a path). `tests/test_treeshap.py` checks it against brute-force
+enumeration of every feature subset and against the `shap` package, to
+1e-10; `shap` is not a dependency.
+
+![SHAP summary](figures/07_shap_summary.png)
+
+Mean |SHAP| and permutation importance rank the features differently, and
+both are right. `log_depth`, `max_single_event_fraction`,
+`log_duration_ratio` and `flux_skew` move a typical star by 0.34 to 0.47 in
+log-odds, so they lead on mean |SHAP|, but each carries information others
+share, so shuffling one costs less average precision. `secondary_sigma` and
+`odd_even_sigma` move a typical star by about 0.2 and a few by up to -1.6:
+those few are the eclipsing binaries. On the 53 held-out binaries their
+mean |SHAP| is 1.04 and 0.55, against 0.16 and 0.19 for everything else,
+and one or the other is the largest push down for 46 of the 53. That is
+why `secondary_sigma` is second in permutation importance: it is what keeps
+binaries off the top of the list.
+
+The report lists, for each held-out false positive, the three features that
+pushed it up most, and for each planet the classifier rejected, the three
+that pushed it down. Of the 24 false positives (17 variable stars, 7
+binaries), 11 were pushed up most by `flux_skew`, and 5 each by `log_depth`
+and `max_single_event_fraction`: they looked like planets on the shape of
+their flux distribution, on depth, and on dips spread over several events
+rather than one.
+
 ### Why not a 1D CNN on folded light curves
 
 The honest answer is sample size. This demo has 96 positives, 62 of them in the
@@ -768,6 +854,56 @@ convolutions do. The CNN's case would rest on the full 34,032 TCEs, or on
 views the boosting cannot use as directly (centroid images, for instance).
 Full numbers are in `results/kepler_dr25/cnn/report.txt`.
 
+### Transit Least Squares, and BLS on a GPU
+
+**TLS as the search.** `python run_pipeline.py --search tls` replaces BLS
+with Transit Least Squares (Hippke & Heller 2019;
+`pip install transitleastsquares`), which fits a limb-darkened transit shape
+instead of a box. Everything downstream is unchanged: TLS supplies the period,
+duration and epoch, its spectrum stands in for the BLS power in `bls_sde` and
+`power_contrast`, and depth and SNR are the same box statistics at TLS's
+ephemeris. Results go to `results/tls/`, and the choice is saved with the
+model, so `vet` searches the way training did.
+
+On the same 600 synthetic planets, detrended once and searched both ways
+(`python -m transitml.search_benchmark`, full report in
+[`results/search_comparison/report.txt`](results/search_comparison/report.txt)):
+
+| Injected SNR | Planets | BLS finds the period | TLS finds the period |
+| --- | --- | --- | --- |
+| below 7 | 91 | 19 | 15 |
+| 7 to 10 | 33 | 15 | 17 |
+| 10 to 15 | 41 | 29 | 31 |
+| 15 to 25 | 77 | 73 | 75 |
+| 25 to 50 | 120 | 112 | 115 |
+| above 50 | 238 | 237 | 238 |
+
+TLS finds 491 periods against 485 for BLS: 15 planets only TLS finds and 9
+only BLS does. That is the direction the TLS paper reports, but a 15 to 9
+split is well within chance (p = 0.31, two-sided sign test), and TLS takes
+437 ms per light curve against 100 ms. The full pipeline with TLS scores
+average precision 0.77 [0.70, 0.83] against 0.80 [0.74, 0.86] with BLS on
+the default seed ([`results/tls/report.txt`](results/tls/report.txt)). The
+intervals overlap, and nothing here says the template is worth four times
+the search time on this data, so BLS stays the default.
+
+**BLS on a GPU.** `transitml/fastbls.py` computes the same periodogram as
+whole-array operations: every cadence is folded at a block of periods at
+once, binned with one `bincount`, and every box of every duration is read off
+cumulative sums. It follows astropy's algorithm step for step and matches its
+periodogram to 1e-13 on planets, binaries and noise
+(`tests/test_fastbls.py`), so the features and the trained model do not
+depend on which engine ran. The code runs unchanged on NumPy or CuPy:
+`run_pipeline.py --bls-engine gpu` uses a CUDA GPU through CuPy.
+
+**It has not been run on a GPU**, because this environment has none.
+`python -m transitml.fastbls --engine gpu` times it against astropy and checks
+that the periodograms agree, so the first run on a GPU machine settles whether
+it works and how fast it is. On a CPU the array form is about 19 times slower
+than astropy (1.9 s against 0.1 s per light curve), because it builds every
+box of every period in memory instead of streaming them through a compiled
+loop. So astropy stays the default.
+
 ---
 
 ## Vetting one star
@@ -788,9 +924,13 @@ the model file, so the score means what it meant in training, then writes
 `results/vet/vet_<target>.png` and a JSON of the same numbers: the raw curve
 and removed trend, the detrended curve with every candidate signal marked,
 the primary fold, odd against even transits, the phase-0.5 window, the key
-features with score, threshold and verdict, and the top reasons. The reasons
-are approximate and labelled so: each is the change in score when one
-feature alone is set to its training-split median. They are not additive.
+features with score, threshold, calibrated probability and verdict, and the
+top reasons. The reasons are SHAP values in calibrated log-odds (see
+"Calibrated probabilities and SHAP reasons" above): exact, and they add up
+with the base value to the star's log-odds. The JSON carries all 23. The
+probability is for a star from the training population, where 4% of stars
+host a planet; `--planet-rate 0.3` restates it for a population where 30%
+do. The score and the verdict do not depend on it.
 
 **The TIC path has only been tested offline**, with the MAST source replaced
 by a stub; this environment could not reach MAST. Local CSV and npz input is
@@ -818,6 +958,94 @@ neither sector alone gives a significant peak at 10 days, the two stitched
 together do. The grid keeps its 2000 periods however long the baseline, so
 sectors far apart in time are searched too coarsely; consecutive sectors
 are fine.
+
+### Single and duo transits
+
+BLS needs at least two transits, and its period grid stops at half the
+baseline, so a planet on a 40-day orbit, which shows one transit in a sector
+or none, is excluded by construction (failure mode 2 below). Those are the
+long-period, temperate planets, and one event is enough to point a second
+sector or a radial-velocity campaign at the star. `transitml/single.py`
+searches for individual dips instead, and `vet` runs it on every star:
+
+- **Box scan.** Every cadence is tried as the centre of a box of six
+  durations from 1.4 to 11 hours. The depth is measured against the
+  cadences one duration wide on either side, so a slow residual trend does
+  not read as depth, and its error is the light curve's own scatter binned
+  at that duration (red noise inflates it, never below white). A box less
+  than 60% observed is skipped, so a dip half in a gap does not count. The
+  best box is refined on a finer grid of durations and centres.
+- **Events.** The highest-SNR box is an event at SNR 7.5 or more; boxes
+  overlapping it are removed and the next is taken, up to four.
+- **Ramps are not events.** A momentum-dump ramp, a sharp drop and then an
+  exponential recovery, is a lone dip too. Each event is fitted both as a box
+  (free centre and width) and as a ramp (free start and time constant, either
+  way round in time), and is set aside when the ramp fits better by a
+  chi-squared of 4 in noise units. A transit has two sharp edges and a ramp
+  one, so the two separate cleanly.
+- **What one event says about the period.** Any period that would put
+  another transit on observed data without the dip is ruled out (a predicted
+  transit whose measured depth is under half the event's), which gives a
+  minimum period. It is usually the longer side of the window, but shorter
+  when the next transit could hide in a gap. The duration gives a rough
+  period for a central transit across a Sun-like density,
+  `P = π² G ρ T³ / 3`.
+- **Duos.** Two events of matching depth (within 3 sigma plus 20% of the
+  depth) and duration (within a factor of 1.6) form a duo. Its period is the separation divided
+  by a whole number, and each such alias is kept only if none of the
+  transits it predicts lands on flat, observed data.
+- **Periodic signals are not repeated.** An event inside a transit of a
+  periodic signal from the multi-planet search is dropped, but only when at
+  least two of that signal's predicted transits show a dip at SNR 3 or more.
+  A BLS "period" whose only real dip is the event itself explains nothing,
+  so a true single transit is never hidden behind its own alias.
+
+The report lists each event with its time, depth, duration, SNR, minimum
+period and whether it sits next to a gap, marks it with a triangle on the
+detrended panel, adds duos with their allowed periods, and names the times
+of any ramps it set aside. The JSON carries the same under
+`single_events`. **None of it is scored**: the classifier still sees only the
+strongest BLS signal, and the headline numbers are unchanged.
+
+```bash
+python -m transitml.single_benchmark          # injection-recovery, results/single_transit/
+```
+
+**Injection-recovery.** The benchmark puts one long-period planet (P = 14
+to 400 d, drawn as in the main population, with its transit moved inside the
+sector) into each of 600 synthetic variable stars and leaves 600 others
+untouched, then detrends each as `vet` does, masked second pass included.
+Full report in
+[`results/single_transit/report.txt`](results/single_transit/report.txt).
+
+| SNR against the star's own noise | Planets | Found | Transits up to 10.8 h: found |
+| --- | --- | --- | --- |
+| below 7 | 227 | 3% | 3% of 195 |
+| 7 to 10 | 52 | 50% | 58% of 43 |
+| 10 to 15 | 59 | 85% | 94% of 51 |
+| 15 to 25 | 65 | 77% | 93% of 45 |
+| above 25 | 179 | 94% | 100% of 137 |
+
+- **False alarms.** 14 of the 600 untouched stars (2.3%) show an event, the
+  strongest at SNR 13. Before the ramp test it was 97 (16%), most of them
+  the generator's instrumental ramps. The test set ramps aside on 87
+  stars and lost 8 of the 309 planets found without it.
+- **The SNR is the one the search can reach.** It is the transit's mean
+  depth over the error of a box of its true duration at its true time, with
+  the detrended light curve's scatter and red-noise factor. The white-noise
+  SNR of the same transits is twice as high (median), because these stars
+  also carry red noise; binned by that, recovery would look far worse than
+  the search is.
+- **Long transits are the main loss above SNR 10.** The longest box is 10.8
+  hours, under the 0.75-day spline knot spacing on purpose (see "Why the
+  knot spacing has a floor" above). A longer transit is both longer than
+  every box and partly absorbed by the detrender: on a 400-star subset,
+  transits longer than 12 hours kept a median third of their depth.
+- **Duos.** 66 planets have two transits in the data. Both were found for
+  29; 27 of those pair into a duo, and the true period is among the allowed
+  aliases for all 27. Without the 20% depth allowance only 20 paired: at
+  high SNR the depth errors are smaller than the few per cent that
+  detrending and cadence sampling put between two transits of one planet.
 
 ### Centroid test: is the dip on the target?
 
@@ -911,6 +1139,93 @@ circular Gaussian, much tidier than the TESS PRF. The test also uses only the
 primary signal and one ephemeris per run, and is not applied in the
 `run_pipeline.py` evaluation, which has no pixels.
 
+## Vetting a whole sector
+
+`python -m transitml.batch` runs every star of a sector through what `vet`
+does to one (detrend, search, featurise, score, calibrate, explain) in
+parallel, caches each result as it lands, and ranks the lot.
+
+```bash
+python run_pipeline.py                                    # writes results/model.joblib
+python -m transitml.batch --synthetic 2000                # an offline demo sector, with ground truth
+python -m transitml.batch --targets s14.txt --sector 14   # real stars from MAST (one TIC per line, or a CSV)
+python -m transitml.batch curves.npz more_curves/         # light-curve files or directories of them
+```
+
+It writes four things to `--out-dir` (default `results/batch/<source>/`):
+
+- `candidates.csv`: every star ranked by score, with P(planet), the verdict,
+  the primary signal's period, depth, duration and SNR, how many signals the
+  iterative search found, and the three SHAP reasons that moved it most.
+- `summary.json`: counts, the model file and its fingerprint, how much came
+  from the cache, the expected number of planets among the flagged stars
+  (the sum of their probabilities), and, when the stars carry ground truth
+  (synthetic or injected), how the list scores against it.
+- `dashboard.html`: one self-contained page, no network and no server: a
+  histogram of P(planet), and a sortable, filterable table with a folded
+  light curve per row. Clicking a row shows its SHAP reasons, every signal
+  found, and a link to its full report.
+- `reports/`: the full one-page `vet` report for the top `--reports`
+  flagged stars (10 by default).
+
+![Batch dashboard](figures/08_batch_dashboard.png)
+
+The committed demo is `results/batch/synthetic_seed7/`, from
+`python -m transitml.batch --synthetic 2000 --seed 7 --reports 3`: 2000 stars
+the model has never seen, from the training generator with a different seed.
+It took 236 s on 4 cores, about half a core-second per star.
+
+**Caching.** There are two layers, so a sector can be stopped and resumed
+and a rerun does only what changed. Downloaded light curves are saved in
+chunks of 200 as they arrive (`curves/`), together with the targets MAST had
+nothing for, so an interrupted download restarts where it stopped. Each
+star's result is appended to `cache/results.jsonl` the moment it is
+computed, keyed by a hash of its light curve, the model file and the search
+settings; a rerun skips every star whose key is there. A changed curve
+recomputes that star alone, and a new model or new `--max-signals` or
+`--min-sde` recomputes everything. A run killed mid-write leaves at most one
+torn line, which the next run ignores. `--planet-rate` is applied when the
+outputs are written, so restating the probabilities for a population where,
+say, 30% of stars host a planet costs nothing. `--force` ignores the cache.
+A star whose light curve cannot be processed is reported in the table and
+`summary.json` with its error and does not stop the rest.
+
+**How well it does on a fresh sector.** The held-out numbers in the headline
+come from 840 stars with 34 planets, a small sample. Three fresh synthetic
+sectors of 2000 stars, 80 planets each, scored by the same saved model:
+
+| Sample | Stars | Planets | Flagged | Planets flagged | Precision | Recall | Average precision | Expected planets |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Held-out split (seed 42) | 840 | 34 | 50 | 26 | 0.52 | 0.76 | 0.80 | 38.3 |
+| Fresh sector, seed 7 | 2000 | 80 | 115 | 49 | 0.43 | 0.61 | 0.62 | 83.7 |
+| Fresh sector, seed 8 | 2000 | 80 | 113 | 57 | 0.50 | 0.71 | 0.73 | 88.8 |
+| Fresh sector, seed 9 | 2000 | 80 | 98 | 52 | 0.53 | 0.65 | 0.66 | 79.1 |
+
+"Expected planets" is the sum of P(planet) over every star in the sample.
+Average precision on the fresh sectors was 0.62, 0.73 and 0.66, against
+0.80 on the held-out split: that figure, from 34 planets, sits at the lucky
+end of what this model does, and about 0.67 is the better single number.
+The threshold was chosen so that out-of-fold training precision was at
+least 0.5 at one sigma; on fresh stars precision came in at 0.43 to 0.53,
+0.48 pooled over the three sectors, so expect about half of the flagged
+stars to be planets. The top 20 were planets in 59 of 60 cases. The
+probabilities run a little high: pooled over the three sectors they add up
+to 252 planets where there are 240, about 5% too many, in the same
+direction as the held-out 38.3 against 34. The ranking is the dependable
+part; treat P(planet) as a slight overstatement.
+
+**Payload.** The dashboard carries every star, but only the flagged stars
+and the top 300 by score carry their folded light curve, signals and
+reasons in full; the rest carry the table columns and their top reason, and
+`candidates.csv` has everything. That keeps a 2000-star sector to 0.8 MB;
+a 20,000-star sector flagged at the same rate would be about 7 MB.
+
+**The MAST path has only been tested offline**, with the download replaced
+by a stub, as for `vet`: this environment could not reach MAST. The files
+path and the synthetic path are tested end to end. The batch runs the same
+code as `vet`, star by star, so its scores match `run_pipeline.py`'s for the
+same curves (checked to 5e-9 on the 120 test stars of a small run).
+
 ---
 
 ## Failure modes
@@ -947,9 +1262,12 @@ the transit.
 `SYN-000935` (P = 9.0 d, 3 transits) are both missed at the search stage. With a
 27.4-day baseline, a 10-day planet contributes at most three events, the folding
 gain is `sqrt(3)`, and the BLS peak is not distinguishable from the alias forest.
-Single-transit events are excluded by construction — the period grid is capped at
-half the baseline, because a single event cannot be confirmed as periodic. Real
-surveys solve this by stacking sectors, not by better statistics on one.
+Single-transit events are excluded from the periodic search by construction: the
+period grid is capped at half the baseline, because a single event cannot be
+confirmed as periodic. Real surveys solve this by stacking sectors, not by better
+statistics on one. `vet` now also lists lone and paired dips from a separate
+single-event search (see "Single and duo transits" above), but the classifier and
+these numbers do not use it.
 
 **3. Grazing, V-shaped transits.** `SYN-001633` (b = 0.94) and `SYN-000250`
 (b = 0.92) are both missed. A grazing planet produces exactly the V-shaped,
@@ -1094,29 +1412,43 @@ transit-detection/
 │   │   └── loader.py           # source -> feature matrix, parallel over curves
 │   ├── preprocess.py           # robust spline + rotation detrending
 │   ├── features.py             # BLS search and vetting statistics
+│   ├── fastbls.py              # the same BLS as array operations, NumPy or CuPy
+│   ├── tls.py                  # Transit Least Squares as the search
+│   ├── search_benchmark.py     # BLS against TLS on the same planets
 │   ├── search.py               # iterative multi-planet search
+│   ├── single.py               # single and duo transits, found without folding
 │   ├── centroid.py             # difference-image and centroid-motion tests
 │   ├── model.py                # split, baselines, training, threshold, save/load
+│   ├── calibration.py          # Platt scaling on out-of-fold scores; Brier, ECE
+│   ├── treeshap.py             # exact SHAP values from the fitted trees
 │   ├── evaluate.py             # PR curves, AP, confusion matrix, failure analysis
 │   ├── benchmark.py            # the trained model scored on real TOI dispositions
 │   ├── views.py                # global, local, odd, even, secondary folded views
 │   ├── kepler_dr25.py          # python -m transitml.kepler_dr25: training set + model
 │   ├── cnn.py                  # python -m transitml.cnn: CNN on the views (needs torch)
 │   ├── vet.py                  # python -m transitml.vet: one star, one page
+│   ├── single_benchmark.py     # injection-recovery for lone transits
+│   ├── batch.py                # python -m transitml.batch: a sector, cached and ranked
+│   ├── dashboard.py            # the batch's self-contained HTML dashboard
 │   └── plots.py                # figures (matplotlib Agg, no display)
-├── tests/                      # 295 tests, ~4 min
+├── tests/                      # 394 tests, ~6 min
 │   ├── test_generator.py       # imbalance is exact; injected physics is consistent
 │   ├── test_preprocess.py      # depth preservation; why the median was rejected
 │   ├── test_features.py        # recovery vs SNR; the vetting statistics fire
+│   ├── test_fastbls.py         # array BLS equals astropy's; engine changes nothing
+│   ├── test_tls.py             # TLS finds the period; same features; falls back
 │   ├── test_search.py          # two planets found; noise yields nothing
+│   ├── test_single.py          # lone and duo transits found; ramps and noise are not
 │   ├── test_stitch.py          # sectors joined; marginal pair becomes a detection
 │   ├── test_evaluation.py      # no test-set leakage into threshold or metrics
+│   ├── test_calibration.py     # Platt fit, ranking unchanged, proper scores
+│   ├── test_treeshap.py        # SHAP against brute force and the shap package
 │   ├── test_injection.py       # injection is exact, leaves noise alone, runs offline
 │   ├── test_systematics.py     # sector systematics are shared, seeded and switchable
 │   ├── test_toi.py             # TOI parsing, per-star labels, sector choice
 │   ├── test_benchmark.py       # the real-label benchmark, offline, from a cache
 │   ├── test_files.py           # CSV and npz input
-│   ├── test_model_io.py        # saved model reloads with threshold and features
+│   ├── test_model_io.py        # saved model reloads with threshold, calibration, features
 │   ├── test_vet.py             # vet end to end on CSV, npz and a stubbed TIC
 │   ├── test_kepler_dr25.py     # DR25 labels, FITS, views and CLI, offline
 │   ├── test_cnn.py             # the CNN on synthetic views (skips without torch)
@@ -1124,6 +1456,7 @@ transit-detection/
 │   ├── test_synthetic_tpf.py   # synthetic pixels put the light where it belongs
 │   ├── test_centroid.py        # blends flagged, on-target not; bad input survives
 │   ├── test_vet_centroid.py    # centroid section in JSON and PNG; score unchanged
+│   ├── test_batch.py           # ranking, cache reuse and invalidation, dashboard
 │   └── test_pipeline.py        # end to end, reproducible, figures on disk
 ├── figures/                    # committed, so this README renders
 └── results/                    # metrics.json + report.txt, committed
@@ -1131,7 +1464,8 @@ transit-detection/
 
 `python run_pipeline.py --help` exposes `--seed`, `--n-curves`, `--n-jobs`,
 `--no-figures`, `--systematics` (with `--systematics-scale` and
-`--systematics-components`) and the output directories. Runtime scales linearly in
+`--systematics-components`), `--search` and `--bls-engine`, and the output
+directories. Runtime scales linearly in
 `--n-curves`; the BLS search is the bottleneck and is parallel across curves.
 
 ## Roadmap
@@ -1157,19 +1491,28 @@ on. Sizes are rough: S is a few hours, M a day or two, L longer.
   significances also scaled by the event-to-event depth scatter, and a second
   detrend with the strongest signal masked. Confirmed planets above TOI SNR
   100 reading as odd/even binaries fell from 36% to 6%.
+- Structured spacecraft systematics in the synthetic sector (`--systematics`),
+  measured on paired controls: a cost of 0.06 to 0.14 in average precision.
+- Single and duo transit search in `vet`, with its own injection-recovery
+  benchmark (`python -m transitml.single_benchmark`).
+- Transit Least Squares as a search option (`--search tls`; AP 0.77 against
+  BLS 0.80) and an array BLS that can run on a GPU.
+- Calibrated probabilities (Platt scaling) and exact per-star SHAP reasons
+  in `vet`.
+- `python -m transitml.batch`: a whole sector through `vet`, with a cache
+  and a candidate dashboard.
+- Kepler DR25 training set (`python -m transitml.kepler_dr25`): 34,032
+  labelled TCEs with folded views; a gradient-boosting model on the views
+  scores AP 0.905 on held-out stars, against 0.312 for ranking by MES and
+  0.339 by chance.
 
 **Planned**
 
 | Item | What it adds | Size |
 | --- | --- | --- |
-| Structured systematics in the generator, in review | 13.7-day scattered light, camera-correlated jitter and focus drift, so the synthetic noise stops flattering the result | M |
-| Single-transit and duo-transit search, in review | Events the period grid excludes by construction today | M |
-| Transit Least Squares and GPU BLS, in review | An alternative search and a faster one; BLS is the runtime bottleneck | M |
-| Kepler DR25 training set, then an optional CNN, in review | About 34k labels, enough to train on transit shape | L |
-| Probability calibration and per-candidate SHAP, in review | A calibrated score and an exact reason per object | S |
-| Batch mode over a whole sector, in review | On-disk caching and a candidate list | M |
+| CNN on the DR25 folded views, in progress | A model that learns transit shape, now that there are enough labels | L |
 | Planet parameter fits, in review | batman and emcee fits for candidates that pass | M |
-| Per-star occultation allowance | Stop rejecting hot Jupiters on their own secondary eclipse, using each host's temperature and density from the TOI table | M |
+| Per-star occultation allowance, in review | Stop rejecting hot Jupiters on their own secondary eclipse, using each host's temperature and density from the TOI table | M |
 
 ## References
 

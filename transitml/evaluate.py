@@ -35,9 +35,14 @@ from sklearn.metrics import (
     roc_auc_score,
 )
 
+from .calibration import calibration_summary
 from .data.loader import Dataset
 from .features import FEATURE_NAMES
 from .model import BASELINES, Split, TrainedModel
+from .treeshap import top_reasons
+
+#: SHAP reasons listed per star in the report's false-positive and missed-planet rows.
+N_SHAP_REASONS: int = 3
 
 
 @dataclass
@@ -89,6 +94,10 @@ class EvaluationResult:
     search_recovery: float = float("nan")
     bootstrap_win_rate_vs_best_baseline: float = float("nan")
     feature_importance: list[dict[str, Any]] = field(default_factory=list)
+    calibration: dict[str, Any] = field(default_factory=dict)
+    shap_base_log_odds: float = float("nan")
+    shap_importance: list[dict[str, Any]] = field(default_factory=list)
+    false_positives: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -118,6 +127,13 @@ class EvaluationResult:
             "search_recovery_rate": self.search_recovery,
             "bootstrap_win_rate_vs_best_baseline": self.bootstrap_win_rate_vs_best_baseline,
             "feature_importance": self.feature_importance,
+            "calibration": self.calibration,
+            "shap": {
+                "units": "calibrated log-odds; base + sum over features = the star's log-odds",
+                "base_log_odds": self.shap_base_log_odds,
+                "mean_abs_by_feature": self.shap_importance,
+            },
+            "false_positives": self.false_positives,
         }
 
 
@@ -341,6 +357,17 @@ def evaluate(
     )
 
     predicted = scores >= trained.threshold
+    probability = trained.probability(X_test)
+    calibration = calibration_summary(
+        y_test,
+        scores,
+        probability,
+        trained.log_odds(X_test),
+        predicted,
+        trained.calibration,
+        trained.threshold_probability,
+    )
+    shap_values = trained.explain(X_test)
     tn, fp, fn, tp = confusion_matrix(y_test, predicted, labels=[0, 1]).ravel()
     precision = float(tp / (tp + fp)) if (tp + fp) else float("nan")
     recall = float(tp / (tp + fn)) if (tp + fn) else float("nan")
@@ -361,6 +388,20 @@ def evaluate(
         str(kind): int(np.sum(fp_mask & (kinds == kind))) for kind in np.unique(kinds)
     }
     fp_breakdown = {k: v for k, v in fp_breakdown.items() if k != "planet"}
+    target_ids = meta_test["target_id"].astype(str).to_numpy()
+    false_positives = [
+        {
+            "target_id": str(target_ids[i]),
+            "kind": str(kinds[i]),
+            "model_score": float(scores[i]),
+            "probability": float(probability[i]),
+            "pushed_up_by": top_reasons(
+                shap_values[i], X_test[i], FEATURE_NAMES, N_SHAP_REASONS, "up"
+            ),
+        }
+        for i in np.flatnonzero(fp_mask)
+    ]
+    false_positives.sort(key=lambda r: -r["model_score"])
 
     # And which planets were missed, with the parameters that explain why.
     missed = predicted == False  # noqa: E712 - explicit for the mask below
@@ -386,6 +427,10 @@ def evaluate(
                 "impact_parameter": _as_float(row["impact_parameter"]),
                 "n_transits_in_window": _as_float(row["n_transits_in_window"]),
                 "model_score": float(scores[i]),
+                "probability": float(probability[i]),
+                "pushed_down_by": top_reasons(
+                    shap_values[i], X_test[i], FEATURE_NAMES, N_SHAP_REASONS, "down"
+                ),
                 "period_recovered": bool(recovered[i]),
                 "odd_even_sigma": _as_float(feature_row["odd_even_sigma"]),
                 "secondary_sigma": _as_float(feature_row["secondary_sigma"]),
@@ -437,7 +482,28 @@ def evaluate(
         search_recovery=float(recovered[y_test == 1].mean()) if (y_test == 1).any() else float("nan"),
         bootstrap_win_rate_vs_best_baseline=win_rate,
         feature_importance=importance,
+        calibration=calibration,
+        shap_base_log_odds=trained.base_log_odds,
+        shap_importance=shap_importance(shap_values),
+        false_positives=false_positives,
     )
+
+
+def shap_importance(shap_values: NDArray[np.float64]) -> list[dict[str, Any]]:
+    """Mean absolute SHAP value per feature, largest first.
+
+    The global view that complements permutation importance: how far, on
+    average, knowing this feature moves a star's log-odds, rather than how
+    much average precision is lost without it.  A feature can move many
+    scores a long way and still cost little AP when shuffled, if another
+    feature carries the same information.
+    """
+    mean_abs = np.abs(shap_values).mean(axis=0)
+    rows = [
+        {"feature": name, "mean_abs_shap": float(v)} for name, v in zip(FEATURE_NAMES, mean_abs)
+    ]
+    rows.sort(key=lambda r: -r["mean_abs_shap"])
+    return rows
 
 
 def _as_float(value: Any) -> float:
@@ -553,6 +619,9 @@ def format_report(result: EvaluationResult) -> str:
     for key, value in result.precision_at_k.items():
         add(f"  {key:<34s} {value:.3f}")
     add("")
+    if result.calibration:
+        lines.extend(format_calibration(result.calibration))
+        add("")
     add("Completeness vs injected transit SNR (held-out planets)")
     add("-" * 72)
     add("  recall = P(search finds the period) x P(classifier keeps it | found)")
@@ -574,6 +643,29 @@ def format_report(result: EvaluationResult) -> str:
     for row in result.feature_importance[:8]:
         add(f"  {row['feature']:<28s} {row['importance']:+.4f} +/- {row['std']:.4f}")
     add("")
+    if result.shap_importance:
+        add("What moves a star's score (mean |SHAP| on test, in calibrated log-odds)")
+        add("-" * 72)
+        base = result.shap_base_log_odds
+        add(
+            f"  every star starts at log-odds {base:+.2f} (P = {1.0 / (1.0 + np.exp(-base)):.3f}); "
+            "its SHAP values add up to its own"
+        )
+        for row in result.shap_importance[:8]:
+            add(f"  {row['feature']:<28s} {row['mean_abs_shap']:.3f}")
+        add("")
+    if result.false_positives:
+        add("False positives at the operating threshold, and what pushed each one up (SHAP)")
+        add("-" * 72)
+        for row in result.false_positives[:12]:
+            add(
+                f"  {row['target_id']:<12s} {row['kind']:<18s} score {row['model_score']:.3f}"
+                f"   P(planet) {row['probability']:.3f}"
+            )
+            add(f"               -> {_format_reasons(row['pushed_up_by'])}")
+        if len(result.false_positives) > 12:
+            add(f"  ... and {len(result.false_positives) - 12} more")
+        add("")
     add("Missed planets (false negatives at the operating threshold)")
     add("-" * 72)
     if not result.missed_breakdown:
@@ -594,7 +686,74 @@ def format_report(result: EvaluationResult) -> str:
                 else ""
             )
         )
+        if row["period_recovered"] and row.get("pushed_down_by"):
+            add(f"               pushed down by {_format_reasons(row['pushed_down_by'])}")
     if len(result.missed_breakdown) > 12:
         add(f"  ... and {len(result.missed_breakdown) - 12} more")
     add("=" * 72)
     return "\n".join(lines)
+
+
+def _format_reasons(rows: list[dict[str, Any]]) -> str:
+    """``feature = value (+0.84), ...`` for SHAP reason rows."""
+    if not rows:
+        return "nothing (no feature pushed this way)"
+    return ", ".join(
+        f"{r['feature']} = {r['value']:.3g} ({r['shap']:+.2f})" for r in rows
+    )
+
+
+def format_calibration(calibration: dict[str, Any]) -> list[str]:
+    """The report's calibration block: the map, proper scores, counts and a reliability table."""
+    lines: list[str] = []
+    add = lines.append
+    scaling = calibration["scaling"]
+    add("Calibrated probability (Platt scaling fitted on out-of-fold training scores)")
+    add("-" * 72)
+    sign = "-" if scaling["intercept"] < 0 else "+"
+    add(
+        f"  P(planet) = 1 / (1 + exp(-({scaling['slope']:.3f} s {sign} "
+        f"{abs(scaling['intercept']):.3f}))), s = the trees' log-odds"
+    )
+    add("  monotone in the score, so ranking, average precision and verdicts are unchanged")
+    add(
+        f"  the operating threshold is P(planet) = {calibration['threshold_as_probability']:.3f}"
+        f" at the training planet rate ({scaling['train_positive_rate']:.2%})"
+    )
+    add("")
+    add(f"  {'held-out probabilities':<30s}{'Brier':>9s}{'log loss':>11s}{'ECE':>9s}")
+    labels = {
+        "training_rate": "constant training planet rate",
+        "uncalibrated": "score read as a probability",
+        "calibrated": "calibrated",
+    }
+    for key, label in labels.items():
+        row = calibration["scores"][key]
+        add(f"  {label:<30s}{row['brier']:>9.4f}{row['log_loss']:>11.4f}{row['ece']:>9.4f}")
+    expected = calibration["expected_planets"]
+    add("")
+    add(
+        f"  planets the calibrated probabilities expect: {expected['all']:.1f} in the test set"
+        f" ({expected['all_observed']} there),"
+    )
+    add(
+        f"  {expected['flagged']:.1f} among the {expected['n_flagged']} flagged"
+        f" ({expected['flagged_observed']} of them planets)"
+    )
+    add(
+        f"  calibration slope on test {calibration['test_calibration_slope']:.2f}, intercept "
+        f"{calibration['test_calibration_intercept']:+.2f}"
+    )
+    add("  (1 and 0 are ideal; a slope below 1 means the probabilities are too extreme)")
+    add("")
+    add(f"  {'calibrated P(planet)':<22s}{'stars':>7s}{'planets':>9s}{'mean P':>9s}{'observed':>10s}")
+    for row in calibration["reliability"]["calibrated"]:
+        label = f"{row['p_low']:.3g} - {row['p_high']:.3g}"
+        if row["n"] == 0:
+            add(f"  {label:<22s}{0:>7d}{0:>9d}{'':>9s}{'':>10s}")
+            continue
+        add(
+            f"  {label:<22s}{row['n']:>7d}{row['n_planets']:>9d}"
+            f"{row['mean_predicted']:>9.3f}{row['observed_rate']:>10.3f}"
+        )
+    return lines

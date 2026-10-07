@@ -25,18 +25,22 @@ detail that a handful of scalars throws away.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import cached_property
 from pathlib import Path
 from typing import Any, Protocol
 
 import joblib
 import numpy as np
 from numpy.typing import NDArray
+from scipy.special import expit, logit
 from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.model_selection import StratifiedKFold, train_test_split
 
+from .calibration import PlattScaling, fit_platt
 from .config import BLSConfig, EvalConfig, PreprocessConfig
 from .data.loader import Dataset
 from .features import FEATURE_NAMES
+from .treeshap import TreeExplainer
 
 
 @dataclass
@@ -167,6 +171,31 @@ BASELINES: tuple[Baseline, ...] = (
 )
 
 
+def cross_val_raw_scores(
+    X: NDArray[np.float64],
+    y: NDArray[np.int_],
+    *,
+    n_folds: int,
+    seed: int,
+) -> NDArray[np.float64]:
+    """Out-of-fold log-odds (``decision_function``) over the *training* set.
+
+    These are what the operating threshold is chosen from (as probabilities,
+    :func:`cross_val_scores`) and what the probability calibration is fitted
+    to.  Choosing either on in-sample predictions would be optimistic by
+    construction; choosing it on the test set would leak the test set into
+    the reported numbers.  Out-of-fold predictions on train are the only
+    option that is neither.
+    """
+    oof = np.zeros(len(y), dtype=float)
+    folds = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=seed)
+    for train_idx, val_idx in folds.split(X, y):
+        model = build_model(seed)
+        model.fit(X[train_idx], y[train_idx])
+        oof[val_idx] = model.decision_function(X[val_idx])
+    return oof
+
+
 def cross_val_scores(
     X: NDArray[np.float64],
     y: NDArray[np.int_],
@@ -174,25 +203,78 @@ def cross_val_scores(
     n_folds: int,
     seed: int,
 ) -> NDArray[np.float64]:
-    """Out-of-fold positive-class probabilities over the *training* set.
+    """Out-of-fold positive-class scores: :func:`cross_val_raw_scores` through the logistic.
 
-    These are what the operating threshold is chosen from.  Choosing a
-    threshold on in-sample predictions would pick a threshold that is optimistic
-    by construction; choosing it on the test set would leak the test set into
-    the reported confusion matrix.  Out-of-fold predictions on train are the
-    only option that is neither.
+    Bit for bit what ``predict_proba`` returns, which applies the same
+    ``expit`` to the same log-odds.
     """
-    oof = np.zeros(len(y), dtype=float)
-    folds = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=seed)
-    for train_idx, val_idx in folds.split(X, y):
-        model = build_model(seed)
-        model.fit(X[train_idx], y[train_idx])
-        oof[val_idx] = model.predict_proba(X[val_idx])[:, 1]
-    return oof
+    return expit(cross_val_raw_scores(X, y, n_folds=n_folds, seed=seed))
+
+
+class _Scorer:
+    """Scores, calibrated probabilities and SHAP reasons from one fitted classifier.
+
+    Three numbers come out of the same trees.  ``score`` is the classifier's
+    own output, which ranks the stars and is what the operating threshold is
+    set on.  ``probability`` is that score calibrated
+    (:mod:`transitml.calibration`): monotone in ``score``, so it changes no
+    ranking and no verdict.  ``explain`` splits each star's calibrated log-odds
+    into one part per feature (:mod:`transitml.treeshap`).
+    """
+
+    estimator: HistGradientBoostingClassifier
+    calibration: PlattScaling
+    threshold: float
+
+    def score(self, X: NDArray[np.float64]) -> NDArray[np.float64]:
+        return self.estimator.predict_proba(np.atleast_2d(X))[:, 1]
+
+    def raw_score(self, X: NDArray[np.float64]) -> NDArray[np.float64]:
+        """The trees' log-odds, before calibration."""
+        return self.estimator.decision_function(np.atleast_2d(X))
+
+    def probability(
+        self, X: NDArray[np.float64], positive_rate: float | None = None
+    ) -> NDArray[np.float64]:
+        """Calibrated ``P(planet)``, at the training planet rate unless ``positive_rate`` is given."""
+        return self.calibration.probability(self.raw_score(X), positive_rate)
+
+    def log_odds(
+        self, X: NDArray[np.float64], positive_rate: float | None = None
+    ) -> NDArray[np.float64]:
+        """Calibrated log-odds, the quantity :meth:`explain` divides up."""
+        return self.calibration.log_odds(self.raw_score(X), positive_rate)
+
+    @cached_property
+    def explainer(self) -> TreeExplainer:
+        return TreeExplainer(self.estimator)
+
+    @property
+    def base_log_odds(self) -> float:
+        """Calibrated log-odds at the trees' mean output over the training set.
+
+        Every explanation starts here: it is the SHAP base value, the score
+        before any of the star's features is known.
+        """
+        return float(self.calibration.log_odds(np.array([self.explainer.expected_value]))[0])
+
+    def explain(self, X: NDArray[np.float64]) -> NDArray[np.float64]:
+        """SHAP values in calibrated log-odds: ``base_log_odds + row sum = log_odds(X)``.
+
+        Calibration is linear in the trees' log-odds, so the trees' SHAP
+        values scaled by its slope are exactly the SHAP values of the
+        calibrated log-odds.
+        """
+        return self.calibration.slope * self.explainer.shap_values(X)
+
+    @property
+    def threshold_probability(self) -> float:
+        """The operating threshold expressed as a calibrated probability."""
+        return float(self.calibration.probability(np.array([logit(self.threshold)]))[0])
 
 
 @dataclass
-class TrainedModel:
+class TrainedModel(_Scorer):
     """A fitted classifier plus everything chosen on training data alone."""
 
     estimator: HistGradientBoostingClassifier
@@ -201,9 +283,7 @@ class TrainedModel:
     threshold_rule: str
     achieved_cv_precision: float
     achieved_cv_recall: float
-
-    def score(self, X: NDArray[np.float64]) -> NDArray[np.float64]:
-        return self.estimator.predict_proba(X)[:, 1]
+    calibration: PlattScaling
 
 
 def wilson_lower_bound(
@@ -312,9 +392,11 @@ def train(
 ) -> TrainedModel:
     """Cross-validate on train, choose the threshold, then refit on all of train.
 
-    The test set is not read anywhere in this function.
+    The probability calibration is fitted to the same out-of-fold scores as
+    the threshold.  The test set is not read anywhere in this function.
     """
-    oof = cross_val_scores(split.X_train, split.y_train, n_folds=n_folds, seed=seed)
+    oof_raw = cross_val_raw_scores(split.X_train, split.y_train, n_folds=n_folds, seed=seed)
+    oof = expit(oof_raw)
     threshold, rule, precision, recall = select_threshold(
         split.y_train, oof, target_precision, precision_lcb_z
     )
@@ -327,23 +409,25 @@ def train(
         threshold_rule=rule,
         achieved_cv_precision=precision,
         achieved_cv_recall=recall,
+        calibration=fit_platt(oof_raw, split.y_train),
     )
 
 
 # --------------------------------------------------------------------------
 # Persistence: the fitted model, for scoring single stars with ``vet``
 # --------------------------------------------------------------------------
-#: Bumped whenever the saved layout changes, or a feature changes meaning (2:
-#: masked second detrend pass, binary tests scaled by event scatter), so an
-#: old file fails loudly instead of scoring features it was not trained on.
-MODEL_FORMAT_VERSION = 2
+#: Bumped whenever the saved layout changes, or a feature changes meaning, so
+#: an old file fails loudly instead of scoring features it was not trained on.
+#: 2 added the probability calibration; 3 the masked second detrend pass and
+#: the binary tests scaled by event scatter.
+MODEL_FORMAT_VERSION = 3
 
 
 def feature_medians(X: NDArray[np.float64]) -> NDArray[np.float64]:
     """Per-column median over finite values; NaN for a column with none.
 
     Stored with the model as the "typical training curve" that ``vet``
-    replaces one feature at a time with to show which features moved a score.
+    shows beside each feature's value.
     """
     medians = np.full(X.shape[1], np.nan)
     for j in range(X.shape[1]):
@@ -354,7 +438,7 @@ def feature_medians(X: NDArray[np.float64]) -> NDArray[np.float64]:
 
 
 @dataclass
-class SavedModel:
+class SavedModel(_Scorer):
     """Everything ``vet`` needs to score a new light curve the way training did."""
 
     estimator: HistGradientBoostingClassifier
@@ -362,12 +446,10 @@ class SavedModel:
     threshold_rule: str
     feature_names: tuple[str, ...]
     train_medians: NDArray[np.float64]
+    calibration: PlattScaling
     preprocess: PreprocessConfig = field(default_factory=PreprocessConfig)
     bls: BLSConfig = field(default_factory=BLSConfig)
     provenance: dict[str, Any] = field(default_factory=dict)
-
-    def score(self, X: NDArray[np.float64]) -> NDArray[np.float64]:
-        return self.estimator.predict_proba(np.atleast_2d(X))[:, 1]
 
 
 def save_model(
@@ -394,6 +476,7 @@ def save_model(
         "threshold_rule": trained.threshold_rule,
         "feature_names": list(FEATURE_NAMES),
         "train_medians": feature_medians(split.X_train),
+        "calibration": trained.calibration.to_dict(),
         "preprocess": preprocess,
         "bls": bls,
         "provenance": {
@@ -410,8 +493,13 @@ def save_model(
 def load_model(path: str | Path) -> SavedModel:
     """Inverse of :func:`save_model`.  Refuses a file whose features do not match."""
     payload = joblib.load(Path(path))
-    if not isinstance(payload, dict) or payload.get("format_version") != MODEL_FORMAT_VERSION:
-        raise ValueError(f"{path}: not a transitml model file (or an old format)")
+    if not isinstance(payload, dict) or "format_version" not in payload:
+        raise ValueError(f"{path}: not a transitml model file")
+    if payload["format_version"] != MODEL_FORMAT_VERSION:
+        raise ValueError(
+            f"{path}: saved in model format {payload['format_version']}, this version reads "
+            f"{MODEL_FORMAT_VERSION}; retrain with run_pipeline.py"
+        )
     names = tuple(payload["feature_names"])
     if names != FEATURE_NAMES:
         raise ValueError(
@@ -423,6 +511,7 @@ def load_model(path: str | Path) -> SavedModel:
         threshold_rule=str(payload["threshold_rule"]),
         feature_names=names,
         train_medians=np.asarray(payload["train_medians"], dtype=float),
+        calibration=PlattScaling(**payload["calibration"]),
         preprocess=payload["preprocess"],
         bls=payload["bls"],
         provenance=dict(payload["provenance"]),
