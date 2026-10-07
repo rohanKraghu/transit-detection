@@ -716,11 +716,11 @@ as everything else, so a score of 0.5 does not mean half such stars are
 planets. `transitml/calibration.py` fits Platt scaling, one logistic map
 `P(planet) = 1 / (1 + exp(-(a s + b)))` on the trees' log-odds `s`, to the
 same out-of-fold training scores the threshold is chosen from. Here
-`a = 0.582, b = -1.245`. The map is strictly increasing, so the ranking,
+`a = 0.587, b = -1.220`. The map is strictly increasing, so the ranking,
 average precision, the threshold and every verdict are unchanged (the
 regenerated `results/metrics.json` matches the previous run on all of them);
 only the number attached to each star moves. The operating threshold
-becomes P(planet) = 0.117. Isotonic regression was not used: with 62
+becomes P(planet) = 0.118. Isotonic regression was not used: with 62
 training planets it is a staircase of a few steps, each set by two or three
 stars.
 
@@ -729,28 +729,28 @@ On the 840 held-out stars:
 | Probability | Brier | Log loss | ECE |
 |---|---|---|---|
 | Constant training planet rate (3.97%) | 0.0388 | 0.1695 | 0.0007 |
-| Score read as a probability | 0.0172 | 0.0757 | 0.0204 |
-| **Calibrated** | **0.0150** | **0.0711** | 0.0166 |
+| Score read as a probability | 0.0191 | 0.0874 | 0.0237 |
+| **Calibrated** | **0.0168** | **0.0766** | 0.0139 |
 
 Brier and log loss reward calibration and separation together, so they lead;
 expected calibration error on its own would crown the constant forecast,
 which is perfectly calibrated and tells you nothing about any star.
-Calibration cuts the log loss by 6% and the Brier score by 13% against the
+Calibration cuts the log loss and the Brier score by 12% each against the
 raw score.
 
 ![Calibration](figures/06_calibration.png)
 
-**The calibrated probabilities are not spread out enough.** They expect 38.3
+**The calibrated probabilities are a little too cautious.** They expect 37.1
 planets in the test set, which holds 34, within one standard deviation of
-the binomial scatter (4.8). But the excess sits between P = 0.03 and 0.3,
-where 166 stars expect 11.4 planets and hold 5, while the 50 flagged stars
-expect 23.7 and hold 26, and all 19 stars above P = 0.6 are planets. A
-logistic fit of the outcome on the calibrated log-odds gives slope 1.30 and
-intercept +0.37 (1 and 0 ideal): the many unlikely stars get a little too
-much probability and the few likely ones too little. Two things push this
-way: the map is fitted to the scores of fold models trained on 80% of the
-training split and applied to the model refit on all of it, and 62 planets
-set it.
+the binomial scatter (4.5). The excess sits between P = 0.03 and 0.3, where
+150 stars expect 10.6 planets and hold 6, while the 49 flagged stars expect
+24.1 and hold 26, and 17 of the 19 stars above P = 0.6 are planets. A
+logistic fit of the outcome on the calibrated log-odds gives slope 1.11 and
+intercept +0.07 (1 and 0 ideal): the many unlikely stars get slightly too
+much probability and the few likely ones slightly too little. Two things
+push this way: the map is fitted to the scores of fold models trained on 80%
+of the training split and applied to the model refit on all of it, and 62
+planets set it.
 
 The probability is for a star drawn from the training population, where 4%
 of stars host a detectable planet. For any other population Bayes' rule
@@ -759,7 +759,7 @@ does that.
 
 **SHAP reasons.** `transitml/treeshap.py` computes exact SHAP values from the
 fitted trees: per star, one number per feature, in calibrated log-odds, that
-add up with a base value (-4.32, P = 0.013) to the star's own log-odds. It is
+add up with a base value (-4.49, P = 0.011) to the star's own log-odds. It is
 the quantity path-dependent TreeSHAP computes, written as a closed form per
 leaf (a few vectorised lines; trees of depth 3 have at most three features
 on a path). `tests/test_treeshap.py` checks it against brute-force
@@ -769,24 +769,25 @@ enumeration of every feature subset and against the `shap` package, to
 ![SHAP summary](figures/07_shap_summary.png)
 
 Mean |SHAP| and permutation importance rank the features differently, and
-both are right. `log_depth`, `max_single_event_fraction`,
-`log_duration_ratio` and `flux_skew` move a typical star by 0.34 to 0.47 in
+both are right. `log_depth`, `flux_skew`, `harmonic_delta_loglike` and
+`max_single_event_fraction` move a typical star by 0.35 to 0.39 in
 log-odds, so they lead on mean |SHAP|, but each carries information others
 share, so shuffling one costs less average precision. `secondary_sigma` and
-`odd_even_sigma` move a typical star by about 0.2 and a few by up to -1.6:
-those few are the eclipsing binaries. On the 53 held-out binaries their
-mean |SHAP| is 1.04 and 0.55, against 0.16 and 0.19 for everything else,
-and one or the other is the largest push down for 46 of the 53. That is
-why `secondary_sigma` is second in permutation importance: it is what keeps
-binaries off the top of the list.
+`odd_even_sigma` move a typical star by 0.30 and 0.25 and a few by up to
+-1.7 and -1.5: those few are the eclipsing binaries. On the 53 held-out
+binaries their mean |SHAP| is 0.97 and 0.63, against 0.25 and 0.22 for
+everything else, and one or the other is the largest push down for 45 of
+the 53. That is why `secondary_sigma` is first in permutation importance:
+it is what keeps binaries off the top of the list.
 
 The report lists, for each held-out false positive, the three features that
 pushed it up most, and for each planet the classifier rejected, the three
-that pushed it down. Of the 24 false positives (17 variable stars, 7
-binaries), 11 were pushed up most by `flux_skew`, and 5 each by `log_depth`
-and `max_single_event_fraction`: they looked like planets on the shape of
-their flux distribution, on depth, and on dips spread over several events
-rather than one.
+that pushed it down. Of the 23 false positives (15 variable stars, 8
+binaries), 11 were pushed up most by `flux_skew`, 5 by
+`max_single_event_fraction` and 3 each by `power_contrast` and `log_depth`:
+they looked like planets on the shape of their flux distribution, on dips
+spread over several events rather than one, on a clean periodogram peak, and
+on depth.
 
 ### Why not a 1D CNN on folded light curves
 
