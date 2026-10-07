@@ -1133,7 +1133,7 @@ It writes four things to `--out-dir` (default `results/batch/<source>/`):
 The committed demo is `results/batch/synthetic_seed7/`, from
 `python -m transitml.batch --synthetic 2000 --seed 7 --reports 3`: 2000 stars
 the model has never seen, from the training generator with a different seed.
-It took 231 s on 4 cores, about half a core-second per star.
+It took 236 s on 4 cores, about half a core-second per star.
 
 **Caching.** There are two layers, so a sector can be stopped and resumed
 and a rerun does only what changed. Downloaded light curves are saved in
