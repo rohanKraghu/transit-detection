@@ -1813,7 +1813,6 @@ on. Sizes are rough: S is a few hours, M a day or two, L longer.
 - Multi-sector stitching (`--stitch`, `stitch_light_curves`).
 - Centroid vetting from target pixel files (`vet --tpf`, `--centroids`):
   a difference-image offset and centroid motion, reported beside the score.
-  Checked on synthetic pixels only so far.
 - Benchmark against real TOI dispositions (`--benchmark-tois`; 746 hosts in
   sectors 14 to 26, AP 0.61 against a chance level of 0.50).
 - Binary tests that hold up on bright real stars: odd/even and secondary
@@ -1843,6 +1842,10 @@ on. Sizes are rough: S is a few hours, M a day or two, L longer.
   above TOI SNR 100 are kept, up from 86.
 - A CNN on the DR25 views (`python -m transitml.cnn`, PyTorch optional):
   AP 0.919 against 0.915 for boosting on the same 2,720 held-out TCEs, a tie.
+- Centroid veto on the real TOI benchmark (`--benchmark-centroids`): flags
+  30% of false positives placed on another star and 1.6% of confirmed
+  planets, and lifts AP from 0.61 to 0.68 (sectors 1 to 13 replicate: 0.72
+  to 0.77).
 
 **Next**
 
@@ -1851,7 +1854,6 @@ to next:
 
 | Item | Why | Size |
 | --- | --- | --- |
-| Centroid test on the real TOI benchmark, in progress | Blended binaries are the false positives the light-curve model cannot separate, and the centroid test has only been checked on synthetic pixels | M |
 | Both models on the full 34,032 DR25 TCEs, in progress | On 9,075 TCEs the CNN ties boosting; its case rests on more data or views boosting cannot use | L |
 
 ## References
