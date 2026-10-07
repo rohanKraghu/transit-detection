@@ -8,98 +8,98 @@ scored stars: 376 planets (CP/KP), 370 false positives (FP/FA), positive rate 50
 
 At the frozen operating threshold (chosen on the training split only)
 ------------------------------------------------------------------------
-  threshold: 0.4587
-  confirmed planets kept (recall):       0.551
-  known false positives rejected:        0.616
-    FA   n = 27    rejected 0.963
-    FP   n = 343   rejected 0.589
-  precision at this catalogue's mix:     0.593   (not a survey precision; see below)
+  threshold: 0.5028
+  confirmed planets kept (recall):       0.559
+  known false positives rejected:        0.630
+    FA   n = 27    rejected 1.000
+    FP   n = 343   rejected 0.601
+  precision at this catalogue's mix:     0.605   (not a survey precision; see below)
 
   Confusion matrix (rows = disposition, cols = prediction)
                           pred: no planet    pred: planet
-    FP / FA                         228             142
-    CP / KP                         169             207
+    FP / FA                         233             137
+    CP / KP                         166             210
 
 Ranking (average precision; chance = positive rate)
 ------------------------------------------------------------------------
   random ranking (chance)            AP = 0.504
   baseline: depth_threshold          AP = 0.584  [0.559, 0.613]   (ROC-AUC 0.599)
   baseline: bls_snr                  AP = 0.597  [0.571, 0.625]   (ROC-AUC 0.576)
-  model: gradient boosting           AP = 0.610  [0.585, 0.640]   (ROC-AUC 0.603)
+  model: gradient boosting           AP = 0.607  [0.582, 0.637]   (ROC-AUC 0.598)
   (brackets are 68% bootstrap intervals)
-  the model beats the best baseline in 69.3% of paired bootstrap resamples
-  precision of model_top20                    0.600
+  the model beats the best baseline in 66.0% of paired bootstrap resamples
+  precision of model_top20                    0.750
   precision of depth_threshold_top20          0.350
   precision of bls_snr_top20                  0.650
 
 Did the search find the catalogued signal?
 ------------------------------------------------------------------------
   BLS period matches the TOI period (or a low-order alias): planets 0.73, false positives 0.73
-  planet recall when the period was found: 0.73   when it was not: 0.08
+  planet recall when the period was found: 0.74   when it was not: 0.07
 
   recall by catalogue TOI SNR (all sectors; one sector is scored here)
   SNR bin             n   recall   search
   0 - 10             34     0.12     0.32
   10 - 20            81     0.41     0.59
   20 - 40            93     0.51     0.74
-  40 - inf          168     0.73     0.88
+  40 - inf          168     0.75     0.88
 
 Kept at the threshold, by catalogued depth: does the model separate the
 classes, or rank both by signal strength?
   depth (ppm)      planets   kept    FPs   kept
-  0 - 1000             102   0.29    125   0.23
-  1000 - 3000           84   0.52    123   0.44
-  3000 - 6000           52   0.58     49   0.51
-  6000 - 10000          71   0.75     34   0.53
-  10000 - inf           67   0.75     39   0.41
+  0 - 1000             102   0.29    125   0.24
+  1000 - 3000           84   0.51    123   0.43
+  3000 - 6000           52   0.56     49   0.47
+  6000 - 10000          71   0.82     34   0.56
+  10000 - inf           67   0.75     39   0.31
 
 Highest-SNR confirmed planets the model rejected
 ------------------------------------------------------------------------
-  TIC 69679391    TOI 1151.01  KP  S14  SNR 1017.0  P    3.47 d  BLS    3.48 d  score 0.260
-                  odd/even 2.0 sigma, secondary 1.1 sigma, red-noise beta 3.17
-  TIC 375506058   TOI 1431.01  CP  S15  SNR  615.0  P    2.65 d  BLS    2.65 d  score 0.212
-                  odd/even 0.6 sigma, secondary 5.2 sigma, red-noise beta 2.33
-  TIC 367366318   TOI 1682.01  KP  S19  SNR  592.0  P    2.73 d  BLS    2.74 d  score 0.279
-                  odd/even 1.0 sigma, secondary 2.5 sigma, red-noise beta 3.82
-  TIC 27848472    TOI 2131.01  KP  S26  SNR  391.0  P    1.85 d  BLS    1.85 d  score 0.147
-                  odd/even 0.8 sigma, secondary 2.8 sigma, red-noise beta 1.33
-  TIC 427761355   TOI 1518.01  CP  S17  SNR  365.5  P    1.90 d  BLS    1.90 d  score 0.341
-                  odd/even 0.3 sigma, secondary 6.0 sigma, red-noise beta 1.34
-  TIC 16740101    TOI 1150.01  KP  S14  SNR  356.0  P    1.48 d  BLS    1.48 d  score 0.400
-                  odd/even 1.1 sigma, secondary 2.4 sigma, red-noise beta 1.39
-  TIC 28230919    TOI 1144.01  KP  S14  SNR  330.0  P    4.89 d  BLS    4.89 d  score 0.432
+  TIC 69679391    TOI 1151.01  KP  S14  SNR 1017.0  P    3.47 d  BLS    3.48 d  score 0.413
+                  odd/even 2.0 sigma, secondary 0.0 sigma, red-noise beta 3.17
+  TIC 310002617   TOI 4087.01  CP  S14  SNR  338.0  P    3.18 d  BLS    3.18 d  score 0.463
+                  odd/even 7.7 sigma, secondary 0.0 sigma, red-noise beta 1.10
+  TIC 28230919    TOI 1144.01  KP  S14  SNR  330.0  P    4.89 d  BLS    4.89 d  score 0.474
                   odd/even 3.2 sigma, secondary -0.7 sigma, red-noise beta 1.26
-  TIC 120757718   TOI 1236.01  KP  S14  SNR  327.6  P    3.03 d  BLS    3.03 d  score 0.053
+  TIC 120757718   TOI 1236.01  KP  S14  SNR  327.6  P    3.03 d  BLS    3.03 d  score 0.079
                   odd/even 2.9 sigma, secondary -2.3 sigma, red-noise beta 1.58
-  TIC 302773669   TOI 1573.01  KP  S18  SNR  277.0  P   21.22 d  BLS    9.91 d  score 0.006
-                  odd/even 67.1 sigma, secondary 0.1 sigma, red-noise beta 1.46, period not recovered
-  TIC 266593143   TOI 1283.01  KP  S15  SNR  275.0  P   10.34 d  BLS   10.34 d  score 0.003
-                  odd/even 10.5 sigma, secondary 2.1 sigma, red-noise beta 0.86
-  ... and 159 more
+  TIC 302773669   TOI 1573.01  KP  S18  SNR  277.0  P   21.22 d  BLS    9.91 d  score 0.008
+                  odd/even 67.1 sigma, secondary 0.0 sigma, red-noise beta 1.46, period not recovered
+  TIC 266593143   TOI 1283.01  KP  S15  SNR  275.0  P   10.34 d  BLS   10.34 d  score 0.002
+                  odd/even 10.5 sigma, secondary 2.0 sigma, red-noise beta 0.86
+  TIC 157236902   TOI 4465.01  CP  S26  SNR  257.0  P n/a d  BLS   10.43 d  score 0.044
+                  odd/even 0.0 sigma, secondary -0.5 sigma, red-noise beta 1.01, period not recovered
+  TIC 142394656   TOI 1268.01  CP  S15  SNR  238.0  P    8.16 d  BLS    8.16 d  score 0.031
+                  odd/even 5.6 sigma, secondary 1.0 sigma, red-noise beta 1.25
+  TIC 236445129   TOI 1282.01  KP  S15  SNR  210.7  P    0.97 d  BLS    0.97 d  score 0.163
+                  odd/even 2.2 sigma, secondary 0.0 sigma, red-noise beta 1.91
+  TIC 257060897   TOI 4138.01  CP  S14  SNR  209.4  P    3.66 d  BLS    3.66 d  score 0.440
+                  odd/even 0.2 sigma, secondary -1.8 sigma, red-noise beta 3.88
+  ... and 156 more
 
 Highest-scoring false positives the model kept
 ------------------------------------------------------------------------
   TIC 467783290   TOI 3753.01  FP  S19  SNR   44.0  P    3.65 d  BLS    3.65 d  score 0.997
-                  odd/even 1.5 sigma, secondary 0.3 sigma, red-noise beta 1.08
-  TIC 191146556   TOI 1549.01  FP  S17  SNR   80.0  P    2.58 d  BLS    2.58 d  score 0.997
-                  odd/even 1.1 sigma, secondary -1.5 sigma, red-noise beta 1.53
-  TIC 138497780   TOI 3808.01  FP  S20  SNR   54.5  P    3.68 d  BLS    3.68 d  score 0.996
-                  odd/even 1.7 sigma, secondary 0.5 sigma, red-noise beta 1.05
-  TIC 193628179   TOI 5198.01  FP  S25  SNR   83.8  P    3.26 d  BLS    3.26 d  score 0.995
-                  odd/even 1.1 sigma, secondary -1.8 sigma, red-noise beta 1.27
-  TIC 139118482   TOI 3914.01  FP  S23  SNR   72.0  P    6.71 d  BLS    6.71 d  score 0.995
-                  odd/even 0.7 sigma, secondary 0.6 sigma, red-noise beta 1.07
-  TIC 367099243   TOI 1365.01  FP  S16  SNR  126.0  P    1.83 d  BLS    1.83 d  score 0.995
-                  odd/even 1.1 sigma, secondary 0.5 sigma, red-noise beta 1.54
-  TIC 346418409   TOI 1423.01  FP  S16  SNR   47.9  P    2.76 d  BLS    2.76 d  score 0.995
-                  odd/even 0.5 sigma, secondary 0.6 sigma, red-noise beta 1.07
-  TIC 137157546   TOI 4148.01  FP  S18  SNR   21.0  P    3.68 d  BLS    3.68 d  score 0.994
-                  odd/even 0.8 sigma, secondary -0.2 sigma, red-noise beta 0.99
+                  odd/even 1.5 sigma, secondary 0.1 sigma, red-noise beta 1.08
+  TIC 138497780   TOI 3808.01  FP  S20  SNR   54.5  P    3.68 d  BLS    3.68 d  score 0.995
+                  odd/even 1.7 sigma, secondary 0.4 sigma, red-noise beta 1.05
+  TIC 116608612   TOI 1649.01  FP  S19  SNR  200.0  P    3.46 d  BLS    3.46 d  score 0.994
+                  odd/even 0.6 sigma, secondary 0.0 sigma, red-noise beta 1.38
   TIC 305026599   TOI 7245.01  FP  S14  SNR   19.0  P    1.69 d  BLS    1.69 d  score 0.994
                   odd/even 0.8 sigma, secondary -0.1 sigma, red-noise beta 0.95
-  TIC 410528770   TOI 1502.01  FP  S16  SNR   37.0  P    2.75 d  BLS    2.75 d  score 0.994
+  TIC 41330864    TOI 1168.01  FP  S14  SNR  123.0  P    2.14 d  BLS    2.14 d  score 0.994
+                  odd/even 0.9 sigma, secondary 0.0 sigma, red-noise beta 1.14
+  TIC 461538935   TOI 4157.01  FP  S18  SNR   28.0  P    5.29 d  BLS    5.29 d  score 0.992
+                  odd/even 0.1 sigma, secondary -0.8 sigma, red-noise beta 1.04
+  TIC 316402246   TOI 1498.01  FP  S15  SNR  113.0  P    1.40 d  BLS    1.40 d  score 0.992
+                  odd/even 0.1 sigma, secondary -1.3 sigma, red-noise beta 1.40
+  TIC 346418409   TOI 1423.01  FP  S16  SNR   47.9  P    2.76 d  BLS    2.76 d  score 0.992
+                  odd/even 0.5 sigma, secondary 0.5 sigma, red-noise beta 1.07
+  TIC 410528770   TOI 1502.01  FP  S16  SNR   37.0  P    2.75 d  BLS    2.75 d  score 0.992
                   odd/even 0.2 sigma, secondary -0.4 sigma, red-noise beta 1.00
-  ... and 132 more
+  TIC 284450803   TOI 1142.01  FP  S14  SNR  212.0  P    3.37 d  BLS    3.37 d  score 0.992
+                  odd/even 0.4 sigma, secondary 0.0 sigma, red-noise beta 1.13
+  ... and 127 more
 
 Reading these numbers
 ------------------------------------------------------------------------

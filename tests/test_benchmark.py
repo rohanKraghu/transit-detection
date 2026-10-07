@@ -201,6 +201,7 @@ def test_run_pipeline_benchmark_reads_a_cache_offline(
     """The ``--benchmark-tois`` path end to end, from a TOI table and a curve cache."""
     import run_pipeline
     import transitml.benchmark as bench
+    import transitml.data.tic as tic_module
     from transitml.data.injection import save_curves
     from transitml.data.synthetic import SyntheticTESSSource
 
@@ -222,6 +223,13 @@ def test_run_pipeline_benchmark_reads_a_cache_offline(
         raise AssertionError("everything is cached; MAST must not be queried")
 
     monkeypatch.setattr(bench, "fetch_benchmark_curves", no_network)
+    looked_up: list[int] = []
+
+    def fake_tic(ids):
+        looked_up.extend(ids)
+        return {tic: {"teff_k": 6000.0, "rho_star_cgs": 1.0} for tic in ids}
+
+    monkeypatch.setattr(tic_module, "fetch_tic_stars", fake_tic)
     args = run_pipeline.parse_args(
         [
             "--benchmark-tois", str(table),
@@ -241,6 +249,9 @@ def test_run_pipeline_benchmark_reads_a_cache_offline(
     assert (tmp_path / "results" / "toi_benchmark.txt").exists()
     assert json.loads((tmp_path / "results" / "toi_benchmark.json").read_text())["sectors"] == [14]
     assert (tmp_path / "figures" / "05_toi_benchmark.png").exists()
+    # Each host's star is looked up once and kept beside the TOI table.
+    assert sorted(looked_up) == sorted(t.tic for t in targets)
+    assert (tmp_path / "tic_stars.csv").exists()
 
 
 def test_training_stars_are_named_for_exclusion(toi_hosts):

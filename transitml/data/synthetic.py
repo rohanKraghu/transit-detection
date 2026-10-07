@@ -19,7 +19,8 @@ Three populations are produced:
     A genuine transiting planet.  Label 1.  Depth follows (Rp/Rs)^2, duration
     follows from Kepler's third law and the impact parameter, so depth and
     duration are *correlated the way real transits are* -- a classifier cannot
-    cheat by learning an unphysical depth/duration combination.
+    cheat by learning an unphysical depth/duration combination.  Close-in
+    giants also show their occultation at phase 0.5, as real hot Jupiters do.
 
 ``eclipsing_binary``
     An eclipsing binary.  Label 0.  These are the astrophysical false positives
@@ -46,7 +47,13 @@ from ..config import (
     SurveyConfig,
     SystematicsConfig,
 )
-from ..physics import RHO_SUN_CGS, scaled_semi_major_axis, transit_durations
+from ..physics import (
+    RHO_SUN_CGS,
+    main_sequence_teff,
+    occultation_depth,
+    scaled_semi_major_axis,
+    transit_durations,
+)
 from .base import LightCurve, LightCurveSource
 
 CurveKind = Literal["planet", "eclipsing_binary", "noise"]
@@ -349,7 +356,8 @@ def trapezoid_transit(
     t14, t23:
         Total and flat-bottom durations.  ``t23 = 0`` yields a V shape.
     secondary_depth:
-        Depth of the secondary eclipse at phase 0.5 (eclipsing binaries only).
+        Depth of the secondary eclipse at phase 0.5: a binary's secondary, or
+        a planet's occultation.
     odd_even_fraction:
         Odd eclipses are deepened and even eclipses shallowed by this fraction.
         Non-zero only for binaries whose true period is twice the detected one.
@@ -485,6 +493,7 @@ class SyntheticTESSSource(LightCurveSource):
             "sigma_white": sigma_white,
             "r_star_rsun": r_star,
             "rho_star_cgs": rho_star,
+            "teff_k": main_sequence_teff(rho_star),
         }
 
         # --- astrophysical + instrumental background -----------------------
@@ -580,8 +589,18 @@ def planet_signal(
     t14, t23 = transit_durations(period, a_rs, k, impact)
     depth = k**2 * cfg.limb_darkening_boost
     epoch = float(time[0] + rng.uniform(0.0, period))
+    # No random draw for the occultation: the curve's later draws (its noise)
+    # stay the same whether or not the planet has one.
+    occultation = occultation_depth(
+        k,
+        a_rs,
+        main_sequence_teff(rho_star),
+        geometric_albedo=cfg.geometric_albedo,
+        bond_albedo=1.5 * cfg.geometric_albedo,
+        redistribution=cfg.heat_redistribution,
+    )
 
-    dip = trapezoid_transit(time, period, epoch, depth, t14, t23)
+    dip = trapezoid_transit(time, period, epoch, depth, t14, t23, secondary_depth=occultation)
     meta = {
         "period": period,
         "epoch": epoch,
@@ -591,6 +610,7 @@ def planet_signal(
         "radius_ratio": k,
         "impact_parameter": impact,
         "a_over_rs": a_rs,
+        "secondary_depth": occultation,
         "n_transits_in_window": int(
             np.count_nonzero(np.unique(np.round((time - epoch) / period)) * 0 + 1)
             if t14 > 0

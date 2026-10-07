@@ -19,7 +19,8 @@ The features fall into four groups:
     The two significances are divided by the red-noise ``beta`` or by the
     event-to-event depth scatter ratio, whichever is larger (floored at 1), so
     correlated noise and inconsistent events cannot masquerade as a binary
-    signature.
+    signature.  The secondary counts only what is deeper than the planet's own
+    occultation could be around its star.
 
 **Noise characterisation** -- is the "detection" just correlated noise?
     ``red_noise_beta`` (Pont, Zucker & Queloz 2006), ``log_scatter``,
@@ -39,7 +40,7 @@ from scipy import stats
 
 from .config import BLSConfig, PreprocessConfig
 from .data.base import LightCurve
-from .physics import RHO_SUN_CGS, expected_central_duration
+from .physics import RHO_SUN_CGS, expected_central_duration, max_occultation_fraction
 from .preprocess import FlattenedLightCurve, flatten, robust_sigma
 
 #: Fixed column order.  The model, the permutation-importance plot and the
@@ -449,6 +450,21 @@ def depth_scatter_ratio(
     return float(np.sqrt(chi2 / dof)) if dof >= 2 else float("nan")
 
 
+def secondary_excess(secondary_depth: float, allowance: float) -> float:
+    """The part of the phase-0.5 depth that no planet's occultation could produce.
+
+    A hot Jupiter's own occultation is a secondary eclipse, and on a bright
+    star a significant one, so the secondary test discounts the deepest one a
+    planet could show (``allowance``, see
+    :func:`~transitml.physics.max_occultation_fraction`).  A dip within it
+    reads as zero, a brightening is left as it is, and with no allowance
+    (NaN, an unknown star) the whole depth counts.
+    """
+    if not np.isfinite(allowance) or allowance <= 0:
+        return float(secondary_depth)
+    return float(secondary_depth - np.clip(secondary_depth, 0.0, allowance))
+
+
 def extract_features(
     lc: FlattenedLightCurve,
     config: BLSConfig | None = None,
@@ -529,7 +545,10 @@ def extract_features(
     odd_even_inflation = max(inflation, beta_inflation(primary_ratio))
     secondary_inflation = max(inflation, beta_inflation(secondary_ratio))
     odd_even_raw = _pair_sigma(stats_dict["depth_odd"], stats_dict["depth_even"])
-    secondary_raw = float(sec_value / sec_err) if sec_err > 0 else np.nan
+    allowance = max_occultation_fraction(period, lc.teff_k, lc.density_cgs) * max(depth, 0.0)
+    secondary_raw = (
+        float(secondary_excess(sec_value, allowance) / sec_err) if sec_err > 0 else np.nan
+    )
 
     total_ll = float(np.sum(np.abs(per_transit_ll[observed]))) if n_transits else 0.0
     max_single = (

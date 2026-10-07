@@ -25,6 +25,62 @@
       "ramp_probability": 0.45,
       "flare_probability": 0.15
     },
+    "systematics": {
+      "enabled": false,
+      "scale": 1.0,
+      "components": [
+        "scattered_light",
+        "jitter",
+        "momentum_dumps",
+        "focus"
+      ],
+      "n_cameras": 4,
+      "orbit_days": 13.7,
+      "scattered_light_sigma_range": [
+        1.0,
+        20.0
+      ],
+      "camera_scattered_light": [
+        1.0,
+        0.6,
+        0.35,
+        0.2
+      ],
+      "scattered_light_rise_days_range": [
+        0.8,
+        2.5
+      ],
+      "scattered_light_decay_days_range": [
+        0.15,
+        0.6
+      ],
+      "earthshine_modulation_range": [
+        0.0,
+        0.5
+      ],
+      "jitter_sigma_range": [
+        0.3,
+        1.5
+      ],
+      "jitter_alpha": 1.0,
+      "momentum_dump_interval_days_range": [
+        2.5,
+        5.0
+      ],
+      "momentum_dump_sigma_range": [
+        1.0,
+        8.0
+      ],
+      "momentum_dump_settle_days": 0.06,
+      "focus_sigma_range": [
+        0.5,
+        5.0
+      ],
+      "focus_settle_days_range": [
+        0.5,
+        3.0
+      ]
+    },
     "star": {
       "radius_range_rsun": [
         0.35,
@@ -50,7 +106,9 @@
         0.11
       ],
       "impact_parameter_max": 0.95,
-      "limb_darkening_boost": 1.18
+      "limb_darkening_boost": 1.18,
+      "geometric_albedo": 0.1,
+      "heat_redistribution": 0.5
     },
     "eb": {
       "period_range_days": [
@@ -108,7 +166,8 @@
         0.11,
         0.16,
         0.24
-      ]
+      ],
+      "search": "bls"
     },
     "multi_planet": {
       "max_signals": 3,
@@ -116,13 +175,33 @@
       "mask_half_width_durations": 1.5,
       "min_cadences": 200
     },
+    "single_event": {
+      "durations_days": [
+        0.06,
+        0.1,
+        0.15,
+        0.22,
+        0.33,
+        0.45
+      ],
+      "min_snr": 7.5,
+      "min_coverage": 0.6,
+      "max_events": 4,
+      "ramp_delta_chi2": 4.0,
+      "duo_depth_sigma": 3.0,
+      "duo_depth_fraction": 0.2,
+      "duo_duration_ratio": 1.6,
+      "duo_max_harmonic": 30,
+      "duo_veto_fraction": 0.5,
+      "stellar_density_cgs": 1.41
+    },
     "evaluation": {
       "target_precision": 0.5,
       "precision_lcb_z": 1.0,
       "top_k": 20
     }
   },
-  "runtime_seconds": 253.7,
+  "runtime_seconds": 561.4,
   "dataset": {
     "source": "InjectionSource",
     "n_curves": 2800,
@@ -139,49 +218,49 @@
     "model": {
       "name": "gradient_boosting",
       "description": "HistGradientBoostingClassifier on BLS + vetting features",
-      "average_precision": 0.43488798763865444,
+      "average_precision": 0.46142673190803163,
       "average_precision_ci68": [
-        0.3610656649661952,
-        0.5324963635276039
+        0.3902243749511063,
+        0.5630855199106773
       ],
-      "roc_auc": 0.8195863647510832
+      "roc_auc": 0.8194228725578352
     },
     "baselines": [
       {
         "name": "depth_threshold",
         "description": "Rank by the depth of the best BLS box. The naive heuristic: deeper dip = more likely a planet.",
-        "average_precision": 0.07324514681405069,
+        "average_precision": 0.07083308645184784,
         "average_precision_ci68": [
-          0.06131655438113872,
-          0.09683071939349927
+          0.05948123385859669,
+          0.09344504463499136
         ],
-        "roc_auc": 0.677429902722145
+        "roc_auc": 0.6737513283740701
       },
       {
         "name": "bls_snr",
         "description": "Rank by BLS depth signal-to-noise. The classical single-statistic transit search, and a genuinely strong baseline.",
-        "average_precision": 0.09971037009197027,
+        "average_precision": 0.09871959965763426,
         "average_precision_ci68": [
-          0.08504512173740217,
-          0.12709335124965052
+          0.08431651325581029,
+          0.12606435196696475
         ],
-        "roc_auc": 0.7731000844709665
+        "roc_auc": 0.7711926755497425
       }
     ],
-    "lift_over_chance": 10.927954561176445,
+    "lift_over_chance": 11.594825571022334,
     "operating_point": {
-      "threshold": 0.4586864739572276,
-      "rule": "max recall subject to Wilson 1-sigma lower bound on CV precision >= 0.50 (bound 0.503 at 73 candidates)",
-      "cv_precision_on_train": 0.5616438356164384,
-      "cv_recall_on_train": 0.5616438356164384,
-      "test_precision": 0.4,
-      "test_recall": 0.5641025641025641,
-      "test_f1": 0.46808510638297873,
+      "threshold": 0.5028321641170315,
+      "rule": "max recall subject to Wilson 1-sigma lower bound on CV precision >= 0.50 (bound 0.502 at 75 candidates)",
+      "cv_precision_on_train": 0.56,
+      "cv_recall_on_train": 0.5753424657534246,
+      "test_precision": 0.4791666666666667,
+      "test_recall": 0.5897435897435898,
+      "test_f1": 0.5287356321839081,
       "confusion_matrix": {
-        "true_negative": 908,
-        "false_positive": 33,
-        "false_negative": 17,
-        "true_positive": 22
+        "true_negative": 916,
+        "false_positive": 25,
+        "false_negative": 16,
+        "true_positive": 23
       }
     },
     "precision_at_k": {
@@ -190,8 +269,8 @@
       "bls_snr_top20": 0.05
     },
     "false_positive_breakdown": {
-      "eclipsing_binary": 11,
-      "noise": 22
+      "eclipsing_binary": 10,
+      "noise": 15
     },
     "missed_planets": [
       {
@@ -202,11 +281,29 @@
         "duration_hours": 0.7789858002824287,
         "impact_parameter": 0.7973745105394073,
         "n_transits_in_window": 26.0,
-        "model_score": 0.03713091996340156,
+        "model_score": 0.05298383315527718,
+        "probability": 0.03967868104909174,
+        "pushed_down_by": [
+          {
+            "feature": "clipped_fraction",
+            "value": 0.002459016393442623,
+            "shap": -0.35923860075955133
+          },
+          {
+            "feature": "bls_depth_over_scatter",
+            "value": 0.45892814079732613,
+            "shap": -0.24778045467976417
+          },
+          {
+            "feature": "log_duration_ratio",
+            "value": 0.3112220476028434,
+            "shap": -0.1275063904055714
+          }
+        ],
         "period_recovered": false,
-        "odd_even_sigma": 0.47686393400691524,
-        "secondary_sigma": -1.0177726014466004,
-        "red_noise_beta": 1.0398130382640813,
+        "odd_even_sigma": 0.4768604412900348,
+        "secondary_sigma": -1.0177732196354838,
+        "red_noise_beta": 1.039814026294195,
         "reason": "search did not recover the period"
       },
       {
@@ -217,11 +314,29 @@
         "duration_hours": 1.3423916606711515,
         "impact_parameter": 0.813705483705038,
         "n_transits_in_window": 10.0,
-        "model_score": 0.14370580757124074,
+        "model_score": 0.1882135242970475,
+        "probability": 0.09096738517473672,
+        "pushed_down_by": [
+          {
+            "feature": "harmonic_amp_over_depth",
+            "value": 0.005449328557931737,
+            "shap": -0.28863086086111844
+          },
+          {
+            "feature": "n_transits",
+            "value": 2.0,
+            "shap": -0.1219001644419792
+          },
+          {
+            "feature": "odd_even_sigma",
+            "value": 0.2399544707746217,
+            "shap": -0.06750604293159107
+          }
+        ],
         "period_recovered": false,
-        "odd_even_sigma": 0.24001099710354176,
-        "secondary_sigma": 0.14073268462727648,
-        "red_noise_beta": 0.9145394662636077,
+        "odd_even_sigma": 0.2399544707746217,
+        "secondary_sigma": 0.13799184999671416,
+        "red_noise_beta": 0.9145412476198621,
         "reason": "search did not recover the period"
       },
       {
@@ -232,11 +347,29 @@
         "duration_hours": 4.8383220063832795,
         "impact_parameter": 0.5499029966330348,
         "n_transits_in_window": 1.0,
-        "model_score": 0.07453767303793823,
+        "model_score": 0.07242639671632768,
+        "probability": 0.04838114056230587,
+        "pushed_down_by": [
+          {
+            "feature": "secondary_sigma",
+            "value": 1.486976103220766,
+            "shap": -1.2597288220683256
+          },
+          {
+            "feature": "harmonic_amp_over_depth",
+            "value": 0.005515297216427753,
+            "shap": -0.30542607532279736
+          },
+          {
+            "feature": "power_contrast",
+            "value": 1.1031070188668006,
+            "shap": -0.1967253247556367
+          }
+        ],
         "period_recovered": true,
-        "odd_even_sigma": 1.20435374190527,
-        "secondary_sigma": 1.5080481280268954,
-        "red_noise_beta": 1.073105239765254,
+        "odd_even_sigma": 1.2042088692448647,
+        "secondary_sigma": 1.486976103220766,
+        "red_noise_beta": 1.0731000450065593,
         "reason": "period recovered; classifier rejected it"
       },
       {
@@ -247,11 +380,29 @@
         "duration_hours": 1.7752810073133323,
         "impact_parameter": 0.22287028551211702,
         "n_transits_in_window": 11.0,
-        "model_score": 0.0866517082935707,
+        "model_score": 0.06608344445244661,
+        "probability": 0.04563715284657285,
+        "pushed_down_by": [
+          {
+            "feature": "power_contrast",
+            "value": 1.0452828613902108,
+            "shap": -0.31333390176746906
+          },
+          {
+            "feature": "odd_even_sigma",
+            "value": 0.13296903865379486,
+            "shap": -0.2401556740211426
+          },
+          {
+            "feature": "log_duration_ratio",
+            "value": 0.05901725940222094,
+            "shap": -0.1505974408386293
+          }
+        ],
         "period_recovered": true,
-        "odd_even_sigma": 0.1329632735532176,
-        "secondary_sigma": -0.2887140648020545,
-        "red_noise_beta": 1.0524709013161067,
+        "odd_even_sigma": 0.13296903865379486,
+        "secondary_sigma": -0.28779621065427763,
+        "red_noise_beta": 1.0524969876898556,
         "reason": "period recovered; classifier rejected it"
       },
       {
@@ -262,11 +413,29 @@
         "duration_hours": 3.0196007644651504,
         "impact_parameter": 0.5737287900127029,
         "n_transits_in_window": 2.0,
-        "model_score": 0.044976746535898664,
+        "model_score": 0.08144692654874161,
+        "probability": 0.052156590977414326,
+        "pushed_down_by": [
+          {
+            "feature": "bls_depth_over_scatter",
+            "value": 0.6411210979528535,
+            "shap": -0.3531976083051089
+          },
+          {
+            "feature": "power_contrast",
+            "value": 1.0582427431614216,
+            "shap": -0.2528931459130272
+          },
+          {
+            "feature": "half_period_depth_ratio",
+            "value": 0.5898676245797609,
+            "shap": -0.07922268553951613
+          }
+        ],
         "period_recovered": false,
-        "odd_even_sigma": 1.07140874502997,
-        "secondary_sigma": 0.7206332506225114,
-        "red_noise_beta": 1.0741845857816454,
+        "odd_even_sigma": 1.071376448884123,
+        "secondary_sigma": 0.6403999076900778,
+        "red_noise_beta": 1.0741864944175796,
         "reason": "search did not recover the period"
       },
       {
@@ -277,11 +446,29 @@
         "duration_hours": 2.4721344042377162,
         "impact_parameter": 0.7533956505255054,
         "n_transits_in_window": 7.0,
-        "model_score": 0.0004732992236585866,
+        "model_score": 0.0005954598109104676,
+        "probability": 0.0024415454945240288,
+        "pushed_down_by": [
+          {
+            "feature": "duration_over_period",
+            "value": 0.005062924281984214,
+            "shap": -1.6155153069756572
+          },
+          {
+            "feature": "harmonic_delta_loglike",
+            "value": -7.776345163441363,
+            "shap": -0.491585342649804
+          },
+          {
+            "feature": "flux_skew",
+            "value": 0.08927308883750391,
+            "shap": -0.17522014040008213
+          }
+        ],
         "period_recovered": false,
-        "odd_even_sigma": 0.7515339925081879,
-        "secondary_sigma": -1.1701123147494115,
-        "red_noise_beta": 1.0120674940005663,
+        "odd_even_sigma": 0.7522248351435874,
+        "secondary_sigma": -1.170319416350429,
+        "red_noise_beta": 1.0121629757286674,
         "reason": "search did not recover the period"
       },
       {
@@ -292,11 +479,29 @@
         "duration_hours": 1.872552820435248,
         "impact_parameter": 0.7971231205741549,
         "n_transits_in_window": 5.0,
-        "model_score": 0.002553597356380394,
+        "model_score": 0.0020822576143910243,
+        "probability": 0.005310064785760271,
+        "pushed_down_by": [
+          {
+            "feature": "bls_sde",
+            "value": 3.190062150948643,
+            "shap": -0.8262185649060053
+          },
+          {
+            "feature": "harmonic_delta_loglike",
+            "value": -7.627697333108642,
+            "shap": -0.5071234104323918
+          },
+          {
+            "feature": "harmonic_amp_over_depth",
+            "value": 0.0076794508739274295,
+            "shap": -0.39197558972551766
+          }
+        ],
         "period_recovered": false,
-        "odd_even_sigma": 0.9095903669402832,
-        "secondary_sigma": -0.6088843968139361,
-        "red_noise_beta": 0.9206005304883162,
+        "odd_even_sigma": 0.9096144742946831,
+        "secondary_sigma": -0.608921990690284,
+        "red_noise_beta": 0.920617265304674,
         "reason": "search did not recover the period"
       },
       {
@@ -307,11 +512,29 @@
         "duration_hours": 2.369385537342722,
         "impact_parameter": 0.7664312613518517,
         "n_transits_in_window": 8.0,
-        "model_score": 0.0013433909034673696,
+        "model_score": 0.011389271904616853,
+        "probability": 0.015221183402055662,
+        "pushed_down_by": [
+          {
+            "feature": "max_single_event_fraction",
+            "value": 0.08886215845082805,
+            "shap": -0.3955370009315033
+          },
+          {
+            "feature": "power_contrast",
+            "value": 1.0655383601932722,
+            "shap": -0.2772926335375499
+          },
+          {
+            "feature": "bls_depth_over_scatter",
+            "value": 0.3986469316260286,
+            "shap": -0.27134933541648637
+          }
+        ],
         "period_recovered": true,
-        "odd_even_sigma": 0.2096055169723967,
-        "secondary_sigma": 1.3217159721545444,
-        "red_noise_beta": 1.106490008948324,
+        "odd_even_sigma": 0.20956026876549966,
+        "secondary_sigma": 0.7535501101664601,
+        "red_noise_beta": 1.1066738106326446,
         "reason": "period recovered; classifier rejected it"
       },
       {
@@ -322,11 +545,29 @@
         "duration_hours": 1.7240406178693988,
         "impact_parameter": 0.7279760445405877,
         "n_transits_in_window": 4.0,
-        "model_score": 0.0007787483298566849,
+        "model_score": 0.0009973127188799447,
+        "probability": 0.0033630521775639185,
+        "pushed_down_by": [
+          {
+            "feature": "duration_over_period",
+            "value": 0.003814874773635171,
+            "shap": -1.6521402374093472
+          },
+          {
+            "feature": "harmonic_delta_loglike",
+            "value": -7.9111614178633545,
+            "shap": -0.49906297066347477
+          },
+          {
+            "feature": "harmonic_amp_over_depth",
+            "value": 0.004708967887325773,
+            "shap": -0.30982573991165435
+          }
+        ],
         "period_recovered": false,
-        "odd_even_sigma": 0.5853705304506863,
-        "secondary_sigma": -0.14599722402569834,
-        "red_noise_beta": 1.0206461598056138,
+        "odd_even_sigma": 0.5853811986041529,
+        "secondary_sigma": -0.14591260592639738,
+        "red_noise_beta": 1.020641860442808,
         "reason": "search did not recover the period"
       },
       {
@@ -337,11 +578,29 @@
         "duration_hours": 2.9820310513052775,
         "impact_parameter": 0.39742871810905045,
         "n_transits_in_window": 3.0,
-        "model_score": 0.0010644398006982394,
+        "model_score": 0.0003734342524777271,
+        "probability": 0.0018272121793705997,
+        "pushed_down_by": [
+          {
+            "feature": "secondary_sigma",
+            "value": 2.658282823339481,
+            "shap": -1.6295201095491716
+          },
+          {
+            "feature": "log_period",
+            "value": -0.2710270410588592,
+            "shap": -0.5653297410831153
+          },
+          {
+            "feature": "flux_skew",
+            "value": 0.08778840272110211,
+            "shap": -0.4244659435261964
+          }
+        ],
         "period_recovered": false,
-        "odd_even_sigma": 0.5847673347661935,
-        "secondary_sigma": 3.2887894971564986,
-        "red_noise_beta": 1.376968430076548,
+        "odd_even_sigma": 0.5847676184656744,
+        "secondary_sigma": 2.658282823339481,
+        "red_noise_beta": 1.3769793875366578,
         "reason": "search did not recover the period"
       },
       {
@@ -352,11 +611,29 @@
         "duration_hours": 1.7697221254307216,
         "impact_parameter": 0.3003515018212737,
         "n_transits_in_window": 6.0,
-        "model_score": 0.002700251047753372,
+        "model_score": 0.0018451113163499872,
+        "probability": 0.004926401148440158,
+        "pushed_down_by": [
+          {
+            "feature": "bls_sde",
+            "value": 3.303135573201335,
+            "shap": -0.8064431230938225
+          },
+          {
+            "feature": "clipped_fraction",
+            "value": 0.0025412960609911056,
+            "shap": -0.7159242905370758
+          },
+          {
+            "feature": "red_noise_beta",
+            "value": 1.2157875765046011,
+            "shap": -0.3636566579700328
+          }
+        ],
         "period_recovered": true,
         "odd_even_sigma": 0.0,
-        "secondary_sigma": 0.1995893863213078,
-        "red_noise_beta": 1.2157737849498458,
+        "secondary_sigma": 0.19854365448311512,
+        "red_noise_beta": 1.2157875765046011,
         "reason": "period recovered; classifier rejected it"
       },
       {
@@ -367,12 +644,30 @@
         "duration_hours": 3.182554326181327,
         "impact_parameter": 0.6132125966523725,
         "n_transits_in_window": 6.0,
-        "model_score": 0.059318433187477954,
-        "period_recovered": false,
-        "odd_even_sigma": 0.7758206350844776,
-        "secondary_sigma": 0.04422750134965801,
-        "red_noise_beta": 1.6997413967773833,
-        "reason": "search did not recover the period"
+        "model_score": 0.008595840523387263,
+        "probability": 0.012785572772916294,
+        "pushed_down_by": [
+          {
+            "feature": "secondary_sigma",
+            "value": 1.0625208309316418,
+            "shap": -1.0964297615396286
+          },
+          {
+            "feature": "red_noise_beta",
+            "value": 1.5711737261624863,
+            "shap": -0.3990406428823695
+          },
+          {
+            "feature": "clipped_fraction",
+            "value": 0.008840864440078585,
+            "shap": -0.381187531123448
+          }
+        ],
+        "period_recovered": true,
+        "odd_even_sigma": 0.17126540473083232,
+        "secondary_sigma": 1.0625208309316418,
+        "red_noise_beta": 1.5711737261624863,
+        "reason": "period recovered; classifier rejected it"
       },
       {
         "target_id": "TIC 230059993 inj00865",
@@ -382,11 +677,29 @@
         "duration_hours": 2.063277874503327,
         "impact_parameter": 0.6102549142451318,
         "n_transits_in_window": 4.0,
-        "model_score": 0.10705849491808153,
+        "model_score": 0.10225222906144606,
+        "probability": 0.06041863140245442,
+        "pushed_down_by": [
+          {
+            "feature": "harmonic_amp_over_depth",
+            "value": 0.005863686593519713,
+            "shap": -0.24597068293110153
+          },
+          {
+            "feature": "log_depth",
+            "value": -3.403745219539886,
+            "shap": -0.24174514291134847
+          },
+          {
+            "feature": "flux_skew",
+            "value": 0.06421551158435708,
+            "shap": -0.22910429549067446
+          }
+        ],
         "period_recovered": true,
-        "odd_even_sigma": 1.1655732286947333,
-        "secondary_sigma": 0.5664415648683307,
-        "red_noise_beta": 0.9864197310264385,
+        "odd_even_sigma": 1.165575274876507,
+        "secondary_sigma": 0.5644939269382045,
+        "red_noise_beta": 0.9864279292155339,
         "reason": "period recovered; classifier rejected it"
       },
       {
@@ -397,11 +710,29 @@
         "duration_hours": 2.1501148638699474,
         "impact_parameter": 0.14922307073895666,
         "n_transits_in_window": 3.0,
-        "model_score": 0.01745317825080799,
+        "model_score": 0.02026679532816884,
+        "probability": 0.021763218004642888,
+        "pushed_down_by": [
+          {
+            "feature": "red_noise_beta",
+            "value": 1.7952395502252638,
+            "shap": -0.6404711348974997
+          },
+          {
+            "feature": "log_period",
+            "value": -0.19601956672208126,
+            "shap": -0.420302949605956
+          },
+          {
+            "feature": "clipped_fraction",
+            "value": 0.0016488046166529267,
+            "shap": -0.2781750077885008
+          }
+        ],
         "period_recovered": false,
-        "odd_even_sigma": 1.0159444221703526,
-        "secondary_sigma": -2.9194890943896024,
-        "red_noise_beta": 1.7952465203186698,
+        "odd_even_sigma": 1.0159512519334608,
+        "secondary_sigma": -2.9194589682258067,
+        "red_noise_beta": 1.7952395502252638,
         "reason": "search did not recover the period"
       },
       {
@@ -412,11 +743,29 @@
         "duration_hours": 2.5122703377481734,
         "impact_parameter": 0.7122814294503849,
         "n_transits_in_window": 2.0,
-        "model_score": 0.15681635220137885,
+        "model_score": 0.15703460019973706,
+        "probability": 0.0803191420492249,
+        "pushed_down_by": [
+          {
+            "feature": "odd_even_sigma",
+            "value": 3.067432856176379,
+            "shap": -1.1407182517195527
+          },
+          {
+            "feature": "n_transits",
+            "value": 2.0,
+            "shap": -0.0987865484996227
+          },
+          {
+            "feature": "log_period",
+            "value": 1.1226886628452868,
+            "shap": -0.07939622091588286
+          }
+        ],
         "period_recovered": true,
-        "odd_even_sigma": 3.067506828191632,
+        "odd_even_sigma": 3.067432856176379,
         "secondary_sigma": 0.0,
-        "red_noise_beta": 0.9276441844490301,
+        "red_noise_beta": 0.9280510805854768,
         "reason": "period recovered; classifier rejected it"
       },
       {
@@ -427,27 +776,30 @@
         "duration_hours": 5.465018053576168,
         "impact_parameter": 0.3305268103331786,
         "n_transits_in_window": 3.0,
-        "model_score": 0.001908762125612015,
+        "model_score": 0.0004882774895607531,
+        "probability": 0.0021584083928598524,
+        "pushed_down_by": [
+          {
+            "feature": "odd_even_sigma",
+            "value": 72.30136202549667,
+            "shap": -1.1034511091769337
+          },
+          {
+            "feature": "red_noise_beta",
+            "value": 4.89931427862536,
+            "shap": -0.9081562105966285
+          },
+          {
+            "feature": "bls_sde",
+            "value": 2.4729835812651064,
+            "shap": -0.7621573320262551
+          }
+        ],
         "period_recovered": false,
-        "odd_even_sigma": 72.28774762424301,
-        "secondary_sigma": 0.8267718994033469,
-        "red_noise_beta": 4.895763039487562,
+        "odd_even_sigma": 72.30136202549667,
+        "secondary_sigma": 0.6742847958866153,
+        "red_noise_beta": 4.89931427862536,
         "reason": "search did not recover the period"
-      },
-      {
-        "target_id": "TIC 232563914 inj01989",
-        "true_snr": 51.14659576695494,
-        "depth_ppm": 975.241769565184,
-        "period_days": 1.5727556300635597,
-        "duration_hours": 2.097251998969391,
-        "impact_parameter": 0.1776635908462029,
-        "n_transits_in_window": 14.0,
-        "model_score": 0.3306076604747785,
-        "period_recovered": true,
-        "odd_even_sigma": 0.15815822707595367,
-        "secondary_sigma": 1.797901040276198,
-        "red_noise_beta": 1.3597149634332732,
-        "reason": "period recovered; classifier rejected it"
       }
     ],
     "recall_by_true_snr": [
@@ -464,8 +816,8 @@
         "snr_high": 12.0,
         "n_planets": 12,
         "recall": 0.6666666666666666,
-        "search_recovery": 0.8333333333333334,
-        "classifier_recall_given_search": 0.8
+        "search_recovery": 0.9166666666666666,
+        "classifier_recall_given_search": 0.7272727272727273
       },
       {
         "snr_low": 12.0,
@@ -487,128 +839,956 @@
         "snr_low": 40.0,
         "snr_high": 1000000000.0,
         "n_planets": 7,
-        "recall": 0.8571428571428571,
+        "recall": 1.0,
         "search_recovery": 1.0,
-        "classifier_recall_given_search": 0.8571428571428571
+        "classifier_recall_given_search": 1.0
       }
     ],
-    "search_recovery_rate": 0.7435897435897436,
+    "search_recovery_rate": 0.7692307692307693,
     "bootstrap_win_rate_vs_best_baseline": 1.0,
     "feature_importance": [
       {
         "feature": "bls_sde",
-        "importance": 0.10061189814202795,
-        "std": 0.027080593226128588
+        "importance": 0.09284916200668884,
+        "std": 0.0345823666997622
       },
       {
         "feature": "secondary_sigma",
-        "importance": 0.09028600158772213,
-        "std": 0.03740774727657496
+        "importance": 0.07577925652037235,
+        "std": 0.026701721289208773
       },
       {
         "feature": "log_depth",
-        "importance": 0.04588770612369651,
-        "std": 0.026745804915951226
+        "importance": 0.04332603855113466,
+        "std": 0.02800043089747264
       },
       {
         "feature": "log_period",
-        "importance": 0.03692731922135361,
-        "std": 0.023623449061804747
-      },
-      {
-        "feature": "clipped_fraction",
-        "importance": 0.035756249023358735,
-        "std": 0.015336277908994212
-      },
-      {
-        "feature": "power_contrast",
-        "importance": 0.02498923813579069,
-        "std": 0.018807056538620085
-      },
-      {
-        "feature": "bls_depth_snr",
-        "importance": 0.023050053695478717,
-        "std": 0.015888716086130038
-      },
-      {
-        "feature": "harmonic_delta_loglike",
-        "importance": 0.02243978030280705,
-        "std": 0.01901649817686271
-      },
-      {
-        "feature": "duration_over_period",
-        "importance": 0.021463379197574968,
-        "std": 0.013839591008150442
-      },
-      {
-        "feature": "odd_even_sigma",
-        "importance": 0.021058816311849103,
-        "std": 0.02674992450420243
-      },
-      {
-        "feature": "harmonic_amp_over_depth",
-        "importance": 0.0192254066158676,
-        "std": 0.02086863368916168
-      },
-      {
-        "feature": "flux_skew",
-        "importance": 0.01805011497995802,
-        "std": 0.026739076112585403
+        "importance": 0.042391976918553544,
+        "std": 0.029630717685928232
       },
       {
         "feature": "red_noise_beta",
-        "importance": 0.011590226733313008,
-        "std": 0.01071256389879168
+        "importance": 0.03164129096497199,
+        "std": 0.016767089964704718
       },
       {
-        "feature": "bls_depth_over_scatter",
-        "importance": 0.010432542933696127,
-        "std": 0.014190518441423022
+        "feature": "clipped_fraction",
+        "importance": 0.03016994734680579,
+        "std": 0.010298386235689514
+      },
+      {
+        "feature": "power_contrast",
+        "importance": 0.02632475704529602,
+        "std": 0.018704207220355793
+      },
+      {
+        "feature": "duration_over_period",
+        "importance": 0.02306951956558818,
+        "std": 0.019661362290826465
+      },
+      {
+        "feature": "harmonic_delta_loglike",
+        "importance": 0.01643041925930656,
+        "std": 0.019822038108779718
+      },
+      {
+        "feature": "harmonic_amp_over_depth",
+        "importance": 0.013128611063026718,
+        "std": 0.021352786983598653
       },
       {
         "feature": "log_duration_ratio",
-        "importance": 0.009260354490932715,
-        "std": 0.011806386883120912
+        "importance": 0.010829744994311868,
+        "std": 0.012455339892527322
       },
       {
-        "feature": "max_single_event_fraction",
-        "importance": 0.008160031254290184,
-        "std": 0.011246714023695516
+        "feature": "bls_depth_over_scatter",
+        "importance": 0.010144096648386747,
+        "std": 0.011834114586172942
       },
       {
-        "feature": "log_scatter",
-        "importance": 0.006815440626751523,
-        "std": 0.006113303086837282
+        "feature": "odd_even_sigma",
+        "importance": 0.0076452711962987415,
+        "std": 0.02259837592499692
       },
       {
-        "feature": "n_transits",
-        "importance": 0.00646944283693413,
-        "std": 0.005114180719629545
+        "feature": "flux_skew",
+        "importance": 0.006268456119010524,
+        "std": 0.023560875509954858
       },
       {
-        "feature": "delta_loglike",
-        "importance": 0.00517531235785938,
-        "std": 0.0033517487080133605
+        "feature": "bls_depth_snr",
+        "importance": 0.004050454234527473,
+        "std": 0.015298049939930308
       },
       {
         "feature": "flat_bottom_fraction",
-        "importance": 0.003729831596861727,
-        "std": 0.003015871734107842
+        "importance": 0.0019917103735863527,
+        "std": 0.0028226667260569144
       },
       {
         "feature": "min_points_per_transit",
-        "importance": 0.0017640597139772173,
-        "std": 0.0026490190272531015
+        "importance": 0.000729270591716652,
+        "std": 0.00047077725871597396
       },
       {
         "feature": "bls_duration",
-        "importance": 0.0008557603239080114,
-        "std": 0.007172615090116982
+        "importance": 0.0007256504923526197,
+        "std": 0.0013969769473047011
+      },
+      {
+        "feature": "log_scatter",
+        "importance": 0.00011362069760953997,
+        "std": 0.005788697616941159
+      },
+      {
+        "feature": "delta_loglike",
+        "importance": -0.002058256318887125,
+        "std": 0.007973703126079604
+      },
+      {
+        "feature": "max_single_event_fraction",
+        "importance": -0.0029330876165802157,
+        "std": 0.0066090026891796015
+      },
+      {
+        "feature": "n_transits",
+        "importance": -0.0056318353111119825,
+        "std": 0.006776525927092865
       },
       {
         "feature": "half_period_depth_ratio",
-        "importance": -0.004925213707012499,
-        "std": 0.018890144959388466
+        "importance": -0.0255235313475698,
+        "std": 0.018874589427940847
+      }
+    ],
+    "calibration": {
+      "method": "Platt scaling on out-of-fold training log-odds",
+      "scaling": {
+        "slope": 0.6222080609703837,
+        "intercept": -1.3924231404321008,
+        "train_positive_rate": 0.04010989010989011
+      },
+      "threshold_as_probability": 0.20014725302678626,
+      "scores": {
+        "training_rate": {
+          "brier": 0.03821230182690152,
+          "log_loss": 0.16729630553927524,
+          "ece": 0.00031397174254316895
+        },
+        "uncalibrated": {
+          "brier": 0.037210722910869146,
+          "log_loss": 0.16450528580919396,
+          "ece": 0.04550764822047974
+        },
+        "calibrated": {
+          "brier": 0.026384909767449102,
+          "log_loss": 0.11869660565098276,
+          "ece": 0.018223612120953848
+        }
+      },
+      "reliability": {
+        "uncalibrated": [
+          {
+            "p_low": 0.0,
+            "p_high": 0.003,
+            "n": 342,
+            "n_planets": 6,
+            "mean_predicted": 0.001071673617442264,
+            "observed_rate": 0.017543859649122806
+          },
+          {
+            "p_low": 0.003,
+            "p_high": 0.01,
+            "n": 197,
+            "n_planets": 1,
+            "mean_predicted": 0.00555433718392667,
+            "observed_rate": 0.005076142131979695
+          },
+          {
+            "p_low": 0.01,
+            "p_high": 0.03,
+            "n": 160,
+            "n_planets": 2,
+            "mean_predicted": 0.01800127958197532,
+            "observed_rate": 0.0125
+          },
+          {
+            "p_low": 0.03,
+            "p_high": 0.1,
+            "n": 153,
+            "n_planets": 4,
+            "mean_predicted": 0.05504243294190712,
+            "observed_rate": 0.026143790849673203
+          },
+          {
+            "p_low": 0.1,
+            "p_high": 0.3,
+            "n": 56,
+            "n_planets": 3,
+            "mean_predicted": 0.16466292089584858,
+            "observed_rate": 0.05357142857142857
+          },
+          {
+            "p_low": 0.3,
+            "p_high": 0.6,
+            "n": 29,
+            "n_planets": 1,
+            "mean_predicted": 0.42610577348102086,
+            "observed_rate": 0.034482758620689655
+          },
+          {
+            "p_low": 0.6,
+            "p_high": 1.0,
+            "n": 43,
+            "n_planets": 22,
+            "mean_predicted": 0.8834864007827181,
+            "observed_rate": 0.5116279069767442
+          }
+        ],
+        "calibrated": [
+          {
+            "p_low": 0.0,
+            "p_high": 0.003,
+            "n": 173,
+            "n_planets": 3,
+            "mean_predicted": 0.0018107559427357432,
+            "observed_rate": 0.017341040462427744
+          },
+          {
+            "p_low": 0.003,
+            "p_high": 0.01,
+            "n": 283,
+            "n_planets": 3,
+            "mean_predicted": 0.0060868274692766336,
+            "observed_rate": 0.01060070671378092
+          },
+          {
+            "p_low": 0.01,
+            "p_high": 0.03,
+            "n": 254,
+            "n_planets": 3,
+            "mean_predicted": 0.017655563983912326,
+            "observed_rate": 0.011811023622047244
+          },
+          {
+            "p_low": 0.03,
+            "p_high": 0.1,
+            "n": 186,
+            "n_planets": 7,
+            "mean_predicted": 0.048897824321685254,
+            "observed_rate": 0.03763440860215054
+          },
+          {
+            "p_low": 0.1,
+            "p_high": 0.3,
+            "n": 48,
+            "n_planets": 1,
+            "mean_predicted": 0.17240677563118023,
+            "observed_rate": 0.020833333333333332
+          },
+          {
+            "p_low": 0.3,
+            "p_high": 0.6,
+            "n": 14,
+            "n_planets": 7,
+            "mean_predicted": 0.42742534492033907,
+            "observed_rate": 0.5
+          },
+          {
+            "p_low": 0.6,
+            "p_high": 1.0,
+            "n": 22,
+            "n_planets": 15,
+            "mean_predicted": 0.7738133569670113,
+            "observed_rate": 0.6818181818181818
+          }
+        ]
+      },
+      "expected_planets": {
+        "all": 46.89871544010141,
+        "all_observed": 39,
+        "flagged": 26.064708716992392,
+        "flagged_observed": 23,
+        "n_flagged": 48
+      },
+      "test_calibration_slope": 0.8013183998181971,
+      "test_calibration_intercept": -0.6810870301490052
+    },
+    "shap": {
+      "units": "calibrated log-odds; base + sum over features = the star's log-odds",
+      "base_log_odds": -4.34263215378388,
+      "mean_abs_by_feature": [
+        {
+          "feature": "duration_over_period",
+          "mean_abs_shap": 0.5267909912150379
+        },
+        {
+          "feature": "bls_sde",
+          "mean_abs_shap": 0.39201535609537547
+        },
+        {
+          "feature": "secondary_sigma",
+          "mean_abs_shap": 0.3643261069801638
+        },
+        {
+          "feature": "log_depth",
+          "mean_abs_shap": 0.33286573841145306
+        },
+        {
+          "feature": "harmonic_delta_loglike",
+          "mean_abs_shap": 0.2702775055897517
+        },
+        {
+          "feature": "power_contrast",
+          "mean_abs_shap": 0.24039743223773385
+        },
+        {
+          "feature": "flux_skew",
+          "mean_abs_shap": 0.22582553252651696
+        },
+        {
+          "feature": "log_period",
+          "mean_abs_shap": 0.2158342081841651
+        },
+        {
+          "feature": "odd_even_sigma",
+          "mean_abs_shap": 0.2104817145687965
+        },
+        {
+          "feature": "harmonic_amp_over_depth",
+          "mean_abs_shap": 0.18846246771342115
+        },
+        {
+          "feature": "red_noise_beta",
+          "mean_abs_shap": 0.17896330783093825
+        },
+        {
+          "feature": "bls_depth_over_scatter",
+          "mean_abs_shap": 0.15773507401820663
+        },
+        {
+          "feature": "log_duration_ratio",
+          "mean_abs_shap": 0.15129897225779376
+        },
+        {
+          "feature": "half_period_depth_ratio",
+          "mean_abs_shap": 0.13513818488014748
+        },
+        {
+          "feature": "max_single_event_fraction",
+          "mean_abs_shap": 0.12084809453334074
+        },
+        {
+          "feature": "bls_depth_snr",
+          "mean_abs_shap": 0.10799198964158624
+        },
+        {
+          "feature": "clipped_fraction",
+          "mean_abs_shap": 0.10367774968939011
+        },
+        {
+          "feature": "n_transits",
+          "mean_abs_shap": 0.08523704530500087
+        },
+        {
+          "feature": "delta_loglike",
+          "mean_abs_shap": 0.0447604228612785
+        },
+        {
+          "feature": "log_scatter",
+          "mean_abs_shap": 0.024788070346123594
+        },
+        {
+          "feature": "flat_bottom_fraction",
+          "mean_abs_shap": 0.01400978812605543
+        },
+        {
+          "feature": "min_points_per_transit",
+          "mean_abs_shap": 0.006193428101532023
+        },
+        {
+          "feature": "bls_duration",
+          "mean_abs_shap": 0.002290997116518138
+        }
+      ]
+    },
+    "false_positives": [
+      {
+        "target_id": "TIC 158418695 inj01691",
+        "kind": "eclipsing_binary",
+        "model_score": 0.9962055203291329,
+        "probability": 0.8883035460053431,
+        "pushed_up_by": [
+          {
+            "feature": "bls_sde",
+            "value": 9.204572515269316,
+            "shap": 0.8655574710189399
+          },
+          {
+            "feature": "flux_skew",
+            "value": -0.6157959685846134,
+            "shap": 0.6328240407472
+          },
+          {
+            "feature": "secondary_sigma",
+            "value": 0.45382837649014873,
+            "shap": 0.5015076111910735
+          }
+        ]
+      },
+      {
+        "target_id": "TIC 395897191 inj01902",
+        "kind": "eclipsing_binary",
+        "model_score": 0.9901978731610394,
+        "probability": 0.8144603421032605,
+        "pushed_up_by": [
+          {
+            "feature": "bls_sde",
+            "value": 6.332698635216905,
+            "shap": 0.7807401662069269
+          },
+          {
+            "feature": "log_depth",
+            "value": -2.5322379007676683,
+            "shap": 0.6190164679267589
+          },
+          {
+            "feature": "odd_even_sigma",
+            "value": 1.2513372363400892,
+            "shap": 0.499669631967316
+          }
+        ]
+      },
+      {
+        "target_id": "TIC 311805258 inj01097",
+        "kind": "noise",
+        "model_score": 0.984973008420126,
+        "probability": 0.7703215461387104,
+        "pushed_up_by": [
+          {
+            "feature": "bls_sde",
+            "value": 6.442695068726055,
+            "shap": 0.811690484824723
+          },
+          {
+            "feature": "flux_skew",
+            "value": -1.6008610795622773,
+            "shap": 0.5767139570937034
+          },
+          {
+            "feature": "power_contrast",
+            "value": 1.5929186283351453,
+            "shap": 0.5693917569617555
+          }
+        ]
+      },
+      {
+        "target_id": "TIC 362215331 inj01467",
+        "kind": "eclipsing_binary",
+        "model_score": 0.9834400140128717,
+        "probability": 0.7592763988030564,
+        "pushed_up_by": [
+          {
+            "feature": "bls_sde",
+            "value": 6.439090230941449,
+            "shap": 0.7458279144645171
+          },
+          {
+            "feature": "odd_even_sigma",
+            "value": 1.145642534565257,
+            "shap": 0.7236916925319468
+          },
+          {
+            "feature": "power_contrast",
+            "value": 1.4913224100431188,
+            "shap": 0.5310166832011577
+          }
+        ]
+      },
+      {
+        "target_id": "TIC 12692026 inj00214",
+        "kind": "noise",
+        "model_score": 0.9808177022043152,
+        "probability": 0.7418471698208328,
+        "pushed_up_by": [
+          {
+            "feature": "bls_sde",
+            "value": 8.457217883885042,
+            "shap": 0.9008509381899393
+          },
+          {
+            "feature": "flux_skew",
+            "value": -1.8858169129543614,
+            "shap": 0.6496503801425985
+          },
+          {
+            "feature": "power_contrast",
+            "value": 1.7429350571378996,
+            "shap": 0.5480704831416116
+          }
+        ]
+      },
+      {
+        "target_id": "TIC 340762750 inj00292",
+        "kind": "eclipsing_binary",
+        "model_score": 0.9792369979368628,
+        "probability": 0.7321029712920408,
+        "pushed_up_by": [
+          {
+            "feature": "bls_sde",
+            "value": 7.833366818171244,
+            "shap": 0.9871368908558085
+          },
+          {
+            "feature": "flux_skew",
+            "value": -0.5902982107210671,
+            "shap": 0.5551882002930001
+          },
+          {
+            "feature": "duration_over_period",
+            "value": 0.030985365070738916,
+            "shap": 0.5221147687476907
+          }
+        ]
+      },
+      {
+        "target_id": "TIC 109653265 inj02539",
+        "kind": "eclipsing_binary",
+        "model_score": 0.9767927106331589,
+        "probability": 0.7179904970477011,
+        "pushed_up_by": [
+          {
+            "feature": "bls_sde",
+            "value": 7.720844757045174,
+            "shap": 0.8269403253777252
+          },
+          {
+            "feature": "odd_even_sigma",
+            "value": 1.4185158731389529,
+            "shap": 0.6172318629325548
+          },
+          {
+            "feature": "log_depth",
+            "value": -2.581105952057415,
+            "shap": 0.5190964027743602
+          }
+        ]
+      },
+      {
+        "target_id": "TIC 48028055 inj01906",
+        "kind": "noise",
+        "model_score": 0.9419897394697657,
+        "probability": 0.5846528877073507,
+        "pushed_up_by": [
+          {
+            "feature": "bls_sde",
+            "value": 6.667532364259515,
+            "shap": 1.0192217320010966
+          },
+          {
+            "feature": "log_depth",
+            "value": -2.0544105907258885,
+            "shap": 0.5800748607385149
+          },
+          {
+            "feature": "max_single_event_fraction",
+            "value": 0.1689282672935253,
+            "shap": 0.5223789470579719
+          }
+        ]
+      },
+      {
+        "target_id": "TIC 273744928 inj02794",
+        "kind": "noise",
+        "model_score": 0.8274281106372137,
+        "probability": 0.3972092688864853,
+        "pushed_up_by": [
+          {
+            "feature": "odd_even_sigma",
+            "value": 1.1926780618868273,
+            "shap": 0.7016838708018388
+          },
+          {
+            "feature": "bls_sde",
+            "value": 6.43765678227561,
+            "shap": 0.6679021576635605
+          },
+          {
+            "feature": "flux_skew",
+            "value": -3.454474300285913,
+            "shap": 0.5198887111497741
+          }
+        ]
+      },
+      {
+        "target_id": "TIC 462551663 inj01805",
+        "kind": "eclipsing_binary",
+        "model_score": 0.7951114131424413,
+        "probability": 0.3661662757067181,
+        "pushed_up_by": [
+          {
+            "feature": "bls_sde",
+            "value": 8.574907489567973,
+            "shap": 0.7462487115483938
+          },
+          {
+            "feature": "log_depth",
+            "value": -1.9755019589600737,
+            "shap": 0.5074708193465433
+          },
+          {
+            "feature": "flux_skew",
+            "value": -1.1426105715067987,
+            "shap": 0.48599844913338397
+          }
+        ]
+      },
+      {
+        "target_id": "TIC 99971738 inj00201",
+        "kind": "eclipsing_binary",
+        "model_score": 0.7943077746685498,
+        "probability": 0.365455234235969,
+        "pushed_up_by": [
+          {
+            "feature": "bls_sde",
+            "value": 9.907842743448041,
+            "shap": 0.9685199638290893
+          },
+          {
+            "feature": "log_depth",
+            "value": -2.309656709757968,
+            "shap": 0.5042210676351552
+          },
+          {
+            "feature": "flux_skew",
+            "value": -1.1556156566065052,
+            "shap": 0.5010099731388747
+          }
+        ]
+      },
+      {
+        "target_id": "TIC 154846306 inj00797",
+        "kind": "eclipsing_binary",
+        "model_score": 0.7749876424910066,
+        "probability": 0.3491122815479736,
+        "pushed_up_by": [
+          {
+            "feature": "bls_sde",
+            "value": 6.7175906554120655,
+            "shap": 1.0499089752234827
+          },
+          {
+            "feature": "log_depth",
+            "value": -2.878983624453634,
+            "shap": 0.4698778752964442
+          },
+          {
+            "feature": "log_period",
+            "value": 0.3276071855986204,
+            "shap": 0.41832800109096857
+          }
+        ]
+      },
+      {
+        "target_id": "TIC 156197087 inj00788",
+        "kind": "noise",
+        "model_score": 0.7342207679785419,
+        "probability": 0.3186092913332988,
+        "pushed_up_by": [
+          {
+            "feature": "half_period_depth_ratio",
+            "value": 0.6038848799607442,
+            "shap": 0.6335782441665087
+          },
+          {
+            "feature": "harmonic_delta_loglike",
+            "value": -5.193953889899944,
+            "shap": 0.5338738860103127
+          },
+          {
+            "feature": "log_duration_ratio",
+            "value": -0.313753305482912,
+            "shap": 0.37842244493942573
+          }
+        ]
+      },
+      {
+        "target_id": "TIC 357956815 inj01932",
+        "kind": "eclipsing_binary",
+        "model_score": 0.7118683464115627,
+        "probability": 0.3037188261036529,
+        "pushed_up_by": [
+          {
+            "feature": "bls_sde",
+            "value": 6.590143231602627,
+            "shap": 0.7976941608910563
+          },
+          {
+            "feature": "log_depth",
+            "value": -1.9883322445396678,
+            "shap": 0.6630782623307184
+          },
+          {
+            "feature": "power_contrast",
+            "value": 1.3705833044666897,
+            "shap": 0.63098585317393
+          }
+        ]
+      },
+      {
+        "target_id": "TIC 155632212 inj01519",
+        "kind": "noise",
+        "model_score": 0.6799410023704789,
+        "probability": 0.28422718793074664,
+        "pushed_up_by": [
+          {
+            "feature": "bls_sde",
+            "value": 7.6682516318037335,
+            "shap": 0.8049501260562101
+          },
+          {
+            "feature": "flux_skew",
+            "value": -5.094846551026165,
+            "shap": 0.5348867497395715
+          },
+          {
+            "feature": "secondary_sigma",
+            "value": -1.0532319925809375,
+            "shap": 0.44908226521749983
+          }
+        ]
+      },
+      {
+        "target_id": "TIC 121014808 inj01284",
+        "kind": "noise",
+        "model_score": 0.6755218717030288,
+        "probability": 0.2816729639663248,
+        "pushed_up_by": [
+          {
+            "feature": "bls_sde",
+            "value": 9.734037776719761,
+            "shap": 0.6316576609611545
+          },
+          {
+            "feature": "odd_even_sigma",
+            "value": 1.1324564768229572,
+            "shap": 0.5611554618403105
+          },
+          {
+            "feature": "flux_skew",
+            "value": -4.018536968885982,
+            "shap": 0.5088002610722306
+          }
+        ]
+      },
+      {
+        "target_id": "TIC 193108839 inj01935",
+        "kind": "noise",
+        "model_score": 0.6709355701666833,
+        "probability": 0.2790558046447148,
+        "pushed_up_by": [
+          {
+            "feature": "bls_sde",
+            "value": 5.4212176084546035,
+            "shap": 0.8863886223176256
+          },
+          {
+            "feature": "odd_even_sigma",
+            "value": 1.231818976706618,
+            "shap": 0.5776065653726753
+          },
+          {
+            "feature": "harmonic_amp_over_depth",
+            "value": 0.06857153410228996,
+            "shap": 0.3744010005657424
+          }
+        ]
+      },
+      {
+        "target_id": "TIC 357719182 inj00466",
+        "kind": "noise",
+        "model_score": 0.6637255826152819,
+        "probability": 0.2750084410515835,
+        "pushed_up_by": [
+          {
+            "feature": "odd_even_sigma",
+            "value": 1.34364265356184,
+            "shap": 0.6030495571018832
+          },
+          {
+            "feature": "flux_skew",
+            "value": -1.0271708207683607,
+            "shap": 0.5737006938109902
+          },
+          {
+            "feature": "harmonic_delta_loglike",
+            "value": -4852.569004760942,
+            "shap": 0.49536242234453154
+          }
+        ]
+      },
+      {
+        "target_id": "TIC 257061373 inj01942",
+        "kind": "noise",
+        "model_score": 0.6586161405024352,
+        "probability": 0.27218805806097185,
+        "pushed_up_by": [
+          {
+            "feature": "harmonic_delta_loglike",
+            "value": -10327.123724448204,
+            "shap": 0.59402922565508
+          },
+          {
+            "feature": "flux_skew",
+            "value": -1.567780010249632,
+            "shap": 0.591675913387932
+          },
+          {
+            "feature": "log_depth",
+            "value": -2.1754039503028224,
+            "shap": 0.5892075815474532
+          }
+        ]
+      },
+      {
+        "target_id": "TIC 417867951 inj02169",
+        "kind": "eclipsing_binary",
+        "model_score": 0.6474622486494559,
+        "probability": 0.2661623939565416,
+        "pushed_up_by": [
+          {
+            "feature": "bls_sde",
+            "value": 7.821935961068932,
+            "shap": 0.949165043467765
+          },
+          {
+            "feature": "flux_skew",
+            "value": -0.21644868255061722,
+            "shap": 0.5136127565344467
+          },
+          {
+            "feature": "power_contrast",
+            "value": 1.4544105275350805,
+            "shap": 0.4206833914975434
+          }
+        ]
+      },
+      {
+        "target_id": "TIC 154457412 inj02731",
+        "kind": "noise",
+        "model_score": 0.6168660962562681,
+        "probability": 0.2504740333903327,
+        "pushed_up_by": [
+          {
+            "feature": "bls_sde",
+            "value": 6.133363546147512,
+            "shap": 0.9656956136068721
+          },
+          {
+            "feature": "log_period",
+            "value": 0.3218910342642514,
+            "shap": 0.40632232649926425
+          },
+          {
+            "feature": "duration_over_period",
+            "value": 0.01906202158836011,
+            "shap": 0.3934840077388744
+          }
+        ]
+      },
+      {
+        "target_id": "TIC 273039495 inj01826",
+        "kind": "noise",
+        "model_score": 0.5864361733167576,
+        "probability": 0.23593153435234776,
+        "pushed_up_by": [
+          {
+            "feature": "bls_sde",
+            "value": 6.905693338430858,
+            "shap": 0.8481359819788996
+          },
+          {
+            "feature": "flux_skew",
+            "value": -4.289699028840168,
+            "shap": 0.6203540510888966
+          },
+          {
+            "feature": "power_contrast",
+            "value": 2.0658544941311616,
+            "shap": 0.4228776968287688
+          }
+        ]
+      },
+      {
+        "target_id": "TIC 142457527 inj02643",
+        "kind": "noise",
+        "model_score": 0.5819235248993074,
+        "probability": 0.23385419110817385,
+        "pushed_up_by": [
+          {
+            "feature": "duration_over_period",
+            "value": 0.03066327506046092,
+            "shap": 0.41165615095425023
+          },
+          {
+            "feature": "log_duration_ratio",
+            "value": -0.31805992211913625,
+            "shap": 0.3969909473134068
+          },
+          {
+            "feature": "harmonic_amp_over_depth",
+            "value": 0.0564834300174359,
+            "shap": 0.3890596214540193
+          }
+        ]
+      },
+      {
+        "target_id": "TIC 110422759 inj00376",
+        "kind": "noise",
+        "model_score": 0.5563178886214781,
+        "probability": 0.22241290723828647,
+        "pushed_up_by": [
+          {
+            "feature": "odd_even_sigma",
+            "value": 0.0,
+            "shap": 0.6350966234187265
+          },
+          {
+            "feature": "power_contrast",
+            "value": 1.0038000130498184,
+            "shap": 0.42676121672544104
+          },
+          {
+            "feature": "log_depth",
+            "value": -2.947174402965632,
+            "shap": 0.38762200462476365
+          }
+        ]
+      },
+      {
+        "target_id": "TIC 142739602 inj01342",
+        "kind": "noise",
+        "model_score": 0.5529415381188171,
+        "probability": 0.22094552627557504,
+        "pushed_up_by": [
+          {
+            "feature": "half_period_depth_ratio",
+            "value": 0.6298800990225002,
+            "shap": 0.5805801843879725
+          },
+          {
+            "feature": "harmonic_delta_loglike",
+            "value": -5.317434107281201,
+            "shap": 0.5313039542623696
+          },
+          {
+            "feature": "duration_over_period",
+            "value": 0.04246795947857825,
+            "shap": 0.4205623775921275
+          }
+        ]
       }
     ]
   },
@@ -620,15 +1800,17 @@
     "figures/real_injection/01_light_curves.png",
     "figures/real_injection/02_precision_recall.png",
     "figures/real_injection/03_diagnostics.png",
-    "figures/real_injection/04_feature_importance.png"
+    "figures/real_injection/04_feature_importance.png",
+    "figures/real_injection/06_calibration.png",
+    "figures/real_injection/07_shap_summary.png"
   ],
   "toi_benchmark": {
     "n_stars": 746,
     "n_planets": 376,
     "chance_average_precision": 0.5040214477211796,
-    "average_precision": 0.610067798120429,
-    "planet_recall": 0.550531914893617,
-    "false_positive_rejection": 0.6162162162162163
+    "average_precision": 0.6069055529181708,
+    "planet_recall": 0.5585106382978723,
+    "false_positive_rejection": 0.6297297297297297
   },
   "model": "results/real_injection/model.joblib"
 }

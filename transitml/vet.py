@@ -444,6 +444,18 @@ def load_target_curves(target: str, args: argparse.Namespace) -> list[LightCurve
     return curves
 
 
+def with_given_star(
+    lc: LightCurve, teff: float | None, density: float | None
+) -> LightCurve:
+    """``lc`` with the star's temperature and density, where given, in ``meta``."""
+    given = {
+        key: value
+        for key, value in (("teff_k", teff), ("rho_star_cgs", density))
+        if value is not None
+    }
+    return replace(lc, meta={**lc.meta, **given}) if given else lc
+
+
 def load_target_pixels(
     target: str, args: argparse.Namespace
 ) -> list[TargetPixelData] | None:
@@ -530,6 +542,20 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "sector as the light curve) and run the centroid test.",
     )
     parser.add_argument(
+        "--teff",
+        type=float,
+        default=None,
+        help="The star's effective temperature in K, if the light curve does not carry "
+        "it (a MAST download does). With --density it sizes the secondary test's "
+        "allowance for a hot planet's own occultation.",
+    )
+    parser.add_argument(
+        "--density",
+        type=float,
+        default=None,
+        help="The star's mean density in g/cm^3 (see --teff).",
+    )
+    parser.add_argument(
         "--planet-rate",
         type=float,
         default=None,
@@ -608,7 +634,7 @@ def main(argv: list[str] | None = None) -> int:
             f"{len(curves)} light curves found ({found}); pick one with --target-id "
             "or --sector, or join one star's sectors with --stitch"
         )
-    lc = curves[0]
+    lc = with_given_star(curves[0], args.teff, args.density)
     tpfs = load_target_pixels(args.target, args)
     model = load_model(args.model)
     multi = MultiPlanetConfig(max_signals=args.max_signals, min_sde=args.min_sde)
@@ -634,6 +660,14 @@ def main(argv: list[str] | None = None) -> int:
     print(
         f"{result.target_id}: score {result.score:.3f}, threshold {result.threshold:.3f}"
     )
+    teff, density = lc.star
+    if math.isfinite(teff) and math.isfinite(density):
+        print(f"  star: {teff:.0f} K, {density:.2f} g/cm^3")
+    else:
+        print(
+            "  star: unknown (give --teff or --density); the secondary test makes no "
+            "allowance for a planet's own occultation"
+        )
     print(f"  verdict: {result.verdict}")
     print(
         f"  P(planet) = {result.probability:.3f} at a {result.planet_rate:.1%} planet rate "

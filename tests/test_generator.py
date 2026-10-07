@@ -7,11 +7,20 @@ import pytest
 
 from transitml.data.synthetic import (
     SyntheticTESSSource,
+    planet_signal,
     power_law_noise,
     trapezoid_transit,
     white_noise_sigma,
 )
-from transitml.physics import RHO_SUN_CGS, scaled_semi_major_axis, transit_durations
+from transitml.physics import (
+    RHO_SUN_CGS,
+    T_SUN_K,
+    main_sequence_teff,
+    occultation_depth,
+    scaled_semi_major_axis,
+    tess_brightness_ratio,
+    transit_durations,
+)
 
 from .conftest import make_source
 
@@ -130,6 +139,37 @@ def test_grazing_geometry_produces_v_shapes():
     assert central_t23 > 0
     assert grazing_t23 == 0.0
     assert grazing_t14 < central_t14
+
+
+def test_occultation_physics():
+    assert main_sequence_teff(RHO_SUN_CGS) == pytest.approx(T_SUN_K)
+    assert tess_brightness_ratio(4000.0, 4000.0) == pytest.approx(1.0)
+    assert tess_brightness_ratio(2000.0, 6000.0) < 0.01
+
+    def depth(a_rs, t_eff=6000.0):
+        return occultation_depth(
+            0.1, a_rs, t_eff, geometric_albedo=0.1, bond_albedo=0.15, redistribution=0.5
+        )
+
+    # Closer in and around a hotter star, the dayside is hotter and brighter.
+    assert depth(3.0) > 5 * depth(8.0)
+    assert depth(4.0, t_eff=7000.0) > depth(4.0, t_eff=5000.0)
+    # Far out, only reflected light is left: A_g (Rp / a)^2.
+    assert depth(60.0) == pytest.approx(0.1 * (0.1 / 60.0) ** 2, rel=0.01)
+
+
+def test_planets_show_their_occultation(config):
+    time = np.arange(0.0, 27.4, 1 / 48)
+    rng = np.random.default_rng(0)
+    fractions = []
+    for r_star in np.linspace(*config.star.radius_range_rsun, 6):
+        rho = RHO_SUN_CGS * r_star**0.9 / r_star**3
+        for _ in range(60):
+            _, meta = planet_signal(time, rng, rho, config.planet)
+            assert meta["secondary_depth"] > 0.0
+            fractions.append(meta["secondary_depth"] / meta["depth"])
+    # Close-in giants around the hottest hosts reach the percent level, as real ones do.
+    assert max(fractions) > 0.01
 
 
 def test_eclipsing_binaries_carry_their_discriminants(config):
