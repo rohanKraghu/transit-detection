@@ -15,7 +15,7 @@ detrends, searches and scores one target and writes a one-page report.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python run_pipeline.py            # ~3 min on 4 cores
-pytest                            # ~5 min, 352 tests
+pytest                            # ~6 min, 376 tests
 ```
 
 It writes `results/metrics.json`, `results/report.txt`, the trained model
@@ -1295,7 +1295,7 @@ transit-detection/
 │   ├── vet.py                  # python -m transitml.vet: one star, one page
 │   ├── single_benchmark.py     # injection-recovery for lone transits
 │   └── plots.py                # figures (matplotlib Agg, no display)
-├── tests/                      # 352 tests, ~5 min
+├── tests/                      # 376 tests, ~6 min
 │   ├── test_generator.py       # imbalance is exact; injected physics is consistent
 │   ├── test_preprocess.py      # depth preservation; why the median was rejected
 │   ├── test_features.py        # recovery vs SNR; the vetting statistics fire
