@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import pandas as pd
 from joblib import Parallel, delayed
 from numpy.typing import NDArray
 
@@ -46,6 +47,7 @@ from .data.tpf import download_tpfs, load_tpf, save_tpf
 from .evaluate import (
     N_BOOTSTRAP,
     CurveScores,
+    _permutation_importance,
     bootstrap_indices,
     bootstrap_win_rate,
     fast_average_precision,
@@ -53,6 +55,7 @@ from .evaluate import (
     precision_at_k,
     score_curve,
 )
+from .features import FEATURE_NAMES
 from .model import BASELINES, TrainedModel
 
 #: Bins of the catalogue's TOI SNR.  That SNR comes from every sector the
@@ -290,6 +293,49 @@ def centroid_tests(
     return out
 
 
+#: The centroid test as model inputs, for a model trained with pixel features:
+#: how many sigma and how many pixels the dip sits from the target, and how
+#: clearly the difference image shows it.
+CENTROID_FEATURE_NAMES: tuple[str, ...] = (
+    "centroid_offset_sigma",
+    "centroid_offset_pixels",
+    "centroid_difference_snr",
+)
+
+
+def centroid_features(tests: Sequence[dict[str, Any] | None]) -> pd.DataFrame:
+    """One row of :data:`CENTROID_FEATURE_NAMES` per :func:`centroid_tests` entry.
+
+    The offset is NaN unless the test placed the dip (status ``"ok"``), and
+    everything is NaN for a star without a pixel file; the classifier learns
+    a direction for missing values rather than having them imputed.
+    """
+    rows = []
+    for test in tests:
+        placed = test is not None and test["status"] == "ok"
+        rows.append(
+            {
+                "centroid_offset_sigma": test["offset_sigma"] if placed else np.nan,
+                "centroid_offset_pixels": test["offset_distance_pixels"] if placed else np.nan,
+                "centroid_difference_snr": test["difference_snr"] if test is not None else np.nan,
+            }
+        )
+    return pd.DataFrame(rows, columns=list(CENTROID_FEATURE_NAMES), dtype=float)
+
+
+def with_centroid_features(dataset: Dataset, tests: Sequence[dict[str, Any] | None]) -> Dataset:
+    """``dataset`` with the :data:`CENTROID_FEATURE_NAMES` columns added beside its features."""
+    if len(tests) != len(dataset):
+        raise ValueError(f"{len(tests)} centroid results for {len(dataset)} stars")
+    extra = centroid_features(tests)
+    extra.index = dataset.features.index
+    return Dataset(
+        features=pd.concat([dataset.features, extra], axis=1),
+        labels=dataset.labels,
+        meta=dataset.meta,
+    )
+
+
 #: Offset floors, in pixels, the report shows the flag rates at: the default
 #: is :attr:`CentroidConfig.min_offset_pixels`, and these say how much it matters.
 CENTROID_FLOORS: tuple[float, ...] = (0.1, 0.25, 0.5, 1.0)
@@ -446,6 +492,12 @@ class BenchmarkResult:
     stars: list[dict[str, Any]] = field(default_factory=list)
     #: The centroid test and the model with it as a veto, when pixels were given.
     centroid: CentroidVeto | None = None
+    #: The columns the model read: the light-curve features, plus the centroid
+    #: test's for a model trained with pixel features.
+    feature_names: list[str] = field(default_factory=lambda: list(FEATURE_NAMES))
+    #: Average precision lost when each feature is shuffled across these stars,
+    #: when asked for (``importance_repeats``).
+    feature_importance: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def positive_rate(self) -> float:
@@ -481,6 +533,16 @@ class BenchmarkResult:
             "missed_planets": self.missed_planets,
             "accepted_false_positives": self.accepted_false_positives,
             **({"centroid_veto": self.centroid.to_dict()} if self.centroid else {}),
+            **(
+                {"model_features": self.feature_names}
+                if tuple(self.feature_names) != FEATURE_NAMES
+                else {}
+            ),
+            **(
+                {"feature_importance": self.feature_importance}
+                if self.feature_importance
+                else {}
+            ),
             "stars": self.stars,
         }
 
@@ -530,16 +592,22 @@ def benchmark(
     centroids: Sequence[dict[str, Any] | None] | None = None,
     centroid_config: CentroidConfig | None = None,
     comments: Mapping[str, str] | None = None,
+    importance_repeats: int = 0,
 ) -> BenchmarkResult:
     """Score the TOI hosts in ``dataset`` with ``trained`` at its frozen threshold.
 
     ``dataset`` rows are matched to ``targets`` by target ID, so the dataset
-    may hold fewer stars than ``targets`` (those MAST had no curve for).
+    may hold fewer stars than ``targets`` (those MAST had no curve for).  The
+    model reads the columns it was trained on (``trained.feature_names``), so
+    a model with pixel features needs a dataset with them
+    (:func:`with_centroid_features`); the baselines read the light-curve ones.
 
     With ``centroids`` (one :func:`centroid_tests` entry per dataset row,
     run with ``centroid_config``), the result also scores the model with the
     centroid test as a veto.  With ``comments`` (``{TOI: ExoFOP comment}``),
     the false positives are also counted by the reason they were retired.
+    With ``importance_repeats``, it also measures how much average precision
+    each feature carries on these stars, by shuffling it that many times.
     """
     by_id = {t.target_id: t for t in targets}
     ids = dataset.meta["target_id"].astype(str).tolist()
@@ -554,7 +622,9 @@ def benchmark(
         raise ValueError("the benchmark needs both planets and false positives")
 
     X = dataset.X
-    scores = trained.score(X)
+    names = tuple(trained.feature_names)
+    inputs = dataset.inputs(names)
+    scores = trained.score(inputs)
     resamples = bootstrap_indices(len(y), n_bootstrap, seed) if n_bootstrap > 0 else None
     model_curve = score_curve(
         "gradient_boosting", "the trained model, unchanged", y, scores, resamples
@@ -699,6 +769,14 @@ def benchmark(
         labels=y,
         stars=[{**row(i), "kept": bool(kept[i])} for i in range(len(rows))],
         centroid=veto,
+        feature_names=list(names),
+        feature_importance=(
+            _permutation_importance(
+                trained, inputs, y, seed=seed, n_repeats=importance_repeats, feature_names=names
+            )
+            if importance_repeats > 0
+            else []
+        ),
     )
 
 
@@ -740,6 +818,9 @@ def format_benchmark_report(result: BenchmarkResult) -> str:
         f"{result.n_stars - result.n_planets} false positives (FP/FA), "
         f"positive rate {result.positive_rate:.1%}"
     )
+    extra = [name for name in result.feature_names if name not in FEATURE_NAMES]
+    if extra:
+        add(f"model inputs: the {len(FEATURE_NAMES)} light-curve features and {', '.join(extra)}")
     add("")
     add("At the frozen operating threshold (chosen on the training split only)")
     add("-" * 72)
@@ -782,6 +863,13 @@ def format_benchmark_report(result: BenchmarkResult) -> str:
     if result.centroid is not None:
         add("")
         _centroid_section(add, result)
+    if result.feature_importance:
+        add("")
+        add("What the model leans on here: average precision lost when one feature is")
+        add("shuffled across these stars (mean and spread of the shuffles)")
+        add("-" * 72)
+        for row in result.feature_importance[:10]:
+            add(f"  {row['feature']:<30s} {row['importance']:+.3f} +/- {row['std']:.3f}")
     add("")
     add("Did the search find the catalogued signal?")
     add("-" * 72)

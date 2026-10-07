@@ -50,6 +50,13 @@ class Dataset:
         """Model input: features only, in a fixed column order."""
         return self.features[list(FEATURE_NAMES)].to_numpy(dtype=np.float64)
 
+    def inputs(self, names: Sequence[str]) -> NDArray[np.float64]:
+        """Model input for a model of the columns ``names``; :attr:`X` is the light-curve set."""
+        missing = [name for name in names if name not in self.features.columns]
+        if missing:
+            raise ValueError(f"the dataset has no {missing} column(s)")
+        return self.features[list(names)].to_numpy(dtype=np.float64)
+
     @property
     def y(self) -> NDArray[np.int_]:
         return self.labels
