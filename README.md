@@ -851,7 +851,7 @@ The committed demo is `results/batch/synthetic_seed7/`, from
 `python -m transitml.batch --synthetic 2000 --seed 7 --reports 3 --fit 10`:
 2000 stars the model has never seen, from the training generator with a
 different seed, with transit fits for the ten best-ranked (see "Fitting a
-candidate's transit" below). It took 297 s on 4 cores. Without the fits the
+candidate's transit" below). It took 272 s on 4 cores. Without the fits the
 same sector takes 231 s, about half a core-second per star.
 
 **Caching.** There are two layers, so a sector can be stopped and resumed
