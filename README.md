@@ -20,7 +20,7 @@ whose coverage is measured by injection.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python run_pipeline.py            # ~3 min on 4 cores
-pytest                            # ~6 min, 376 tests
+pytest                            # ~5 min, 413 tests
 ```
 
 It writes `results/metrics.json`, `results/report.txt`, the trained model
@@ -1138,7 +1138,7 @@ The committed demo is `results/batch/synthetic_seed7/`, from
 `python -m transitml.batch --synthetic 2000 --seed 7 --reports 3 --fit 10`:
 2000 stars the model has never seen, from the training generator with a
 different seed, with transit fits for the ten best-ranked (see "Fitting a
-candidate's transit" below). It took 272 s on 4 cores. Without the fits the
+candidate's transit" below). It took 274 s on 4 cores. Without the fits the
 same sector takes 236 s, about half a core-second per star.
 
 **Caching.** There are two layers, so a sector can be stopped and resumed
@@ -1568,7 +1568,7 @@ transit-detection/
 │   ├── batch.py                # python -m transitml.batch: a sector, cached and ranked
 │   ├── dashboard.py            # the batch's self-contained HTML dashboard
 │   └── plots.py                # figures (matplotlib Agg, no display)
-├── tests/                      # 376 tests, ~6 min
+├── tests/                      # 413 tests, ~5 min
 │   ├── test_generator.py       # imbalance is exact; injected physics is consistent
 │   ├── test_preprocess.py      # depth preservation; why the median was rejected
 │   ├── test_features.py        # recovery vs SNR; the vetting statistics fire

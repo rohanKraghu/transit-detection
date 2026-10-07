@@ -27,7 +27,7 @@
   },
   "computed": 2000,
   "from_cache": 0,
-  "runtime_seconds": 236.5,
+  "runtime_seconds": 274.1,
   "reports": [
     "reports/vet_SYN_001901.png",
     "reports/vet_SYN_000961.png",
@@ -46,5 +46,19 @@
       "noise": 44
     },
     "expected_planets_all": 83.69645337099999
+  },
+  "fits": {
+    "requested": 10,
+    "fitted": 10,
+    "errors": 0,
+    "computed": 10,
+    "from_cache": 0,
+    "converged": 10,
+    "density_inconsistent": [],
+    "settings": {
+      "max_steps": 30000,
+      "n_walkers": 32,
+      "exposure_minutes": null
+    }
   }
 }
