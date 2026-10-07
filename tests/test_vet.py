@@ -9,7 +9,7 @@ import pytest
 
 from transitml.features import FEATURE_NAMES
 from transitml.model import load_model, save_model
-from transitml.vet import N_REASONS, feature_contributions, vet_light_curve, write_json
+from transitml.vet import N_REASONS, vet_light_curve, write_json
 
 from .conftest import clean_transit_curve
 
@@ -43,22 +43,31 @@ def test_vet_scores_the_primary_and_lists_candidates(model_path, planet_curve):
     assert flat.time.size == result.n_cadences
 
 
-def test_contributions_vanish_at_the_training_median(model_path):
-    model = load_model(model_path)
-    x = np.where(np.isfinite(model.train_medians), model.train_medians, 0.0)
-    rows = feature_contributions(model, x)
-    assert rows and all(row["delta_score"] == 0.0 for row in rows)
-
-
-def test_contributions_are_sorted_by_size_and_measure_a_real_change(model_path, planet_curve):
+def test_reasons_are_shap_values_that_add_up_to_the_log_odds(model_path, planet_curve):
     model = load_model(model_path)
     result, _ = vet_light_curve(planet_curve[0], model)
-    deltas = [abs(row["delta_score"]) for row in result.contributions]
-    assert deltas == sorted(deltas, reverse=True)
-    top = result.contributions[0]
+    shap = [float(row["shap"]) for row in result.contributions]
+    assert len(shap) == len(FEATURE_NAMES)
+    assert [abs(v) for v in shap] == sorted((abs(v) for v in shap), reverse=True)
+    assert result.base_log_odds + sum(shap) == pytest.approx(result.log_odds, abs=1e-9)
     x = np.array([result.features[n] for n in FEATURE_NAMES])
-    x[FEATURE_NAMES.index(top["feature"])] = top["training_median"]
-    assert result.score - model.score(x)[0] == pytest.approx(top["delta_score"])
+    assert result.log_odds == pytest.approx(model.log_odds(x)[0])
+    assert result.probability == pytest.approx(1.0 / (1.0 + np.exp(-result.log_odds)))
+    top = result.contributions[0]
+    assert top["odds_factor"] == pytest.approx(np.exp(top["shap"]))
+
+
+def test_planet_rate_moves_the_probability_and_base_but_not_the_reasons(model_path, planet_curve):
+    model = load_model(model_path)
+    default, _ = vet_light_curve(planet_curve[0], model)
+    even, _ = vet_light_curve(planet_curve[0], model, planet_rate=0.5)
+    assert default.planet_rate == pytest.approx(model.calibration.train_positive_rate)
+    assert even.score == default.score and even.verdict == default.verdict
+    assert even.contributions == default.contributions
+    assert even.probability > default.probability
+    assert even.base_log_odds + sum(r["shap"] for r in even.contributions) == pytest.approx(
+        even.log_odds, abs=1e-9
+    )
 
 
 def test_json_is_strict_and_carries_score_and_candidates(model_path, planet_curve, tmp_path):
@@ -71,7 +80,9 @@ def test_json_is_strict_and_carries_score_and_candidates(model_path, planet_curv
     assert isinstance(payload["candidates"], list) and payload["candidates"]
     assert payload["candidates"][0]["period"] == pytest.approx(3.0, rel=0.01)
     assert len(payload["top_reasons"]) == min(N_REASONS, len(result.contributions))
-    assert "approximate" in payload["contribution_method"]
+    assert "SHAP" in payload["contribution_method"]
+    assert payload["probability"] == pytest.approx(result.probability)
+    assert 0.0 < payload["planet_rate"] < 1.0
     assert payload["verdict"].startswith(
         "planet candidate" if result.above_threshold else "not a candidate"
     )
@@ -109,7 +120,17 @@ def test_cli_end_to_end_from_a_csv(model_path, planet_curve, tmp_path, capsys):
     payload = json.loads(js.read_text())
     assert 0.0 <= payload["score"] <= 1.0
     assert payload["candidates"][0]["period"] == pytest.approx(3.0, rel=0.01)
-    assert "signal 1: P = 3.0" in capsys.readouterr().out
+    printed = capsys.readouterr().out
+    assert "signal 1: P = 3.0" in printed
+    assert "P(planet) = " in printed and "top reasons (SHAP" in printed
+
+
+def test_cli_refuses_a_planet_rate_outside_zero_and_one(model_path, planet_curve, tmp_path):
+    from transitml import vet
+
+    csv_path = write_planet_csv(planet_curve[0], tmp_path / "planet.csv")
+    with pytest.raises(SystemExit, match="planet-rate"):
+        vet.main([str(csv_path), "--model", str(model_path), "--planet-rate", "1.5"])
 
 
 def test_cli_reads_one_star_from_an_npz_cache(model_path, planet_curve, tmp_path):

@@ -15,11 +15,11 @@ detrends, searches and scores one target and writes a one-page report.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python run_pipeline.py            # ~3 min on 4 cores
-pytest                            # ~5 min, 352 tests
+pytest                            # ~6 min, 376 tests
 ```
 
 It writes `results/metrics.json`, `results/report.txt`, the trained model
-(`results/model.joblib`, used by `vet` below) and four PNGs to `figures/`.
+(`results/model.joblib`, used by `vet` below) and six PNGs to `figures/`.
 Fixed seed (42), pinned dependencies, deterministic output.
 
 ---
@@ -656,6 +656,86 @@ the same reason the headline metric is: permuting a feature barely moves
 accuracy at a 4% positive rate, so an accuracy-scored importance plot would be
 flat and uninformative.
 
+### Calibrated probabilities and SHAP reasons
+
+The score ranks stars well but is not a probability. With
+`class_weight="balanced"` the trees are trained as if planets were as common
+as everything else, so a score of 0.5 does not mean half such stars are
+planets. `transitml/calibration.py` fits Platt scaling, one logistic map
+`P(planet) = 1 / (1 + exp(-(a s + b)))` on the trees' log-odds `s`, to the
+same out-of-fold training scores the threshold is chosen from. Here
+`a = 0.582, b = -1.245`. The map is strictly increasing, so the ranking,
+average precision, the threshold and every verdict are unchanged (the
+regenerated `results/metrics.json` matches the previous run on all of them);
+only the number attached to each star moves. The operating threshold
+becomes P(planet) = 0.117. Isotonic regression was not used: with 62
+training planets it is a staircase of a few steps, each set by two or three
+stars.
+
+On the 840 held-out stars:
+
+| Probability | Brier | Log loss | ECE |
+|---|---|---|---|
+| Constant training planet rate (3.97%) | 0.0388 | 0.1695 | 0.0007 |
+| Score read as a probability | 0.0172 | 0.0757 | 0.0204 |
+| **Calibrated** | **0.0150** | **0.0711** | 0.0166 |
+
+Brier and log loss reward calibration and separation together, so they lead;
+expected calibration error on its own would crown the constant forecast,
+which is perfectly calibrated and tells you nothing about any star.
+Calibration cuts the log loss by 6% and the Brier score by 13% against the
+raw score.
+
+![Calibration](figures/06_calibration.png)
+
+**The calibrated probabilities are not spread out enough.** They expect 38.3
+planets in the test set, which holds 34, within one standard deviation of
+the binomial scatter (4.8). But the excess sits between P = 0.03 and 0.3,
+where 166 stars expect 11.4 planets and hold 5, while the 50 flagged stars
+expect 23.7 and hold 26, and all 19 stars above P = 0.6 are planets. A
+logistic fit of the outcome on the calibrated log-odds gives slope 1.30 and
+intercept +0.37 (1 and 0 ideal): the many unlikely stars get a little too
+much probability and the few likely ones too little. Two things push this
+way: the map is fitted to the scores of fold models trained on 80% of the
+training split and applied to the model refit on all of it, and 62 planets
+set it.
+
+The probability is for a star drawn from the training population, where 4%
+of stars host a detectable planet. For any other population Bayes' rule
+shifts the log-odds by `logit(rate) - logit(0.0397)`; `vet --planet-rate`
+does that.
+
+**SHAP reasons.** `transitml/treeshap.py` computes exact SHAP values from the
+fitted trees: per star, one number per feature, in calibrated log-odds, that
+add up with a base value (-4.32, P = 0.013) to the star's own log-odds. It is
+the quantity path-dependent TreeSHAP computes, written as a closed form per
+leaf (a few vectorised lines; trees of depth 3 have at most three features
+on a path). `tests/test_treeshap.py` checks it against brute-force
+enumeration of every feature subset and against the `shap` package, to
+1e-10; `shap` is not a dependency.
+
+![SHAP summary](figures/07_shap_summary.png)
+
+Mean |SHAP| and permutation importance rank the features differently, and
+both are right. `log_depth`, `max_single_event_fraction`,
+`log_duration_ratio` and `flux_skew` move a typical star by 0.34 to 0.47 in
+log-odds, so they lead on mean |SHAP|, but each carries information others
+share, so shuffling one costs less average precision. `secondary_sigma` and
+`odd_even_sigma` move a typical star by about 0.2 and a few by up to -1.6:
+those few are the eclipsing binaries. On the 53 held-out binaries their
+mean |SHAP| is 1.04 and 0.55, against 0.16 and 0.19 for everything else,
+and one or the other is the largest push down for 46 of the 53. That is
+why `secondary_sigma` is second in permutation importance: it is what keeps
+binaries off the top of the list.
+
+The report lists, for each held-out false positive, the three features that
+pushed it up most, and for each planet the classifier rejected, the three
+that pushed it down. Of the 24 false positives (17 variable stars, 7
+binaries), 11 were pushed up most by `flux_skew`, and 5 each by `log_depth`
+and `max_single_event_fraction`: they looked like planets on the shape of
+their flux distribution, on depth, and on dips spread over several events
+rather than one.
+
 ### Why not a 1D CNN on folded light curves
 
 The honest answer is sample size. This demo has 96 positives, 62 of them in the
@@ -798,9 +878,13 @@ the model file, so the score means what it meant in training, then writes
 `results/vet/vet_<target>.png` and a JSON of the same numbers: the raw curve
 and removed trend, the detrended curve with every candidate signal marked,
 the primary fold, odd against even transits, the phase-0.5 window, the key
-features with score, threshold and verdict, and the top reasons. The reasons
-are approximate and labelled so: each is the change in score when one
-feature alone is set to its training-split median. They are not additive.
+features with score, threshold, calibrated probability and verdict, and the
+top reasons. The reasons are SHAP values in calibrated log-odds (see
+"Calibrated probabilities and SHAP reasons" above): exact, and they add up
+with the base value to the star's log-odds. The JSON carries all 23. The
+probability is for a star from the training population, where 4% of stars
+host a planet; `--planet-rate 0.3` restates it for a population where 30%
+do. The score and the verdict do not depend on it.
 
 **The TIC path has only been tested offline**, with the MAST source replaced
 by a stub; this environment could not reach MAST. Local CSV and npz input is
@@ -1202,6 +1286,8 @@ transit-detection/
 │   ├── single.py               # single and duo transits, found without folding
 │   ├── centroid.py             # difference-image and centroid-motion tests
 │   ├── model.py                # split, baselines, training, threshold, save/load
+│   ├── calibration.py          # Platt scaling on out-of-fold scores; Brier, ECE
+│   ├── treeshap.py             # exact SHAP values from the fitted trees
 │   ├── evaluate.py             # PR curves, AP, confusion matrix, failure analysis
 │   ├── benchmark.py            # the trained model scored on real TOI dispositions
 │   ├── views.py                # global, local, odd, even, secondary folded views
@@ -1209,7 +1295,7 @@ transit-detection/
 │   ├── vet.py                  # python -m transitml.vet: one star, one page
 │   ├── single_benchmark.py     # injection-recovery for lone transits
 │   └── plots.py                # figures (matplotlib Agg, no display)
-├── tests/                      # 352 tests, ~5 min
+├── tests/                      # 376 tests, ~6 min
 │   ├── test_generator.py       # imbalance is exact; injected physics is consistent
 │   ├── test_preprocess.py      # depth preservation; why the median was rejected
 │   ├── test_features.py        # recovery vs SNR; the vetting statistics fire
@@ -1219,12 +1305,14 @@ transit-detection/
 │   ├── test_single.py          # lone and duo transits found; ramps and noise are not
 │   ├── test_stitch.py          # sectors joined; marginal pair becomes a detection
 │   ├── test_evaluation.py      # no test-set leakage into threshold or metrics
+│   ├── test_calibration.py     # Platt fit, ranking unchanged, proper scores
+│   ├── test_treeshap.py        # SHAP against brute force and the shap package
 │   ├── test_injection.py       # injection is exact, leaves noise alone, runs offline
 │   ├── test_systematics.py     # sector systematics are shared, seeded and switchable
 │   ├── test_toi.py             # TOI parsing, per-star labels, sector choice
 │   ├── test_benchmark.py       # the real-label benchmark, offline, from a cache
 │   ├── test_files.py           # CSV and npz input
-│   ├── test_model_io.py        # saved model reloads with threshold and features
+│   ├── test_model_io.py        # saved model reloads with threshold, calibration, features
 │   ├── test_vet.py             # vet end to end on CSV, npz and a stubbed TIC
 │   ├── test_kepler_dr25.py     # DR25 labels, FITS, views and CLI, offline
 │   ├── test_tpf.py             # pixel files: npz round trip, stubbed download

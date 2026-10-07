@@ -109,6 +109,7 @@ def test_threshold_is_chosen_without_the_test_set(toy_dataset, trained_pair):
     assert retrained.threshold == model.threshold
     assert retrained.threshold_rule == model.threshold_rule
     assert retrained.achieved_cv_precision == model.achieved_cv_precision
+    assert retrained.calibration == model.calibration
 
 
 def _same_rows(a: list[dict], b: list[dict]) -> bool:
@@ -384,3 +385,26 @@ def test_results_serialise(toy_dataset, trained_pair):
         "test_recall",
         "confusion_matrix",
     }
+
+
+def test_report_carries_calibration_and_shap_reasons(toy_dataset, trained_pair):
+    from transitml.evaluate import format_report
+
+    split, model = trained_pair
+    result = evaluate(toy_dataset, split, model, top_k=20, seed=0, n_bootstrap=0)
+    calibration = result.calibration
+    assert calibration["scaling"] == model.calibration.to_dict()
+    assert calibration["expected_planets"]["all_observed"] == split.y_test.sum()
+    assert calibration["scores"]["calibrated"]["brier"] < calibration["scores"]["training_rate"]["brier"]
+
+    assert [r["feature"] for r in result.shap_importance][:1] == [FEATURE_NAMES[0]]
+    flagged = model.score(split.X_test) >= model.threshold
+    assert len(result.false_positives) == int((flagged & (split.y_test == 0)).sum())
+    for row in result.false_positives:
+        assert all(reason["shap"] > 0 for reason in row["pushed_up_by"])
+    for row in result.missed_breakdown:
+        assert all(reason["shap"] < 0 for reason in row["pushed_down_by"])
+
+    report = format_report(result)
+    assert "Calibrated probability (Platt scaling" in report
+    assert "mean |SHAP|" in report
