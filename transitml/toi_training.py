@@ -241,11 +241,25 @@ def scored_calibration(
 
 
 def _sector_text(sectors: Sequence[int]) -> str:
-    """``[1, ..., 13]`` -> ``"1 to 13"``; anything not a plain run is listed."""
-    ordered = list(sectors)
-    if len(ordered) > 2 and ordered == list(range(ordered[0], ordered[-1] + 1)):
-        return f"{ordered[0]} to {ordered[-1]}"
-    return ", ".join(str(s) for s in ordered)
+    """``[1, ..., 13]`` -> ``"1 to 13"``, ``[1, ..., 13, 27, ..., 96]`` -> ``"1 to 13 and 27 to 96"``.
+
+    Runs of three or more are written as ranges, anything else is listed.
+    """
+    runs: list[list[int]] = []
+    for sector in sectors:
+        if runs and sector == runs[-1][-1] + 1:
+            runs[-1].append(sector)
+        else:
+            runs.append([sector])
+    parts: list[str] = []
+    for run in runs:
+        if len(run) > 2:
+            parts.append(f"{run[0]} to {run[-1]}")
+        else:
+            parts.extend(str(s) for s in run)
+    if len(parts) > 1 and any(len(run) > 2 for run in runs):
+        return ", ".join(parts[:-1]) + " and " + parts[-1]
+    return ", ".join(parts)
 
 
 def _fmt(value: float, spec: str = ".3f") -> str:
@@ -281,10 +295,17 @@ def format_training_report(
         f"{sel.get('unlabelled', 0)}   not observed in these sectors: "
         f"{sel.get('not_in_sectors', 0)}"
     )
+    if sel.get("in_benchmark_sectors"):
+        add(f"observed in the benchmark's sectors, so left out: {sel['in_benchmark_sectors']}")
     add(
         f"selected: {sel.get('selected', 0)}   no light curve at MAST: "
         f"{summary.n_without_curve}   trained on: {summary.n_stars}"
     )
+    if sel.get("from_a_later_sector"):
+        add(
+            f"  of which {sel['from_a_later_sector']} from a later sector than their first, "
+            "which MAST had no light curve for"
+        )
     add(
         f"training stars: {summary.n_planets} planets (CP/KP), "
         f"{summary.n_stars - summary.n_planets} false positives (FP/FA), "

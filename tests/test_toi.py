@@ -9,6 +9,8 @@ import pytest
 from transitml.data.toi import (
     TOI,
     false_positive_reason,
+    later_target,
+    observed_in,
     parse_sector_spec,
     parse_sectors,
     read_toi_comments,
@@ -130,6 +132,26 @@ def test_training_stars_are_excluded(exofop):
     targets, counts = select_benchmark_targets(exofop, [14], exclude_tics={100})
     assert [t.tic for t in targets] == [200]
     assert counts["in_training_set"] == 1
+
+
+def test_a_star_moves_to_its_next_listed_sector():
+    tois = (TOI(tic=7, toi="7.01", disposition="CP", sectors=(3, 7, 20, 30, 45)),)
+    order = [*range(1, 14), *range(27, 97)]
+    (target,), _ = select_benchmark_targets(tois, order)
+    seen = [target.sector]
+    while (target := later_target(target, order)) is not None:
+        seen.append(target.sector)
+        assert target.tic == 7 and target.label == 1 and target.tois == tois
+    # Sector 20 is not listed, so it is never tried.
+    assert seen == [3, 7, 30, 45]
+
+
+def test_stars_observed_in_some_sectors(exofop):
+    assert observed_in(exofop, [15]) == {100, 400}
+    assert observed_in(exofop, range(14, 27)) == {100, 200, 300, 400, 600}
+    # Labelled or not: an open TOI's star was observed there all the same.
+    assert observed_in(exofop, [1, 2]) == {500}
+    assert observed_in(exofop, [3]) == set()
 
 
 def test_a_zero_period_is_unknown(tmp_path):

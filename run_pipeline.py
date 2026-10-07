@@ -62,7 +62,7 @@ from typing import Any
 import numpy as np
 
 from transitml.config import Config, default_config
-from transitml.data.base import LightCurveSource
+from transitml.data.base import LightCurve, LightCurveSource
 from transitml.data.injection import (
     InjectionSource,
     exclude_known_hosts,
@@ -76,6 +76,8 @@ from transitml.data.loader import Dataset, build_dataset
 from transitml.data.synthetic import SYSTEMATIC_COMPONENTS, SyntheticTESSSource
 from transitml.data.toi import (
     BenchmarkTarget,
+    later_target,
+    observed_in,
     parse_sector_spec,
     read_toi_table,
     select_benchmark_targets,
@@ -449,11 +451,16 @@ def load_toi_hosts(
     tpfs: Path,
     centroids: bool,
     exclude_tics: set[int] | None = None,
+    training: bool = False,
 ) -> TOIHosts:
     """Select, fetch (or read from the caches) and search the labelled TOI hosts of ``spec``.
 
-    ``exclude_tics`` names the stars a model was trained on, which a benchmark
-    must not score; ``None`` for the training set itself.
+    ``exclude_tics`` names stars that must not be among them: for a benchmark,
+    the stars the model was trained on; for a ``training`` set, the stars
+    observed in the benchmark's sectors.  A benchmark star is scored on the
+    first of the sectors it was observed in; a training star MAST has no light
+    curve for there is taken from its next sector in ``spec`` instead, since a
+    training set loses nothing by that.
     """
     from transitml.benchmark import (
         build_benchmark_dataset,
@@ -468,22 +475,42 @@ def load_toi_hosts(
     targets, selection = select_benchmark_targets(
         read_toi_table(args.benchmark_tois), sectors, exclude_tics=exclude_tics or set()
     )
+    if training:
+        selection["in_benchmark_sectors"] = selection.pop("in_training_set")
+    dropped = (
+        f" ({selection['in_benchmark_sectors']} dropped as observed in the benchmark's sectors)"
+        if training and selection["in_benchmark_sectors"]
+        else f" ({selection['in_training_set']} dropped as training stars)"
+        if not training
+        else ""
+    )
     print(
-        f"\n{'TOI benchmark' if exclude_tics is not None else 'Training set'}: "
-        f"{selection['positives']} CP/KP and {selection['negatives']} FP/FA hosts in sectors {spec}"
-        + (
-            f" ({selection['in_training_set']} dropped as training stars)"
-            if exclude_tics is not None
-            else ""
+        f"\n{'Training set' if training else 'TOI benchmark'}: {selection['positives']} CP/KP "
+        f"and {selection['negatives']} FP/FA hosts in sectors {spec}{dropped}"
+    )
+
+    def fetch(wanted: list[BenchmarkTarget]) -> list[LightCurve]:
+        return load_or_fetch_curves(
+            wanted,
+            cache,
+            author=args.author,
+            exposure_time=args.exposure_time,
+            n_workers=args.download_workers,
         )
-    )
-    curves = load_or_fetch_curves(
-        targets,
-        cache,
-        author=args.author,
-        exposure_time=args.exposure_time,
-        n_workers=args.download_workers,
-    )
+
+    curves = fetch(targets)
+    if training:
+        found = {lc.target_id: lc for lc in curves}
+        current = {t.target_id: t for t in targets}
+        missing = [t for t in targets if t.target_id not in found]
+        while missing := [m for t in missing if (m := later_target(t, sectors)) is not None]:
+            current.update((t.target_id, t) for t in missing)
+            found.update((lc.target_id, lc) for lc in fetch(missing))
+            missing = [t for t in missing if t.target_id not in found]
+        moved = [current[t.target_id] for t in targets if current[t.target_id] != t]
+        selection["from_a_later_sector"] = sum(1 for t in moved if t.target_id in found)
+        targets = [current[t.target_id] for t in targets]
+        curves = [found[t.target_id] for t in targets if t.target_id in found]
     curves = with_tic_stars(curves, args.benchmark_stars)
     n_known = sum(1 for lc in curves if all(np.isfinite(lc.star)))
     print(
@@ -594,6 +621,11 @@ def run_toi_training(args: argparse.Namespace, config: Config, started: float) -
         train_on_hosts,
     )
 
+    # A star observed in the benchmark's sectors is never trained on, so the
+    # benchmark scores the same stars whichever sectors the model learned from.
+    benchmark_stars = observed_in(
+        read_toi_table(args.benchmark_tois), parse_sector_spec(args.benchmark_sectors)
+    )
     hosts = load_toi_hosts(
         args,
         config,
@@ -601,6 +633,8 @@ def run_toi_training(args: argparse.Namespace, config: Config, started: float) -
         cache=args.train_cache,
         tpfs=args.train_tpfs,
         centroids=args.pixel_features,
+        exclude_tics=benchmark_stars,
+        training=True,
     )
     names = FEATURE_NAMES + (CENTROID_FEATURE_NAMES if args.pixel_features else ())
     evaluation = config.evaluation

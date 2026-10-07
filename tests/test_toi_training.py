@@ -283,8 +283,16 @@ def test_run_pipeline_trains_on_one_sector_and_scores_another(small_config, tmp_
 
     train_curves, train_tois = _hosts(small_config, 60, seed=11, tic0=6000, sector=14)
     test_curves, test_tois = _hosts(small_config, 24, seed=12, tic0=8000, sector=15)
-    # A star seen in both sectors is trained on, so the benchmark must not score it.
-    tois = [replace(train_tois[0], sectors=(14, 15)), *train_tois[1:], *test_tois]
+    shared, moved = train_tois[0], train_tois[1]
+    tois = [
+        # Seen in the benchmark's sector too: scored there and never trained on,
+        # so the benchmark scores the same stars whatever the model learned from.
+        replace(shared, sectors=(14, 15)),
+        # First seen in sector 13, where MAST has no curve: trained on sector 14.
+        replace(moved, sectors=(13, 14)),
+        *train_tois[2:],
+        *test_tois,
+    ]
     table = tmp_path / "exofop_toi.csv"
     table.write_text(
         "TIC ID,TOI,TFOPWG Disposition,Period (days),Planet SNR,Sectors\n"
@@ -295,12 +303,16 @@ def test_run_pipeline_trains_on_one_sector_and_scores_another(small_config, tmp_
     )
     results = tmp_path / "results"
     results.mkdir()
-    save_curves(train_curves + test_curves, results / "toi_curves.npz")
+    shared_in_15 = replace(train_curves[0], meta={**train_curves[0].meta, "sector": 15})
+    save_curves(train_curves + test_curves + [shared_in_15], results / "toi_curves.npz")
 
-    def no_network(*_, **__):
-        raise AssertionError("everything is cached; MAST must not be queried")
+    asked: list[tuple[str, int]] = []
 
-    monkeypatch.setattr(bench, "fetch_benchmark_curves", no_network)
+    def mast(targets, **_):
+        asked.extend((t.target_id, t.sector) for t in targets)
+        return []
+
+    monkeypatch.setattr(bench, "fetch_benchmark_curves", mast)
     monkeypatch.setattr(
         tic_module,
         "fetch_tic_stars",
@@ -308,7 +320,7 @@ def test_run_pipeline_trains_on_one_sector_and_scores_another(small_config, tmp_
     )
     args = run_pipeline.parse_args(
         [
-            "--train-sectors", "14",
+            "--train-sectors", "13-14",
             "--benchmark-tois", str(table),
             "--benchmark-sectors", "15",
             "--results-dir", str(results),
@@ -318,29 +330,37 @@ def test_run_pipeline_trains_on_one_sector_and_scores_another(small_config, tmp_
     )
     assert run_pipeline.run_toi_training(args, small_config, started=0.0) == 0
 
+    # The one star not in the cache at its first sector, asked for once.
+    assert asked == [(f"TIC {moved.tic}", 13)]
     metrics = json.loads((results / "metrics.json").read_text())
-    assert metrics["dataset"]["n_curves"] == 60 and metrics["dataset"]["n_test"] == 0
+    assert metrics["dataset"]["n_curves"] == 59 and metrics["dataset"]["n_test"] == 0
+    selection = metrics["training"]["selection"]
+    assert selection["in_benchmark_sectors"] == 1 and selection["from_a_later_sector"] == 1
     assert metrics["training"]["operating_point"]["rule"].startswith("calibrated P(planet)")
-    assert metrics["toi_benchmark"]["n_stars"] == 24
+    assert metrics["toi_benchmark"]["n_stars"] == 25
 
     scored = json.loads((results / "toi_benchmark.json").read_text())
-    assert scored["selection"]["in_training_set"] == 1
-    assert {s["target_id"] for s in scored["stars"]}.isdisjoint(lc.target_id for lc in train_curves)
+    assert scored["selection"]["in_training_set"] == 0
+    trained_on = {lc.target_id for lc in train_curves[1:]}
+    assert {s["target_id"] for s in scored["stars"]}.isdisjoint(trained_on)
+    assert f"TIC {shared.tic}" in {s["target_id"] for s in scored["stars"]}
     assert len(scored["feature_importance"]) == len(FEATURE_NAMES)
     assert "model_features" not in scored
 
     calibration = metrics["toi_benchmark"]["calibration"]
-    assert sum(row["n"] for row in calibration["reliability"]) == 24
+    assert sum(row["n"] for row in calibration["reliability"]) == 25
     assert calibration["planet_rate"] == pytest.approx(
-        sum(s["disposition"] == "CP" for s in scored["stars"]) / 24
+        sum(s["disposition"] == "CP" for s in scored["stars"]) / 25
     )
 
     report = (results / "report.txt").read_text()
-    assert "TRAINED ON REAL LABELS: TOI HOSTS OF SECTORS 14" in report
+    assert "TRAINED ON REAL LABELS: TOI HOSTS OF SECTORS 13, 14" in report
+    assert "observed in the benchmark's sectors, so left out: 1" in report
+    assert "of which 1 from a later sector than their first" in report
     assert "Scored, unchanged, on the TOI hosts of sectors 15" in report
     assert "calibrated P(planet): Brier score" in report
 
     saved = load_model(results / "model.joblib")
-    assert saved.provenance["source"] == "TOI hosts, sectors 14"
+    assert saved.provenance["source"] == "TOI hosts, sectors 13-14"
     assert saved.threshold_probability == pytest.approx(0.5)
     assert (results / "dataset.npz").exists()
