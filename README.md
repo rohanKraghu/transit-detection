@@ -728,6 +728,46 @@ subset for this; in DR25 that column is empty for every row. And this model
 sees binned pixels of shape through a tree ensemble, so it is the baseline a
 CNN on the same views has to beat, not the CNN itself.
 
+### A CNN on the same views: a tie
+
+`python -m transitml.cnn` trains a two-column network in the AstroNet mould on
+those views: four convolution blocks over the global view, two over the local
+view with the odd, even and secondary views stacked beside it as channels,
+two dense layers, and three networks averaged. PyTorch is an optional install
+(`pip install torch`); nothing else needs it, and its tests skip without it.
+
+```bash
+python -m transitml.kepler_dr25 --per-class 3025 --no-train \
+    --results-dir results/kepler_dr25/large --cache-dir results/kepler_dr25/curves
+python -m transitml.cnn --training-set results/kepler_dr25/large/training_set.npz
+```
+
+On a larger balanced sample (9,075 TCEs on 7,734 stars: every AFP, and as
+many PCs and NTPs), both models score the same 2,720 held-out TCEs:
+
+| Average precision (chance 0.338) | |
+| --- | --- |
+| CNN, 3 networks averaged | **0.919** |
+| Gradient boosting on the same views | 0.915 |
+| Rank average of the two | 0.924 |
+| Kepler MES alone | 0.316 |
+
+The difference is inside the noise: a paired bootstrap puts CNN minus
+boosting between -0.005 and +0.012. At the 90% recall operating point the CNN
+rejects more false positives (83.5% of AFPs against 78.4%) but also keeps
+fewer planets (88.2% against 91.6%), so the two are trading along the same
+curve rather than one beating the other.
+
+![CNN precision-recall](figures/kepler_dr25/03_cnn_precision_recall.png)
+
+So the sample-size argument was right in both directions. With 9,000 labels a
+CNN is no longer starved, and it does match a strong model. But once the
+light curve is folded and binned at the right ephemeris, most of the shape
+information is already in the bins, and boosting reads it as well as the
+convolutions do. The CNN's case would rest on the full 34,032 TCEs, or on
+views the boosting cannot use as directly (centroid images, for instance).
+Full numbers are in `results/kepler_dr25/cnn/report.txt`.
+
 ---
 
 ## Vetting one star
@@ -1061,6 +1101,7 @@ transit-detection/
 │   ├── benchmark.py            # the trained model scored on real TOI dispositions
 │   ├── views.py                # global, local, odd, even, secondary folded views
 │   ├── kepler_dr25.py          # python -m transitml.kepler_dr25: training set + model
+│   ├── cnn.py                  # python -m transitml.cnn: CNN on the views (needs torch)
 │   ├── vet.py                  # python -m transitml.vet: one star, one page
 │   └── plots.py                # figures (matplotlib Agg, no display)
 ├── tests/                      # 295 tests, ~4 min
@@ -1078,6 +1119,7 @@ transit-detection/
 │   ├── test_model_io.py        # saved model reloads with threshold and features
 │   ├── test_vet.py             # vet end to end on CSV, npz and a stubbed TIC
 │   ├── test_kepler_dr25.py     # DR25 labels, FITS, views and CLI, offline
+│   ├── test_cnn.py             # the CNN on synthetic views (skips without torch)
 │   ├── test_tpf.py             # pixel files: npz round trip, stubbed download
 │   ├── test_synthetic_tpf.py   # synthetic pixels put the light where it belongs
 │   ├── test_centroid.py        # blends flagged, on-target not; bad input survives
