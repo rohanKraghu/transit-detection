@@ -29,6 +29,8 @@ The features fall into four groups:
 
 from __future__ import annotations
 
+import os
+from dataclasses import replace
 from typing import Any
 
 import numpy as np
@@ -89,21 +91,63 @@ def period_grid(baseline_days: float, config: BLSConfig) -> NDArray[np.float64]:
     )
 
 
+#: Environment variable choosing who computes the BLS periodogram: ``astropy``
+#: (the default), ``cpu`` or ``gpu`` (:mod:`transitml.fastbls`).  An execution
+#: detail, not part of the configuration: every engine returns the same
+#: periodogram, so features and trained models do not depend on it.
+BLS_ENGINE_ENV = "TRANSITML_BLS_ENGINE"
+
+
+def bls_engine() -> str:
+    """The BLS engine this process uses, from ``TRANSITML_BLS_ENGINE``."""
+    engine = os.environ.get(BLS_ENGINE_ENV, "astropy").strip().lower() or "astropy"
+    if engine not in ("astropy", "cpu", "gpu"):
+        raise ValueError(f"{BLS_ENGINE_ENV}={engine!r}; expected astropy, cpu or gpu")
+    return engine
+
+
 def run_bls(lc: FlattenedLightCurve, config: BLSConfig | None = None) -> dict[str, Any]:
-    """Run the BLS periodogram and return the peak solution plus the power array."""
+    """Run the periodic search and return the peak solution plus the power array.
+
+    BLS by default; ``config.search == "tls"`` runs Transit Least Squares
+    instead (:mod:`transitml.tls`) and returns the same fields.  The BLS
+    periodogram itself comes from astropy or from :mod:`transitml.fastbls`,
+    as :func:`bls_engine` says.
+    """
     config = config or BLSConfig()
     err = np.where(lc.flux_err > 0, lc.flux_err, lc.scatter)
-    bls = BoxLeastSquares(lc.time, lc.flux, err)
     periods = period_grid(lc.baseline_days, config)
+    if config.search == "tls":
+        from .tls import run_tls
+
+        try:
+            return {**run_tls(lc, config, float(periods.max())), "searched_with": "tls"}
+        except RuntimeError:
+            # TLS found nothing it could fit (rare: flat or very short data);
+            # the BLS solution stands in for this light curve.
+            config = replace(config, search="bls")
+    if config.search != "bls":
+        raise ValueError(f"unknown search {config.search!r}; expected 'bls' or 'tls'")
+    bls = BoxLeastSquares(lc.time, lc.flux, err)
     durations = np.asarray(config.durations_days, dtype=float)
     # Durations longer than the shortest trial period are meaningless.
     durations = durations[durations < 0.5 * periods.min()]
     if durations.size == 0:
         durations = np.array([0.05 * periods.min()])
-    result = bls.power(periods, durations, objective="snr")
+    engine = bls_engine()
+    if engine == "astropy":
+        result = bls.power(periods, durations, objective="snr")
+    else:
+        from .fastbls import array_module, bls_power
+
+        result = _AsResult(
+            bls_power(lc.time, lc.flux, err, periods, durations, xp=array_module(engine)),
+            periods,
+        )
 
     best = int(np.nanargmax(result.power))
     return {
+        "searched_with": "bls",
         "bls": bls,
         "periods": np.asarray(result.period, dtype=float),
         "power": np.asarray(result.power, dtype=float),
@@ -116,6 +160,15 @@ def run_bls(lc: FlattenedLightCurve, config: BLSConfig | None = None) -> dict[st
         "depth_snr": float(result.depth_snr[best]),
         "log_likelihood": float(result.log_likelihood[best]),
     }
+
+
+class _AsResult:
+    """Attribute access to :func:`transitml.fastbls.bls_power` output, like astropy's."""
+
+    def __init__(self, values: dict[str, NDArray[np.float64]], periods: NDArray[np.float64]):
+        self.period = periods
+        for key, value in values.items():
+            setattr(self, key, value)
 
 
 def flatten_masked(
