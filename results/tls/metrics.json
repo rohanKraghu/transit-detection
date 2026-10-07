@@ -91,7 +91,12 @@
       "rotation_max_terms": 1,
       "rotation_min_improvement": 0.05,
       "upper_clip_sigma": 4.0,
-      "clip_iterations": 2
+      "clip_iterations": 2,
+      "mask_signal": true,
+      "mask_half_width_durations": 1.0,
+      "mask_min_sde": 5.5,
+      "mask_max_fraction": 0.25,
+      "mask_min_support": 0.05
     },
     "bls": {
       "min_period_days": 0.5,
@@ -118,7 +123,7 @@
       "top_k": 20
     }
   },
-  "runtime_seconds": 335.9,
+  "runtime_seconds": 1749.8,
   "dataset": {
     "source": "SyntheticTESSSource",
     "n_curves": 2400,
@@ -135,59 +140,59 @@
     "model": {
       "name": "gradient_boosting",
       "description": "HistGradientBoostingClassifier on BLS + vetting features",
-      "average_precision": 0.7416387907451917,
+      "average_precision": 0.765679640097389,
       "average_precision_ci68": [
-        0.6689187327790803,
-        0.8166988654363869
+        0.6993268112235788,
+        0.8345329346707469
       ],
-      "roc_auc": 0.9267990074441688
+      "roc_auc": 0.9294993431615821
     },
     "baselines": [
       {
         "name": "depth_threshold",
         "description": "Rank by the depth of the best BLS box. The naive heuristic: deeper dip = more likely a planet.",
-        "average_precision": 0.10779053240456607,
+        "average_precision": 0.09966886679643097,
         "average_precision_ci68": [
-          0.08912029909781077,
-          0.14236311573059937
+          0.08283869359983412,
+          0.13171005756659068
         ],
-        "roc_auc": 0.7737556561085973
+        "roc_auc": 0.7582104802218654
       },
       {
         "name": "bls_snr",
         "description": "Rank by BLS depth signal-to-noise. The classical single-statistic transit search, and a genuinely strong baseline.",
-        "average_precision": 0.18684655938659392,
+        "average_precision": 0.16487168055694748,
         "average_precision_ci68": [
-          0.15434808364533992,
-          0.23817702098840007
+          0.1357415116286344,
+          0.21195656757564907
         ],
-        "roc_auc": 0.8302437600350314
+        "roc_auc": 0.8147350751715078
       }
     ],
-    "lift_over_chance": 18.322840712528265,
+    "lift_over_chance": 18.916791108288432,
     "operating_point": {
-      "threshold": 0.18838635320970598,
+      "threshold": 0.18891487105491572,
       "rule": "max recall subject to Wilson 1-sigma lower bound on CV precision >= 0.50 (bound 0.504 at 86 candidates)",
       "cv_precision_on_train": 0.5581395348837209,
       "cv_recall_on_train": 0.7741935483870968,
-      "test_precision": 0.4406779661016949,
+      "test_precision": 0.5416666666666666,
       "test_recall": 0.7647058823529411,
-      "test_f1": 0.5591397849462365,
+      "test_f1": 0.6341463414634146,
       "confusion_matrix": {
-        "true_negative": 773,
-        "false_positive": 33,
+        "true_negative": 784,
+        "false_positive": 22,
         "false_negative": 8,
         "true_positive": 26
       }
     },
     "precision_at_k": {
-      "model_top20": 0.9,
+      "model_top20": 0.95,
       "depth_threshold_top20": 0.0,
       "bls_snr_top20": 0.1
     },
     "false_positive_breakdown": {
-      "eclipsing_binary": 9,
-      "noise": 24
+      "eclipsing_binary": 5,
+      "noise": 17
     },
     "missed_planets": [
       {
@@ -198,11 +203,11 @@
         "duration_hours": 1.9141566764580387,
         "impact_parameter": 0.5495707247449919,
         "n_transits_in_window": 5.0,
-        "model_score": 0.003705020651276381,
+        "model_score": 0.012807200525997634,
         "period_recovered": false,
-        "odd_even_sigma": 0.27235783181002843,
-        "secondary_sigma": -0.442728689067825,
-        "red_noise_beta": 1.2345665371752035,
+        "odd_even_sigma": 0.12232793149960267,
+        "secondary_sigma": -0.8034893229949504,
+        "red_noise_beta": 1.1722221022673496,
         "reason": "search did not recover the period"
       },
       {
@@ -213,11 +218,11 @@
         "duration_hours": 1.6473823318549923,
         "impact_parameter": 0.7734012947320971,
         "n_transits_in_window": 4.0,
-        "model_score": 0.021335124067123703,
+        "model_score": 0.007701375036780726,
         "period_recovered": true,
         "odd_even_sigma": 0.0,
-        "secondary_sigma": -0.8226158493876619,
-        "red_noise_beta": 1.6336683983932256,
+        "secondary_sigma": -0.8921831494285225,
+        "red_noise_beta": 1.608959599619842,
         "reason": "period recovered; classifier rejected it"
       },
       {
@@ -228,11 +233,11 @@
         "duration_hours": 2.3149625867700454,
         "impact_parameter": 0.6561864906834514,
         "n_transits_in_window": 3.0,
-        "model_score": 0.002809434480617067,
+        "model_score": 0.003414260518587416,
         "period_recovered": false,
-        "odd_even_sigma": 0.26609654118121884,
-        "secondary_sigma": -2.5250533437223033,
-        "red_noise_beta": 1.3436762852133766,
+        "odd_even_sigma": 0.27368272985374076,
+        "secondary_sigma": -0.3325591081530965,
+        "red_noise_beta": 1.3856588647313715,
         "reason": "search did not recover the period"
       },
       {
@@ -243,11 +248,11 @@
         "duration_hours": 1.4464629026496765,
         "impact_parameter": 0.9188088291669438,
         "n_transits_in_window": 6.0,
-        "model_score": 0.01981926748407984,
+        "model_score": 0.019654687355573394,
         "period_recovered": true,
-        "odd_even_sigma": 0.5466852953517856,
-        "secondary_sigma": -1.2577839842878427,
-        "red_noise_beta": 1.0364041112590061,
+        "odd_even_sigma": 0.31456816599018556,
+        "secondary_sigma": -1.288657388921501,
+        "red_noise_beta": 1.0319065451469454,
         "reason": "period recovered; classifier rejected it"
       },
       {
@@ -258,11 +263,11 @@
         "duration_hours": 1.6457397529513673,
         "impact_parameter": 0.7091845449448743,
         "n_transits_in_window": 6.0,
-        "model_score": 0.006479911140162149,
+        "model_score": 0.15506693583985853,
         "period_recovered": false,
-        "odd_even_sigma": 1.5664038939996263,
-        "secondary_sigma": 0.8077339481378878,
-        "red_noise_beta": 1.1456697029885765,
+        "odd_even_sigma": 1.886210984434588,
+        "secondary_sigma": -0.4002090705761916,
+        "red_noise_beta": 1.1730331624476025,
         "reason": "search did not recover the period"
       },
       {
@@ -273,11 +278,11 @@
         "duration_hours": 3.0833612501134855,
         "impact_parameter": 0.7401569107878294,
         "n_transits_in_window": 3.0,
-        "model_score": 0.0033816237414250857,
+        "model_score": 8.046122394688502e-05,
         "period_recovered": false,
-        "odd_even_sigma": 2.1519181132031555,
-        "secondary_sigma": -0.020016814969950412,
-        "red_noise_beta": 1.761046464136426,
+        "odd_even_sigma": 6.66184811195557,
+        "secondary_sigma": -0.16394799301901578,
+        "red_noise_beta": 1.796448070036823,
         "reason": "search did not recover the period"
       },
       {
@@ -288,11 +293,11 @@
         "duration_hours": 4.087790286115197,
         "impact_parameter": 0.3736320808078826,
         "n_transits_in_window": 4.0,
-        "model_score": 0.1205895715081107,
+        "model_score": 0.1222195016825306,
         "period_recovered": true,
-        "odd_even_sigma": 0.9928949478409684,
-        "secondary_sigma": -1.855111802243003,
-        "red_noise_beta": 1.4012651960787248,
+        "odd_even_sigma": 0.06744070244685767,
+        "secondary_sigma": -1.951115435676074,
+        "red_noise_beta": 1.3388344337009253,
         "reason": "period recovered; classifier rejected it"
       },
       {
@@ -303,11 +308,11 @@
         "duration_hours": 2.0499504632360255,
         "impact_parameter": 0.45653259286021347,
         "n_transits_in_window": 8.0,
-        "model_score": 0.02817522480849373,
+        "model_score": 0.14862756210404005,
         "period_recovered": false,
-        "odd_even_sigma": 0.8282369144277961,
-        "secondary_sigma": -3.871763403931941,
-        "red_noise_beta": 1.9478283122688127,
+        "odd_even_sigma": 0.4150897225674176,
+        "secondary_sigma": -6.0137899930133205,
+        "red_noise_beta": 1.9382845003035598,
         "reason": "search did not recover the period"
       }
     ],
@@ -358,118 +363,118 @@
     "feature_importance": [
       {
         "feature": "power_contrast",
-        "importance": 0.44342120527356343,
-        "std": 0.05496208183186182
+        "importance": 0.26171939374713854,
+        "std": 0.04317324246795485
       },
       {
         "feature": "secondary_sigma",
-        "importance": 0.13551427894895185,
-        "std": 0.0292193981880871
-      },
-      {
-        "feature": "max_single_event_fraction",
-        "importance": 0.1160528124917622,
-        "std": 0.03019384669749164
+        "importance": 0.15197731151497568,
+        "std": 0.0417792609124319
       },
       {
         "feature": "odd_even_sigma",
-        "importance": 0.11536126854888093,
-        "std": 0.01858331727743422
+        "importance": 0.08226093859475947,
+        "std": 0.026615454678267054
       },
       {
-        "feature": "bls_sde",
-        "importance": 0.06434920378795597,
-        "std": 0.019368231633777818
-      },
-      {
-        "feature": "log_depth",
-        "importance": 0.037547500758869964,
-        "std": 0.0184513780132287
-      },
-      {
-        "feature": "flux_skew",
-        "importance": 0.01612378161515331,
-        "std": 0.013028585631981933
-      },
-      {
-        "feature": "harmonic_delta_loglike",
-        "importance": 0.004898405784757765,
-        "std": 0.013929966675305187
-      },
-      {
-        "feature": "bls_depth_snr",
-        "importance": 0.004524341935442844,
-        "std": 0.0013006628686132414
-      },
-      {
-        "feature": "half_period_depth_ratio",
-        "importance": 0.003410258232899077,
-        "std": 0.004742708100523534
-      },
-      {
-        "feature": "log_scatter",
-        "importance": 0.003390373729506957,
-        "std": 0.0033146132128291186
-      },
-      {
-        "feature": "n_transits",
-        "importance": 0.001862126182925261,
-        "std": 0.0006070932999412262
-      },
-      {
-        "feature": "flat_bottom_fraction",
-        "importance": 0.0008115176677468749,
-        "std": 0.0007861743965148095
-      },
-      {
-        "feature": "min_points_per_transit",
-        "importance": 0.00026542731377863225,
-        "std": 0.0011250063465980682
-      },
-      {
-        "feature": "log_period",
-        "importance": 0.0002373794235663862,
-        "std": 0.006282148172015734
+        "feature": "max_single_event_fraction",
+        "importance": 0.06954380971753503,
+        "std": 0.0187091844010359
       },
       {
         "feature": "bls_duration",
-        "importance": 1.4711089434127356e-05,
-        "std": 0.004493423164992117
+        "importance": 0.028859926541819424,
+        "std": 0.016498562010911405
+      },
+      {
+        "feature": "log_depth",
+        "importance": 0.028678237534794336,
+        "std": 0.018258699757403338
+      },
+      {
+        "feature": "bls_sde",
+        "importance": 0.028130404547113796,
+        "std": 0.009351480056543852
+      },
+      {
+        "feature": "harmonic_delta_loglike",
+        "importance": 0.016539162011945628,
+        "std": 0.007067989431275425
       },
       {
         "feature": "log_duration_ratio",
-        "importance": -0.00017101353903706818,
-        "std": 0.009128298848486337
+        "importance": 0.01466464566419291,
+        "std": 0.01595017050056335
       },
       {
-        "feature": "bls_depth_over_scatter",
-        "importance": -0.0002864154539569008,
-        "std": 0.001499984242514934
+        "feature": "half_period_depth_ratio",
+        "importance": 0.01221152992769119,
+        "std": 0.00948625868878141
       },
       {
-        "feature": "clipped_fraction",
-        "importance": -0.0009690436976000805,
-        "std": 0.001019529474018224
-      },
-      {
-        "feature": "duration_over_period",
-        "importance": -0.0011544506816551503,
-        "std": 0.007291694563630773
-      },
-      {
-        "feature": "harmonic_amp_over_depth",
-        "importance": -0.002035423605198439,
-        "std": 0.003739232126404465
-      },
-      {
-        "feature": "delta_loglike",
-        "importance": -0.0025007408524807097,
-        "std": 0.004076624450158583
+        "feature": "flux_skew",
+        "importance": 0.011905149196434595,
+        "std": 0.005971223130140515
       },
       {
         "feature": "red_noise_beta",
-        "importance": -0.004754105902895977,
-        "std": 0.004314637883356126
+        "importance": 0.009975685369255815,
+        "std": 0.009957928149774314
+      },
+      {
+        "feature": "delta_loglike",
+        "importance": 0.008020375471388685,
+        "std": 0.0028338060467570664
+      },
+      {
+        "feature": "log_period",
+        "importance": 0.005601882645918388,
+        "std": 0.00276396877858481
+      },
+      {
+        "feature": "clipped_fraction",
+        "importance": 0.005465045283184889,
+        "std": 0.0032774401043303755
+      },
+      {
+        "feature": "min_points_per_transit",
+        "importance": 0.005075007233352991,
+        "std": 0.004594769775736894
+      },
+      {
+        "feature": "n_transits",
+        "importance": 0.004758757061128371,
+        "std": 0.00682317663584601
+      },
+      {
+        "feature": "bls_depth_snr",
+        "importance": 0.004543278110077331,
+        "std": 0.0009130516032333693
+      },
+      {
+        "feature": "bls_depth_over_scatter",
+        "importance": 0.004208065296275043,
+        "std": 0.006502835056539597
+      },
+      {
+        "feature": "duration_over_period",
+        "importance": 0.0038329688453946796,
+        "std": 0.017028785730614043
+      },
+      {
+        "feature": "harmonic_amp_over_depth",
+        "importance": 0.0006531636822995846,
+        "std": 0.003956633560429043
+      },
+      {
+        "feature": "log_scatter",
+        "importance": -0.0005035644054621313,
+        "std": 0.002522320702270531
+      },
+      {
+        "feature": "flat_bottom_fraction",
+        "importance": -0.00651496082245937,
+        "std": 0.003189355178044764
       }
     ]
   },
