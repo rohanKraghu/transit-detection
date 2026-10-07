@@ -23,25 +23,32 @@ against its own chance level.
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator, Sequence
+from collections import Counter
+from collections.abc import Iterator, Mapping, Sequence
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field, replace
+from itertools import repeat
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+from joblib import Parallel, delayed
 from numpy.typing import NDArray
 
+from .centroid import CentroidConfig, centroid_test
 from .config import BLSConfig, PreprocessConfig
 from .data.base import LightCurve, LightCurveSource
 from .data.injection import load_curves, save_curves, tic_number
 from .data.loader import Dataset, build_dataset
 from .data.tic import load_or_fetch_stars, read_star_table, with_star
-from .data.toi import BenchmarkTarget
+from .data.toi import FALSE_POSITIVE_REASONS, BenchmarkTarget, false_positive_reason
+from .data.tpf import download_tpfs, load_tpf, save_tpf
 from .evaluate import (
     N_BOOTSTRAP,
     CurveScores,
     bootstrap_indices,
     bootstrap_win_rate,
+    fast_average_precision,
     period_recovered,
     precision_at_k,
     score_curve,
@@ -177,6 +184,237 @@ def with_tic_stars(curves: Sequence[LightCurve], path: str | Path) -> list[Light
     return [with_star(lc, stars) for lc in curves]
 
 
+def tpf_cache_path(cache_dir: str | Path, target_id: str, sector: int) -> Path:
+    """Where one star's target pixel file for one sector is kept."""
+    return Path(cache_dir) / f"{target_id.replace(' ', '_')}_s{int(sector):04d}.npz"
+
+
+def _fetch_tpf(
+    target_id: str, sector: int, author: str, exposure_time: int | None, dest: Path
+) -> bool:
+    tpfs = download_tpfs(target_id, author=author, exposure_time=exposure_time, sector=sector)
+    if not tpfs:
+        return False
+    save_tpf(tpfs[0], dest)
+    return True
+
+
+def load_or_fetch_tpfs(
+    targets: Sequence[BenchmarkTarget],
+    cache_dir: str | Path,
+    *,
+    author: str = "TESS-SPOC",
+    exposure_time: int | None = 1800,
+    n_workers: int = 8,
+) -> dict[str, Path]:
+    """Each target's pixel file in its benchmark sector, downloading only what is missing.
+
+    Files are kept one per star and sector (:func:`tpf_cache_path`), so a
+    rerun needs no network, and stars MAST had no file for are listed in
+    ``tried.json`` beside them and not asked for again.  Returns
+    ``{target_id: path}`` rather than the files: 750 stamps of 11 by 11
+    pixels over a sector hold about 2 GB in memory.
+    """
+    cache_dir = Path(cache_dir)
+    tried_path = cache_dir / "tried.json"
+    tried = set(json.loads(tried_path.read_text())) if tried_path.exists() else set()
+    paths = {t.target_id: tpf_cache_path(cache_dir, t.target_id, t.sector) for t in targets}
+    missing = [
+        t
+        for t in targets
+        if not paths[t.target_id].exists() and f"{t.target_id}:{t.sector}" not in tried
+    ]
+    if missing:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        args = (
+            [t.target_id for t in missing],
+            [t.sector for t in missing],
+            repeat(author),
+            repeat(exposure_time),
+            [paths[t.target_id] for t in missing],
+        )
+        if n_workers <= 1:
+            list(map(_fetch_tpf, *args))
+        else:
+            # Processes, not threads: lightkurve's FITS reading is not thread-safe.
+            with ProcessPoolExecutor(max_workers=n_workers) as pool:
+                list(pool.map(_fetch_tpf, *args, chunksize=4))
+        tried |= {f"{t.target_id}:{t.sector}" for t in missing}
+        tried_path.write_text(json.dumps(sorted(tried)))
+    return {target_id: path for target_id, path in paths.items() if path.exists()}
+
+
+#: What the benchmark keeps of each centroid test.
+CENTROID_FIELDS: tuple[str, ...] = (
+    "status",
+    "significant",
+    "offset_distance_pixels",
+    "offset_arcsec",
+    "offset_sigma",
+    "difference_snr",
+    "n_transits",
+)
+
+
+def _centroid_one(
+    path: Path, period: float, epoch: float, duration: float, config: CentroidConfig | None
+) -> dict[str, Any]:
+    result = centroid_test(load_tpf(path), period, epoch, duration, config)
+    return {name: getattr(result, name) for name in CENTROID_FIELDS}
+
+
+def centroid_tests(
+    dataset: Dataset,
+    tpf_paths: Mapping[str, Path],
+    *,
+    config: CentroidConfig | None = None,
+    n_jobs: int = -1,
+) -> list[dict[str, Any] | None]:
+    """The centroid test of every star in ``dataset``, on its own search ephemeris.
+
+    The ephemeris is the BLS peak the model was scored on (the dataset's
+    ``search_period``, ``search_epoch`` and ``search_duration``), not the catalogue's,
+    so each star gets the test ``vet --centroids`` would give it.  ``None``
+    for a star without a pixel file.
+    """
+    meta = dataset.meta
+    ids = meta["target_id"].astype(str).tolist()
+    ephemeris = meta[["search_period", "search_epoch", "search_duration"]].to_numpy(dtype=float)
+    jobs = [(i, tpf_paths[target_id]) for i, target_id in enumerate(ids) if target_id in tpf_paths]
+    done = Parallel(n_jobs=n_jobs)(
+        delayed(_centroid_one)(path, *ephemeris[i], config) for i, path in jobs
+    )
+    out: list[dict[str, Any] | None] = [None] * len(ids)
+    for (i, _), result in zip(jobs, done):
+        out[i] = result
+    return out
+
+
+#: Offset floors, in pixels, the report shows the flag rates at: the default
+#: is :attr:`CentroidConfig.min_offset_pixels`, and these say how much it matters.
+CENTROID_FLOORS: tuple[float, ...] = (0.1, 0.25, 0.5, 1.0)
+
+
+@dataclass
+class CentroidVeto:
+    """The centroid test on the benchmark stars, and the model with it as a veto.
+
+    The veto ranks every star whose dip is flagged as off target below every
+    star that is not, keeping the model's order within each group, so it can
+    only move flagged stars down.  Stars without a pixel file, or whose dip
+    the difference image does not detect, are never flagged.
+    """
+
+    min_offset_pixels: float
+    n_with_pixels: int
+    status: dict[str, int]
+    #: ``{group: {"n", "with_pixels", "flagged"}}`` for planets, false
+    #: positives, each disposition and each false-positive reason.
+    flagged: dict[str, dict[str, int]]
+    model: CurveScores
+    ap_gain: float
+    ap_gain_low: float
+    ap_gain_high: float
+    win_rate: float
+    planet_recall: float
+    false_positive_rejection: float
+    #: Planets and false positives flagged at other offset floors.
+    floors: list[dict[str, Any]]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "min_offset_pixels": self.min_offset_pixels,
+            "n_with_pixels": self.n_with_pixels,
+            "status": self.status,
+            "flagged": self.flagged,
+            "model": self.model.to_dict(),
+            "average_precision_gain": self.ap_gain,
+            "average_precision_gain_ci68": [self.ap_gain_low, self.ap_gain_high],
+            "bootstrap_win_rate_vs_model": self.win_rate,
+            "planet_recall": self.planet_recall,
+            "false_positive_rejection": self.false_positive_rejection,
+            "flagged_by_floor": self.floors,
+        }
+
+
+def _centroid_veto(
+    tests: Sequence[dict[str, Any] | None],
+    y: NDArray[np.int_],
+    model: CurveScores,
+    kept: NDArray[np.bool_],
+    dispositions: NDArray[np.str_],
+    reasons: Sequence[str | None],
+    resamples: NDArray[np.int_] | None,
+    config: CentroidConfig,
+) -> CentroidVeto:
+    has = np.array([t is not None for t in tests])
+    flagged = np.array([t is not None and bool(t["significant"]) for t in tests])
+    conclusive = np.array([t is not None and t["status"] == "ok" for t in tests])
+    sigma = np.array([t["offset_sigma"] if t else np.nan for t in tests], dtype=float)
+    distance = np.array([t["offset_distance_pixels"] if t else np.nan for t in tests], dtype=float)
+    planets, negatives = y == 1, y == 0
+    scores = model.scores
+    assert scores is not None
+
+    def count(sel: NDArray[np.bool_]) -> dict[str, int]:
+        return {
+            "n": int(sel.sum()),
+            "with_pixels": int((sel & has).sum()),
+            "flagged": int((sel & flagged).sum()),
+        }
+
+    groups = {"planets (CP/KP)": planets, "false positives (FP/FA)": negatives}
+    for d in sorted(set(dispositions.tolist())):
+        groups[str(d)] = dispositions == d
+    reason = np.array([r or "" for r in reasons])
+    if any(reasons):
+        for name in FALSE_POSITIVE_REASONS:
+            groups[f"FP, {name}"] = (dispositions == "FP") & (reason == name)
+
+    vetoed = np.where(flagged, scores - 1.0, scores)
+    curve = score_curve(
+        "gradient_boosting_centroid_veto",
+        "the model, with stars whose dip is off target ranked last",
+        y,
+        vetoed,
+        resamples,
+    )
+    gains = [
+        fast_average_precision(y[idx], vetoed[idx]) - fast_average_precision(y[idx], scores[idx])
+        for idx in (resamples if resamples is not None else [])
+        if y[idx].sum() >= 2
+    ]
+    low, high = (float(v) for v in np.percentile(gains, [16, 84])) if gains else (np.nan, np.nan)
+    win = (
+        bootstrap_win_rate(y, vetoed, scores, resamples) if resamples is not None else float("nan")
+    )
+    floors = []
+    for floor in CENTROID_FLOORS:
+        at = conclusive & (sigma >= config.significance_sigma) & (distance >= floor)
+        floors.append(
+            {
+                "min_offset_pixels": floor,
+                "planets_flagged": _rate(at, planets & has),
+                "false_positives_flagged": _rate(at, negatives & has),
+            }
+        )
+    kept_after = kept & ~flagged
+    return CentroidVeto(
+        min_offset_pixels=config.min_offset_pixels,
+        n_with_pixels=int(has.sum()),
+        status=dict(Counter(str(t["status"]) for t in tests if t is not None)),
+        flagged={name: count(sel) for name, sel in groups.items()},
+        model=curve,
+        ap_gain=curve.average_precision - model.average_precision,
+        ap_gain_low=low,
+        ap_gain_high=high,
+        win_rate=win,
+        planet_recall=_rate(kept_after, planets),
+        false_positive_rejection=_rate(~kept_after, negatives),
+        floors=floors,
+    )
+
+
 @dataclass
 class BenchmarkResult:
     """Everything the TOI benchmark reports."""
@@ -206,6 +444,8 @@ class BenchmarkResult:
     accepted_false_positives: list[dict[str, Any]] = field(default_factory=list)
     labels: NDArray[np.int_] | None = None
     stars: list[dict[str, Any]] = field(default_factory=list)
+    #: The centroid test and the model with it as a veto, when pixels were given.
+    centroid: CentroidVeto | None = None
 
     @property
     def positive_rate(self) -> float:
@@ -240,6 +480,7 @@ class BenchmarkResult:
             "by_toi_depth": self.by_toi_depth,
             "missed_planets": self.missed_planets,
             "accepted_false_positives": self.accepted_false_positives,
+            **({"centroid_veto": self.centroid.to_dict()} if self.centroid else {}),
             "stars": self.stars,
         }
 
@@ -286,11 +527,19 @@ def benchmark(
     top_k: int = 20,
     seed: int = 42,
     n_bootstrap: int = N_BOOTSTRAP,
+    centroids: Sequence[dict[str, Any] | None] | None = None,
+    centroid_config: CentroidConfig | None = None,
+    comments: Mapping[str, str] | None = None,
 ) -> BenchmarkResult:
     """Score the TOI hosts in ``dataset`` with ``trained`` at its frozen threshold.
 
     ``dataset`` rows are matched to ``targets`` by target ID, so the dataset
     may hold fewer stars than ``targets`` (those MAST had no curve for).
+
+    With ``centroids`` (one :func:`centroid_tests` entry per dataset row,
+    run with ``centroid_config``), the result also scores the model with the
+    centroid test as a veto.  With ``comments`` (``{TOI: ExoFOP comment}``),
+    the false positives are also counted by the reason they were retired.
     """
     by_id = {t.target_id: t for t in targets}
     ids = dataset.meta["target_id"].astype(str).tolist()
@@ -342,6 +591,27 @@ def benchmark(
         for d in sorted(set(dispositions[negatives]))
     }
 
+    reasons: list[str | None] = [
+        false_positive_reason(comments.get(t.reference.toi, ""))
+        if comments is not None and t.reference.disposition == "FP"
+        else None
+        for t in rows
+    ]
+    veto = None
+    if centroids is not None:
+        if len(centroids) != len(rows):
+            raise ValueError(f"{len(centroids)} centroid results for {len(rows)} stars")
+        veto = _centroid_veto(
+            centroids,
+            y,
+            model_curve,
+            kept,
+            dispositions,
+            reasons,
+            resamples,
+            centroid_config or CentroidConfig(),
+        )
+
     toi_snr = np.array([t.reference.snr for t in rows], dtype=float)
     snr_rows: list[dict[str, Any]] = []
     for lo, hi in zip(TOI_SNR_EDGES[:-1], TOI_SNR_EDGES[1:]):
@@ -374,9 +644,14 @@ def benchmark(
     feats = dataset.features
 
     def row(i: int) -> dict[str, Any]:
-        return _row(
+        out = _row(
             rows[i], float(scores[i]), float(bls_period[i]), bool(recovered[i]), feats.iloc[i]
         )
+        if reasons[i] is not None:
+            out["false_positive_reason"] = reasons[i]
+        if centroids is not None:
+            out["centroid"] = centroids[i]
+        return out
 
     missed = [row(i) for i in np.flatnonzero(planets & ~kept)]
     missed.sort(key=lambda r: -np.nan_to_num(r["toi_snr"], nan=-1.0))
@@ -423,6 +698,7 @@ def benchmark(
         accepted_false_positives=accepted,
         labels=y,
         stars=[{**row(i), "kept": bool(kept[i])} for i in range(len(rows))],
+        centroid=veto,
     )
 
 
@@ -503,6 +779,9 @@ def format_benchmark_report(result: BenchmarkResult) -> str:
     )
     for key, value in result.precision_at_k.items():
         add(f"  precision of {key:<30s} {_fmt(value)}")
+    if result.centroid is not None:
+        add("")
+        _centroid_section(add, result)
     add("")
     add("Did the search find the catalogued signal?")
     add("-" * 72)
@@ -556,6 +835,47 @@ def format_benchmark_report(result: BenchmarkResult) -> str:
     return "\n".join(lines)
 
 
+def _centroid_section(add, result: BenchmarkResult) -> None:
+    veto = result.centroid
+    assert veto is not None
+    add("Centroid veto: is the dip on the target?")
+    add("-" * 72)
+    status = ", ".join(f"{k} {v}" for k, v in sorted(veto.status.items()))
+    add(f"  stars with a pixel file: {veto.n_with_pixels} of {result.n_stars}   ({status})")
+    add(
+        "  flagged as off target (difference-image centroid at least 3 sigma and "
+        f"{veto.min_offset_pixels:g} pixel"
+    )
+    add("  from the catalogue position, on the search's own ephemeris):")
+    for name, row in veto.flagged.items():
+        share = row["flagged"] / row["with_pixels"] if row["with_pixels"] else float("nan")
+        add(
+            f"    {name:<26s} n = {row['n']:<4d} with pixels {row['with_pixels']:<4d} "
+            f"flagged {row['flagged']:<4d} ({_fmt(share, '.0%')})"
+        )
+    m = veto.model
+    add(
+        f"  {'model with the centroid veto':<34s} AP = {m.average_precision:.3f}"
+        f"  [{_fmt(m.ap_low)}, {_fmt(m.ap_high)}]   (ROC-AUC {m.roc_auc:.3f})"
+    )
+    add(
+        f"  gain over the model alone: {veto.ap_gain:+.3f} [{veto.ap_gain_low:+.3f}, "
+        f"{veto.ap_gain_high:+.3f}]; the veto wins in {_fmt(veto.win_rate, '.1%')} "
+        "of paired resamples"
+    )
+    add(
+        f"  at the frozen threshold: planets kept {_fmt(result.planet_recall)} -> "
+        f"{_fmt(veto.planet_recall)}, false positives rejected "
+        f"{_fmt(result.false_positive_rejection)} -> {_fmt(veto.false_positive_rejection)}"
+    )
+    add("  flagged at other offset floors (planets / false positives, of those with pixels):")
+    for row in veto.floors:
+        add(
+            f"    {row['min_offset_pixels']:.2f} pixel   "
+            f"{_fmt(row['planets_flagged'], '.1%')} / {_fmt(row['false_positives_flagged'], '.1%')}"
+        )
+
+
 def _rows(add, rows: list[dict[str, Any]], limit: int = 10) -> None:
     if not rows:
         add("  none")
@@ -586,11 +906,15 @@ def plot_benchmark(result: BenchmarkResult, path: Path) -> Path:
     _style()
     fig, (ax_pr, ax_hist) = plt.subplots(1, 2, figsize=(11.5, 4.6))
 
-    entries = [(result.model, SERIES[0], "gradient boosting")]
-    entries += [(b, colour, f"baseline: {b.name}") for b, colour in zip(result.baselines, SERIES[1:])]
-    for curve, colour, label in entries:
+    entries = [(result.model, SERIES[0], "-", "gradient boosting")]
+    if result.centroid is not None:
+        entries.append((result.centroid.model, SERIES[0], ":", "with the centroid veto"))
+    entries += [
+        (b, colour, "-", f"baseline: {b.name}") for b, colour in zip(result.baselines, SERIES[1:])
+    ]
+    for curve, colour, style, label in entries:
         ax_pr.plot(
-            curve.recall, curve.precision, lw=2.0, color=colour,
+            curve.recall, curve.precision, lw=2.0, color=colour, ls=style,
             label=f"{label}  (AP = {curve.average_precision:.3f})",
         )
     chance = result.chance_average_precision

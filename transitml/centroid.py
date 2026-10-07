@@ -65,10 +65,16 @@ significance are what to read, the length is a lower bound.
 An offset is flagged when the dip itself is detected in the difference image
 (its summed flux at least ``min_difference_snr`` times its bootstrap error),
 the offset is at least ``significance_sigma`` significant, and it is at least
-``min_offset_pixels`` long.  The floor (0.1 pixel, 2 arcsec, by default)
-absorbs what the bootstrap does not see: the flux-weighted centroid of a real,
-undersampled, asymmetric TESS PRF is not exactly the catalogue position, and
-catalogue and WCS positions carry their own errors.
+``min_offset_pixels`` long.  The floor absorbs what the bootstrap does not
+see: the flux-weighted centroid of a real, undersampled, asymmetric TESS PRF
+is not exactly the catalogue position, and catalogue and WCS positions carry
+their own errors.  It is half a pixel (10.5 arcsec) by default, set on real
+TESS-SPOC pixel files of confirmed planets: their transits are on the target
+by definition, yet about a fifth of those the difference image measures sit
+a significant 0.1 to 0.5 pixel from it.  The confirmed planets came from
+sectors 1 to 13, and the floor was frozen before it was applied to the
+sector 14 to 26 benchmark (see the README).  On synthetic stamps, with a
+circular PSF and exact positions, a floor of 0.1 pixel would do.
 """
 
 from __future__ import annotations
@@ -103,7 +109,9 @@ class CentroidConfig:
     n_bootstrap: int = 1000
     min_transits_bootstrap: int = 5
     significance_sigma: float = 3.0
-    min_offset_pixels: float = 0.1
+    #: Half a pixel: on real TESS pixels, significant offsets shorter than this
+    #: are more common for confirmed planets than for false positives.
+    min_offset_pixels: float = 0.5
     min_difference_snr: float = 3.0
     seed: int = 0
 
