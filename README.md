@@ -1463,6 +1463,16 @@ It writes four things to `--out-dir` (default `results/batch/<source>/`):
 - `reports/`: the full one-page `vet` report for the top `--reports`
   flagged stars (10 by default).
 
+`--centroids N` downloads the target pixel files of the N best-ranked
+flagged stars (TIC targets; the same pipeline, cadence and sector as their
+light curves), runs the centroid test of "Centroid test" below on each
+star's own search ephemeris, and adds `centroid_*` columns to
+`candidates.csv` (status, whether the dip is off target, the offset in
+sigma, pixels and arcseconds, and the difference image's SNR), a count in
+`summary.json`, and a centroid panel in the dashboard's row detail. Pixel
+files are kept in `cache/tpfs/`, one per star and sector. The score and
+the rank are unchanged; an off-target dip is reported beside them.
+
 ![Batch dashboard](figures/08_batch_dashboard.png)
 
 The committed demo is `results/batch/synthetic_seed7/`, from
@@ -1521,7 +1531,7 @@ a 20,000-star sector flagged at the same rate would be about 7 MB.
 **A real sector.** `results/batch/tess_s0014/` is a run on real TESS data:
 
 ```bash
-python -m transitml.batch --targets data/batch/targets_s0014.txt --sector 14 --fit 10
+python -m transitml.batch --targets data/batch/targets_s0014.txt --sector 14 --fit 10 --centroids 200
 python -m transitml.real_check sector results/batch/tess_s0014/candidates.csv \
     --tois data/toi_benchmark/exofop_toi_2026-10-06.csv --sector 14
 ```
@@ -1553,9 +1563,29 @@ in a 27-day sector, past the grid's half-baseline limit) or a single-sector
 SNR too low. And the classifier barely separates real planets from TOI
 false positives (average precision 0.65 against 0.59 by chance): those are
 the eclipsing binaries and blends that already looked enough like planets
-to become TOIs. The TOI benchmark meets them with the centroid test (see
-"Pixels: the centroid veto"), which the batch does not run. The ten fits all
-converged and all ten passed the density check against the TIC star.
+to become TOIs. The ten fits all converged and all ten passed the density
+check against the TIC star.
+
+**The centroid test on the sector.** `--centroids 200` covers all 192
+flagged stars; their pixel files (221 MB) downloaded in under a minute, and
+every one had a file. The test placed the dip for 155 of them:
+
+| group (flagged stars) | tested | dip placed | off target |
+|---|---|---|---|
+| confirmed or known planet hosts | 53 | 50 | 1 |
+| known false positives | 37 | 32 | 11 |
+| open TOIs | 49 | 45 | 0 |
+| not a TOI | 53 | 28 | 5 |
+
+It puts 11 of the 37 flagged false positives on another star and 1 of the
+53 planets. The TOI benchmark flags 1.6% of planets and 22% of false
+positives (30% of those the observers placed on another star), so the
+batch's rate on false positives is at the high end of that. Used as a veto, ranking off-target dips below the
+rest, it lifts the average precision of planets against false positives
+from 0.65 to 0.69 (chance 0.59) and leaves planets against non-TOIs at 0.47.
+The 5 non-TOI stars it flags are worth a look as blends the TOI process
+never caught. The remaining false positives are mostly eclipsing binaries
+on the target itself, which pixels cannot separate from planets.
 
 The batch runs the same code as `vet`, star by star, so its scores match
 `run_pipeline.py`'s for the same curves (checked to 5e-9 on the 120 test
@@ -2026,7 +2056,7 @@ transit-detection/
 │   ├── dashboard.py            # the batch's self-contained HTML dashboard
 │   ├── real_check.py           # known planets' fits and a real sector, against the archives
 │   └── plots.py                # figures (matplotlib Agg, no display)
-├── tests/                      # 476 tests, ~5 min
+├── tests/                      # 478 tests, ~5 min
 │   ├── test_generator.py       # imbalance is exact; injected physics is consistent
 │   ├── test_preprocess.py      # depth preservation; why the median was rejected
 │   ├── test_features.py        # recovery vs SNR; the vetting statistics fire
@@ -2054,7 +2084,7 @@ transit-detection/
 │   ├── test_synthetic_tpf.py   # synthetic pixels put the light where it belongs
 │   ├── test_centroid.py        # blends flagged, on-target not; bad input survives
 │   ├── test_vet_centroid.py    # centroid section in JSON and PNG; score unchanged
-│   ├── test_batch.py           # ranking, cache reuse and invalidation, retries, dashboard
+│   ├── test_batch.py           # ranking, caches, retries, centroid test, dashboard
 │   ├── test_real_check.py      # published-value comparisons and the TOI ranking, offline
 │   ├── test_fit.py             # geometry, prior, red noise, recovery, density check
 │   ├── test_fit_wiring.py      # vet --fit, batch --fit N and its cache, coverage
