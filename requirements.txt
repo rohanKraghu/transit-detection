@@ -19,4 +19,7 @@ astropy==8.0.1
 pandas==3.0.6
 matplotlib==3.11.2
 joblib==1.6.0
+# Transit fits (transitml/fit.py: vet --fit, batch --fit); imported only when a fit runs.
+batman-package==2.5.3
+emcee==3.1.6
 pytest==9.1.1

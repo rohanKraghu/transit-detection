@@ -68,6 +68,14 @@ def _slim(row: dict[str, Any]) -> dict[str, Any]:
         for key in ("sector", "n_cadences", "baseline_days", "report"):
             if row.get(key) is not None:
                 out[key] = row[key]
+        if row.get("fit"):
+            fit = row["fit"]
+            out["fit"] = {
+                k: fit[k]
+                for k in ("status", "error", "parameters", "converged", "warnings",
+                          "density_ratio", "density_consistent")
+                if k in fit
+            }
         out["signals"] = [
             {k: _round(v, 5) for k, v in sig.items() if k != "depth_snr"}
             for sig in row.get("signals", [])
@@ -172,11 +180,14 @@ tr.detail td { background: var(--bg); white-space: normal; text-align: left; pad
 /* The table can be wider than the page; keep the detail inside the visible part of it. */
 .detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px;
   position: sticky; left: 16px; width: calc(var(--wrap-width, 100%) - 32px); }
-.reason { display: grid; grid-template-columns: minmax(150px, 1fr) 120px 52px; gap: 8px; align-items: center; margin: 3px 0; }
+/* Narrow enough for the four-column detail grid a fitted star gets. */
+.reason { display: grid; grid-template-columns: minmax(0, 1fr) minmax(48px, 96px) 44px; gap: 8px; align-items: center; margin: 3px 0; }
+.reason > span:first-child { overflow-wrap: anywhere; }
 .reason .track { position: relative; height: 10px; background: var(--grid); border-radius: 2px; }
 .reason .track i { position: absolute; top: 0; height: 100%; border-radius: 2px; }
 .reason .track .mid { position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--neutral); }
 .muted { color: var(--ink-soft); }
+.warn { color: var(--warm); }
 a { color: var(--accent); }
 .more { margin: 12px auto 0; display: block; padding: 8px 16px; border-radius: 8px; border: 1px solid var(--grid);
   background: var(--surface); color: var(--ink); font: inherit; cursor: pointer; }
@@ -372,6 +383,33 @@ function truthCell(r) {
   return el("span", { class: "tag " + (r.truth.label ? "planet" : "other") }, kind.replace(/_/g, " "));
 }
 
+const FIT_ROWS = [
+  ["k", "Rp/R*", 4], ["b", "impact parameter b", 2], ["t14_hours", "T14 (h)", 2],
+  ["depth_ppm", "depth (ppm)", 0], ["rho_star", "stellar density (g/cm3)", 2],
+  ["rp_earth", "Rp (Earth radii)", 2],
+];
+function fitBlock(fit) {
+  const box = el("div", {}, el("h2", {}, "Transit fit (batman + emcee)"));
+  if (fit.status !== "ok") {
+    box.append(el("p", { class: "muted" }, "fit failed: " + (fit.error || "")));
+    return box;
+  }
+  for (const [key, label, digits] of FIT_ROWS) {
+    const v = (fit.parameters || {})[key];
+    if (!v || v[0] == null) continue;
+    const [m, lo, hi] = v;
+    box.append(el("div", {}, label + " = " + m.toFixed(digits) + " (+" + (hi - m).toFixed(digits) +
+      " / -" + (m - lo).toFixed(digits) + ")"));
+  }
+  if (fit.density_ratio) box.append(el("div", { class: fit.density_consistent ? "" : "warn" },
+    "fitted / stellar density " + fit.density_ratio[0].toFixed(2) +
+    (fit.density_consistent ? ", consistent with the star" : ", inconsistent with the star")));
+  if (!fit.converged) box.append(el("div", { class: "warn" }, "chain not converged: intervals are rough"));
+  for (const w of (fit.warnings || []).filter(w => !w.includes("autocorrelation")))
+    box.append(el("div", { class: "muted" }, w));
+  return box;
+}
+
 function detailRow(r, ncol) {
   const grid = el("div", { class: "detail-grid" });
   const reasons = el("div", {}, el("h2", {}, "Why (SHAP, log-odds)"));
@@ -408,6 +446,7 @@ function detailRow(r, ncol) {
     (r.truth.true_snr != null ? ", SNR " + fmt.num(r.truth.true_snr, 1) : "")));
   if (r.report) more.append(el("div", {}, el("a", { href: r.report }, "full vet report")));
   grid.append(more);
+  if (r.fit) grid.append(fitBlock(r.fit));
   return el("tr", { class: "detail" }, el("td", { colspan: ncol }, grid));
 }
 

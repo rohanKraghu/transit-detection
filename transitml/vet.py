@@ -9,6 +9,7 @@ Usage::
     python -m transitml.vet "TIC 307210830" --stitch      # every sector, joined
     python -m transitml.vet star.csv --tpf star_tpf.npz   # plus a centroid test
     python -m transitml.vet "TIC 307210830" --sector 14 --centroids
+    python -m transitml.vet star.csv --fit --stellar-density 1.4 --stellar-radius 1.0
 
 Writes ``vet_<target>.png`` and ``vet_<target>.json`` to ``--out-dir``.
 
@@ -40,6 +41,13 @@ a TIC, ``--centroids`` (download the target pixel files), the primary signal's
 ephemeris is also run through the centroid tests in :mod:`transitml.centroid`.
 That result is a separate vetting test reported beside the score: the model
 was not trained on centroid features and its score does not change.
+
+With ``--fit`` the primary signal is also fitted with a limb-darkened
+transit model and sampled with MCMC (:mod:`transitml.fit`): radius ratio,
+impact parameter, duration, depth and the stellar density the transit shape
+implies, each with an interval, in ``vet_<target>_fit.png`` and a ``fit``
+section of the JSON.  Given the star's density, the fitted one is checked
+against it.  Like the centroid test, the fit does not change the score.
 """
 
 from __future__ import annotations
@@ -49,7 +57,7 @@ import json
 import math
 import re
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -62,6 +70,14 @@ from .data.files import read_light_curves
 from .data.mast import MASTLightCurveSource
 from .data.tpf import TargetPixelData, download_tpfs, load_tpf
 from .features import FEATURE_NAMES, detrend_and_search, extract_features
+from .fit import (
+    FitConfig,
+    FitError,
+    FitResult,
+    default_exposure_minutes,
+    fit_transit,
+    stellar_priors_from_meta,
+)
 from .model import SavedModel, load_model
 from .preprocess import FlattenedLightCurve
 from .search import CandidateSignal, iterative_search
@@ -130,6 +146,9 @@ class VetResult:
     #: ``None`` when no centroid test was asked for; else one per target pixel file.
     centroids: list[CentroidResult] | None = None
     centroid_note: str = ""
+    #: The transit fit of the primary signal, when one was asked for and ran.
+    fit: FitResult | None = None
+    fit_error: str | None = None
     #: Dips found one at a time (:mod:`transitml.single`); ``None`` if not run.
     single_events: SingleEventSearch | None = None
 
@@ -184,6 +203,10 @@ class VetResult:
                 "note": self.centroid_note or CENTROID_NOTE,
                 "tests": [c.to_dict() for c in self.centroids],
             }
+        if self.fit is not None:
+            out["fit"] = self.fit.to_dict()
+        elif self.fit_error is not None:
+            out["fit"] = {"error": self.fit_error}
         return _json_safe(out)
 
 
@@ -307,6 +330,56 @@ def vet_light_curve(
                 "no target pixel file was available; " + CENTROID_NOTE
             )
     return result, flat
+
+
+def fit_primary(
+    result: VetResult,
+    flat: FlattenedLightCurve,
+    lc: LightCurve,
+    config: FitConfig | None = None,
+    *,
+    stellar_density: tuple[float, float] | None = None,
+    stellar_radius: float | None = None,
+) -> FitResult | None:
+    """Fit a transit model to the primary signal and attach it to ``result``.
+
+    The stellar density and radius default to those the light curve carries
+    (synthetic and injected curves do); survey curves need them given.  So
+    does the exposure, unless the config sets one (see
+    :func:`~transitml.fit.default_exposure_minutes`).  A signal too poorly
+    sampled to fit leaves ``result.fit_error`` set instead.
+    """
+    meta_density, meta_radius = stellar_priors_from_meta(lc.meta)
+    density = stellar_density if stellar_density is not None else meta_density
+    radius = stellar_radius if stellar_radius is not None else meta_radius
+    config = config or FitConfig()
+    if config.exposure_minutes is None:
+        config = replace(config, exposure_minutes=default_exposure_minutes(lc.meta))
+    p = result.primary
+    try:
+        result.fit = fit_transit(
+            flat, p["period"], p["epoch"], p["duration"], p["depth"], config,
+            stellar_density=density, stellar_radius=radius,
+        )
+    except FitError as exc:
+        result.fit_error = str(exc)
+        return None
+    if not result.candidates:
+        result.fit.warnings.append(
+            "no signal reached the search's significance threshold; this fits the "
+            "strongest peak, which may be noise"
+        )
+    return result.fit
+
+
+def write_fit_plot(result: VetResult, out_dir: str | Path, stem: str | None = None) -> Path | None:
+    """Write ``<stem>_fit.png`` when the result carries a fit."""
+    if result.fit is None:
+        return None
+    from .plots import plot_fit
+
+    stem = stem or "vet_" + "".join(ch if ch.isalnum() else "_" for ch in result.target_id)
+    return plot_fit(result.fit, Path(out_dir) / f"{stem}_fit.png")
 
 
 def write_report(
@@ -470,6 +543,44 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=MultiPlanetConfig.max_signals,
         help="Most signals the iterative search reports.",
     )
+    fit = parser.add_argument_group("transit fit (--fit)")
+    fit.add_argument(
+        "--fit",
+        action="store_true",
+        help="Fit the primary signal with batman and sample it with emcee.",
+    )
+    fit.add_argument(
+        "--stellar-density",
+        type=float,
+        default=None,
+        help="Host density in g/cm^3, to check the fitted one against (synthetic and "
+        "injected curves carry it).",
+    )
+    fit.add_argument(
+        "--stellar-density-err",
+        type=float,
+        default=None,
+        help="Its uncertainty; default 10%% of the density.",
+    )
+    fit.add_argument(
+        "--stellar-radius",
+        type=float,
+        default=None,
+        help="Host radius in solar radii, for the planet radius in Earth radii.",
+    )
+    fit.add_argument(
+        "--exposure-minutes",
+        type=float,
+        default=None,
+        help="Exposure the model integrates over; default the median cadence, 0 for none.",
+    )
+    fit.add_argument(
+        "--fit-max-steps",
+        type=int,
+        default=FitConfig.max_steps,
+        help="Longest chain before giving up on convergence (a shorter one also lowers "
+        "the minimum, for a quick look).",
+    )
     parser.add_argument(
         "--min-sde",
         type=float,
@@ -504,7 +615,21 @@ def main(argv: list[str] | None = None) -> int:
     if args.planet_rate is not None and not 0.0 < args.planet_rate < 1.0:
         raise SystemExit(f"--planet-rate must lie between 0 and 1, got {args.planet_rate}")
     result, flat = vet_light_curve(lc, model, multi, tpfs, planet_rate=args.planet_rate)
+    if args.fit:
+        density = None
+        if args.stellar_density is not None:
+            sd = args.stellar_density_err or 0.1 * args.stellar_density
+            density = (args.stellar_density, sd)
+        config = FitConfig(
+            exposure_minutes=args.exposure_minutes,
+            min_steps=min(FitConfig.min_steps, args.fit_max_steps),
+            max_steps=args.fit_max_steps,
+        )
+        fit_primary(
+            result, flat, lc, config, stellar_density=density, stellar_radius=args.stellar_radius
+        )
     png, js = write_report(lc, flat, result, args.out_dir)
+    fit_png = write_fit_plot(result, args.out_dir)
 
     print(
         f"{result.target_id}: score {result.score:.3f}, threshold {result.threshold:.3f}"
@@ -546,8 +671,43 @@ def main(argv: list[str] | None = None) -> int:
             "  FLAG: significant centroid offset; the signal is likely on a neighbour "
             "(the score above does not include this test)"
         )
-    print(f"  wrote {png} and {js}")
+    if result.fit is not None:
+        for line in fit_summary_lines(result.fit):
+            print("  " + line)
+    elif result.fit_error is not None:
+        print(f"  fit: not run ({result.fit_error})")
+    print(f"  wrote {png} and {js}" + (f", and {fit_png}" if fit_png else ""))
     return 0
+
+
+def fit_summary_lines(fit: FitResult) -> list[str]:
+    """The fit in a few printable lines."""
+    p = fit.parameters
+
+    def show(name: str, digits: int) -> str:
+        s = p[name]
+        return (
+            f"{s['median']:.{digits}f} +{s['upper'] - s['median']:.{digits}f} "
+            f"-{s['median'] - s['lower']:.{digits}f}"
+        )
+
+    lines = [
+        f"fit: Rp/R* = {show('k', 4)}, b = {show('b', 2)}, T14 = {show('t14_hours', 2)} h, "
+        f"depth = {show('depth_ppm', 0)} ppm",
+        f"     stellar density from the transit = {show('rho_star', 2)} g/cm^3"
+        + (f", Rp = {show('rp_earth', 2)} Earth radii" if "rp_earth" in p else ""),
+    ]
+    check = fit.density_check
+    if check is not None:
+        verdict = "consistent with" if check["consistent"] else "INCONSISTENT with"
+        lines.append(
+            f"     {verdict} the star's {check['stellar_density']:.2f} g/cm^3 "
+            f"(ratio {check['ratio']['median']:.2f})"
+        )
+    if not fit.converged:
+        lines.append("     the chain did not converge; treat the intervals as rough")
+    lines += [f"     warning: {w}" for w in fit.warnings if "autocorrelation" not in w]
+    return lines
 
 
 if __name__ == "__main__":
