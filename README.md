@@ -17,7 +17,7 @@ and a dashboard of ranked candidates.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python run_pipeline.py            # ~3 min on 4 cores
-pytest                            # ~4 min, 325 tests
+pytest                            # ~6 min, 376 tests
 ```
 
 It writes `results/metrics.json`, `results/report.txt`, the trained model
@@ -169,6 +169,104 @@ classification problem rather than a signal-detection problem. It is why
 odd/even and secondary-eclipse tests exist in real vetting pipelines, and it is
 why those two features turn out to be the model's second and third most
 important.
+
+### Structured systematics in the synthetic sector
+
+The noise above is drawn star by star, so nothing in it is shared between
+targets. Real TESS systematics come from the spacecraft: every star on a
+camera sees the same scattered light, pointing jitter and focus changes, and
+every star in the sector sees the same momentum dumps. `--systematics` adds
+that layer, drawn once per sector from the seed:
+
+```
++ scattered light   rises into each perigee, 13.7 d apart (the mid-sector gap is one),
+                    with a 1-day Earthshine modulation; camera levels 1.0, 0.6, 0.35, 0.2
++ pointing jitter   1/f noise, one series per camera
++ momentum dumps    spacecraft-wide, every 2.5 to 5 d: the cadence is lost and the
+                    flux settles back over about 1.5 hours
++ focus settling    after each perigee as the thermal state recovers, per camera
+```
+
+![Sector systematics](figures/systematics/05_sector_systematics.png)
+
+Each star gets a camera and its own coupling to each component, in units of
+its white-noise scatter (scattered light 1 to 20, dumps 1 to 8, focus 0.5 to
+5, jitter 0.3 to 1.5), so stars on one camera share the shape at different
+strengths, as they do after real background subtraction. Scattered light and
+jitter can take either sign; dumps and defocus only lose flux. The stars,
+planets and binaries are the same draws as without it.
+
+```bash
+python run_pipeline.py --systematics                           # results/systematics/
+python run_pipeline.py --systematics --systematics-scale 0     # the paired control
+python run_pipeline.py --systematics --systematics-components momentum_dumps
+```
+
+A scale of 0 keeps the sector's gap and the cadences lost at dumps but adds
+no signal, so it is the control for the same stars with and without the
+systematics. Turning components off leaves the others exactly as they were.
+On the default seed (2400 curves, 96 planets, 34 held out), adding one
+component at a time:
+
+| Added to the control | Held-out AP | Planets whose period the search finds (of 96) | Variable stars peaking at the dump period |
+| --- | --- | --- | --- |
+| nothing (control) | 0.747 [0.669, 0.833] | 86 | 3% |
+| scattered light | 0.748 | 87 | |
+| pointing jitter | 0.764 | 82 | |
+| momentum dumps | 0.742 | 78 | 53% |
+| focus settling | 0.775 | 85 | |
+| all four | 0.669 [0.590, 0.759] | 76 | 44% |
+
+Full report in
+[`results/systematics/report.txt`](results/systematics/report.txt).
+
+**The search pays first, and the components compound.** Momentum dumps
+are a periodic, hour-long loss of flux at the same times in every star,
+which is a transit as far as a per-star box search can tell. With all four
+components, 44% of the variable stars put their strongest BLS peak at the
+dump interval or a multiple of it (from 3%), and 365 of the 382 with a
+significant peak (SDE above 7) are there. The planets lose too: the search
+finds 76 of 96 periods instead of 86, 13 planets have their peak at the
+dump period instead of 3, and above a transit SNR of 12 it finds 75 of 80
+instead of 79. The classifier loses 0.08 in average precision, mostly on
+the false-positive side: at the threshold it flags 63 stars with 24 planets
+among them, against 56 with 26. Of the 322 held-out variable stars whose
+peak sits at the dump period it flags 17 (5%), against 14 of the other 431
+(3%). Their dips are real but shallow (a median depth of 1.9 times the
+scatter, against 5.6 for planets), so the model still calls most of them
+noise. No component costs the classifier much on its own (the dumps alone
+0.005, and jitter and focus even help, by margins well inside the
+interval); the 0.08 comes from all four together.
+
+**It is not learning the sector's dump period.** A model trained on one
+sector could simply learn that the dump interval means "not a planet". To
+test that, the same population was drawn into two more sectors (seeds 43 and
+44, each with its own dump interval, gap and camera series), each with its
+own paired control, and the sector 42 model was also scored on them:
+
+| Sector (dump interval) | AP, control → with systematics | Search finds (of 96) | Variable stars at the dump period | Sector 42 model, with systematics |
+| --- | --- | --- | --- | --- |
+| 42 (2.58 d) | 0.747 → 0.669 | 86 → 76 | 3% → 44% | |
+| 43 (4.33 d) | 0.678 → 0.622 | 75 → 71 | 4% → 32% | 0.626 |
+| 44 (2.52 d) | 0.695 → 0.556 | 82 → 66 | 2% → 43% | 0.526 |
+
+Scored on a sector it never saw, the sector 42 model does about as well as
+that sector's own model: 0.626 against 0.622 on sector 43, and 0.526
+against 0.556 on 44. Without systematics it edges out both sectors' own
+models (0.646 against 0.630, and 0.766 against 0.731), so sector 44 may
+carry a small transfer cost, but it is well inside one run's interval.
+What does vary is how much a sector suffers: the paired drop is 0.08 in
+sector 42, 0.06 in 43 and 0.14 in 44, where the search also loses the most
+planets. Sectors 42 and 44 dump at nearly the same interval, so the
+interval alone does not set the cost.
+
+Every comparison here is paired for a reason. The control differs from the
+same seed's run without `--systematics` by 0.04 to 0.06 in average
+precision, only because the shared gap and the dropped dump cadences change
+every star's sampling, and the default model scores 0.63 to 0.80 across
+these three seeds, a spread wider than the bootstrap interval of a single
+run. One synthetic sector is not the number to expect, with or without
+systematics.
 
 ### Designed for real data to drop in
 
@@ -665,6 +763,107 @@ folded views does beat this, because transit *shape* carries information that a
 handful of scalars throws away. The choice here is a consequence of the data
 volume, not a claim about architectures.
 
+### Kepler DR25: a training set big enough for shape
+
+The data-volume argument above has a way out: Kepler's final data release.
+The Kepler pipeline flagged 34,032 threshold-crossing events (TCEs) over 17
+quarters, and the DR25 Robovetter sorted every one into a planet candidate
+(PC, 4,034), an astrophysical false positive such as an eclipsing binary
+(AFP, 3,025), or a non-transiting phenomenon such as instrumental noise
+(NTP, 26,973).
+
+```bash
+python -m transitml.kepler_dr25                    # 1000 TCEs per class, about 35 min
+python -m transitml.kepler_dr25 --all --n-jobs 16  # all 34,032 (about 17,000 stars)
+```
+
+This downloads the labels from the NASA Exoplanet Archive (committed as
+`data/kepler_dr25/dr25_tce_labels.csv`), fetches every long-cadence quarter of
+each star from MAST (no `lightkurve` needed; cached per star), detrends with
+all of the star's TCEs masked, and folds each TCE into five views in the
+AstroNet format: a 2001-bin **global** view of the whole orbit, a 201-bin
+**local** view of the transit, the local view of **odd** and **even** transits
+separately, and the local view half an orbit later, where a **secondary**
+eclipse would be.
+
+![DR25 views](figures/kepler_dr25/01_views.png)
+
+On a class-balanced sample of 3,000 TCEs (2,859 stars, split by star so none
+is on both sides), gradient boosting on the binned views, with no Kepler
+pipeline statistic as input, scores the 906 held-out TCEs as follows:
+
+| | Views model | Kepler MES alone |
+| --- | --- | --- |
+| Average precision (chance 0.339) | **0.905** (95% CI 0.878 to 0.930) | 0.312 |
+| PC kept, at a threshold frozen on training folds for 90% recall | 88.3% | 87.0% |
+| AFP rejected | 79.9% | 7.7% |
+| NTP rejected | 95.0% | 33.2% |
+
+MES, the pipeline's detection statistic, ranks below chance: every TCE
+already passed it, and the strongest signals are mostly eclipsing binaries
+(median MES 73 for AFP against 18 for PC in this sample). At the catalogue's own class mix the same per-class pass rates give
+a precision of 64.6% (78.3% on the balanced sample). Full numbers are in
+`results/kepler_dr25/report.txt`.
+
+![DR25 precision-recall](figures/kepler_dr25/02_precision_recall.png)
+
+Two caveats. These labels are the Robovetter's calls, so the score measures
+agreement with the Robovetter rather than with the truth (it labels
+Kepler-10 b, a confirmed planet, as not transit-like). DR24 had a hand-vetted
+subset for this; in DR25 that column is empty for every row. And this model
+sees binned pixels of shape through a tree ensemble, so it is the baseline a
+CNN on the same views has to beat, not the CNN itself.
+
+### Transit Least Squares, and BLS on a GPU
+
+**TLS as the search.** `python run_pipeline.py --search tls` replaces BLS
+with Transit Least Squares (Hippke & Heller 2019;
+`pip install transitleastsquares`), which fits a limb-darkened transit shape
+instead of a box. Everything downstream is unchanged: TLS supplies the period,
+duration and epoch, its spectrum stands in for the BLS power in `bls_sde` and
+`power_contrast`, and depth and SNR are the same box statistics at TLS's
+ephemeris. Results go to `results/tls/`, and the choice is saved with the
+model, so `vet` searches the way training did.
+
+On the same 600 synthetic planets, detrended once and searched both ways
+(`python -m transitml.search_benchmark`, full report in
+[`results/search_comparison/report.txt`](results/search_comparison/report.txt)):
+
+| Injected SNR | Planets | BLS finds the period | TLS finds the period |
+| --- | --- | --- | --- |
+| below 7 | 91 | 19 | 15 |
+| 7 to 10 | 33 | 15 | 17 |
+| 10 to 15 | 41 | 29 | 31 |
+| 15 to 25 | 77 | 73 | 75 |
+| 25 to 50 | 120 | 112 | 115 |
+| above 50 | 238 | 237 | 238 |
+
+TLS finds 491 periods against 485 for BLS: 15 planets only TLS finds and 9
+only BLS does. That is the direction the TLS paper reports, but a 15 to 9
+split is well within chance (p = 0.31, two-sided sign test), and TLS takes
+437 ms per light curve against 100 ms. The full pipeline with TLS scores
+average precision 0.77 [0.70, 0.83] against 0.80 [0.74, 0.86] with BLS on
+the default seed ([`results/tls/report.txt`](results/tls/report.txt)). The
+intervals overlap, and nothing here says the template is worth four times
+the search time on this data, so BLS stays the default.
+
+**BLS on a GPU.** `transitml/fastbls.py` computes the same periodogram as
+whole-array operations: every cadence is folded at a block of periods at
+once, binned with one `bincount`, and every box of every duration is read off
+cumulative sums. It follows astropy's algorithm step for step and matches its
+periodogram to 1e-13 on planets, binaries and noise
+(`tests/test_fastbls.py`), so the features and the trained model do not
+depend on which engine ran. The code runs unchanged on NumPy or CuPy:
+`run_pipeline.py --bls-engine gpu` uses a CUDA GPU through CuPy.
+
+**It has not been run on a GPU**, because this environment has none.
+`python -m transitml.fastbls --engine gpu` times it against astropy and checks
+that the periodograms agree, so the first run on a GPU machine settles whether
+it works and how fast it is. On a CPU the array form is about 19 times slower
+than astropy (1.9 s against 0.1 s per light curve), because it builds every
+box of every period in memory instead of streaming them through a compiled
+loop. So astropy stays the default.
+
 ---
 
 ## Vetting one star
@@ -719,6 +918,94 @@ neither sector alone gives a significant peak at 10 days, the two stitched
 together do. The grid keeps its 2000 periods however long the baseline, so
 sectors far apart in time are searched too coarsely; consecutive sectors
 are fine.
+
+### Single and duo transits
+
+BLS needs at least two transits, and its period grid stops at half the
+baseline, so a planet on a 40-day orbit, which shows one transit in a sector
+or none, is excluded by construction (failure mode 2 below). Those are the
+long-period, temperate planets, and one event is enough to point a second
+sector or a radial-velocity campaign at the star. `transitml/single.py`
+searches for individual dips instead, and `vet` runs it on every star:
+
+- **Box scan.** Every cadence is tried as the centre of a box of six
+  durations from 1.4 to 11 hours. The depth is measured against the
+  cadences one duration wide on either side, so a slow residual trend does
+  not read as depth, and its error is the light curve's own scatter binned
+  at that duration (red noise inflates it, never below white). A box less
+  than 60% observed is skipped, so a dip half in a gap does not count. The
+  best box is refined on a finer grid of durations and centres.
+- **Events.** The highest-SNR box is an event at SNR 7.5 or more; boxes
+  overlapping it are removed and the next is taken, up to four.
+- **Ramps are not events.** A momentum-dump ramp, a sharp drop and then an
+  exponential recovery, is a lone dip too. Each event is fitted both as a box
+  (free centre and width) and as a ramp (free start and time constant, either
+  way round in time), and is set aside when the ramp fits better by a
+  chi-squared of 4 in noise units. A transit has two sharp edges and a ramp
+  one, so the two separate cleanly.
+- **What one event says about the period.** Any period that would put
+  another transit on observed data without the dip is ruled out (a predicted
+  transit whose measured depth is under half the event's), which gives a
+  minimum period. It is usually the longer side of the window, but shorter
+  when the next transit could hide in a gap. The duration gives a rough
+  period for a central transit across a Sun-like density,
+  `P = π² G ρ T³ / 3`.
+- **Duos.** Two events of matching depth (within 3 sigma plus 20% of the
+  depth) and duration (within a factor of 1.6) form a duo. Its period is the separation divided
+  by a whole number, and each such alias is kept only if none of the
+  transits it predicts lands on flat, observed data.
+- **Periodic signals are not repeated.** An event inside a transit of a
+  periodic signal from the multi-planet search is dropped, but only when at
+  least two of that signal's predicted transits show a dip at SNR 3 or more.
+  A BLS "period" whose only real dip is the event itself explains nothing,
+  so a true single transit is never hidden behind its own alias.
+
+The report lists each event with its time, depth, duration, SNR, minimum
+period and whether it sits next to a gap, marks it with a triangle on the
+detrended panel, adds duos with their allowed periods, and names the times
+of any ramps it set aside. The JSON carries the same under
+`single_events`. **None of it is scored**: the classifier still sees only the
+strongest BLS signal, and the headline numbers are unchanged.
+
+```bash
+python -m transitml.single_benchmark          # injection-recovery, results/single_transit/
+```
+
+**Injection-recovery.** The benchmark puts one long-period planet (P = 14
+to 400 d, drawn as in the main population, with its transit moved inside the
+sector) into each of 600 synthetic variable stars and leaves 600 others
+untouched, then detrends each as `vet` does, masked second pass included.
+Full report in
+[`results/single_transit/report.txt`](results/single_transit/report.txt).
+
+| SNR against the star's own noise | Planets | Found | Transits up to 10.8 h: found |
+| --- | --- | --- | --- |
+| below 7 | 227 | 3% | 3% of 195 |
+| 7 to 10 | 52 | 50% | 58% of 43 |
+| 10 to 15 | 59 | 85% | 94% of 51 |
+| 15 to 25 | 65 | 77% | 93% of 45 |
+| above 25 | 179 | 94% | 100% of 137 |
+
+- **False alarms.** 14 of the 600 untouched stars (2.3%) show an event, the
+  strongest at SNR 13. Before the ramp test it was 97 (16%), most of them
+  the generator's instrumental ramps. The test set ramps aside on 87
+  stars and lost 8 of the 309 planets found without it.
+- **The SNR is the one the search can reach.** It is the transit's mean
+  depth over the error of a box of its true duration at its true time, with
+  the detrended light curve's scatter and red-noise factor. The white-noise
+  SNR of the same transits is twice as high (median), because these stars
+  also carry red noise; binned by that, recovery would look far worse than
+  the search is.
+- **Long transits are the main loss above SNR 10.** The longest box is 10.8
+  hours, under the 0.75-day spline knot spacing on purpose (see "Why the
+  knot spacing has a floor" above). A longer transit is both longer than
+  every box and partly absorbed by the detrender: on a 400-star subset,
+  transits longer than 12 hours kept a median third of their depth.
+- **Duos.** 66 planets have two transits in the data. Both were found for
+  29; 27 of those pair into a duo, and the true period is among the allowed
+  aliases for all 27. Without the 20% depth allowance only 20 paired: at
+  high SNR the depth errors are smaller than the few per cent that
+  detrending and cadence sampling put between two transits of one planet.
 
 ### Centroid test: is the dip on the target?
 
@@ -935,9 +1222,12 @@ the transit.
 `SYN-000935` (P = 9.0 d, 3 transits) are both missed at the search stage. With a
 27.4-day baseline, a 10-day planet contributes at most three events, the folding
 gain is `sqrt(3)`, and the BLS peak is not distinguishable from the alias forest.
-Single-transit events are excluded by construction — the period grid is capped at
-half the baseline, because a single event cannot be confirmed as periodic. Real
-surveys solve this by stacking sectors, not by better statistics on one.
+Single-transit events are excluded from the periodic search by construction: the
+period grid is capped at half the baseline, because a single event cannot be
+confirmed as periodic. Real surveys solve this by stacking sectors, not by better
+statistics on one. `vet` now also lists lone and paired dips from a separate
+single-event search (see "Single and duo transits" above), but the classifier and
+these numbers do not use it.
 
 **3. Grazing, V-shaped transits.** `SYN-001633` (b = 0.94) and `SYN-000250`
 (b = 0.92) are both missed. A grazing planet produces exactly the V-shaped,
@@ -1009,15 +1299,21 @@ reported number while corrupting the test rows does.
 
 **What it does not establish.** The noise model is the weak point, and it is
 weak in the direction that flatters the result. Real TESS systematics are
-*structured* — scattered light from the Earth and Moon on a 13.7-day orbital
+*structured*: scattered light from the Earth and Moon on a 13.7-day orbital
 cycle, focus changes with spacecraft thermal state, pointing jitter correlated
 across a whole camera, background contamination from neighbouring stars in a
-21-arcsecond pixel — and none of that is a stationary 1/f process. My red noise
-is generated as a power law with random phases, so it has no features the
-detrending can fail on in a correlated way across targets, and a robust spline
-handles it more easily than it would handle real data. I would expect average
-precision to drop substantially on real photometry, and the drop to come mostly
-from the false-positive side.
+21-arcsecond pixel. None of that is a stationary 1/f process. My default red
+noise is generated as a power law with random phases, star by star, so it has
+no features the detrending can fail on in a correlated way across targets, and
+a robust spline handles it more easily than it would handle real data.
+`--systematics` adds the shared, spacecraft-driven part (see "Structured
+systematics in the synthetic sector" above); on paired controls it costs 0.06
+to 0.14 in average precision and 4 to 16 of the 96 planets' periods in the
+search, mostly through momentum dumps. Its shapes are simple parametric forms
+rather than measurements from real sectors, and it still leaves out
+contamination from neighbours. I would expect average precision to drop
+substantially on real photometry, and the drop to come mostly from the
+false-positive side.
 
 Three further gaps:
 
@@ -1065,42 +1361,55 @@ transit-detection/
 │   ├── physics.py              # Kepler's third law, transit durations
 │   ├── data/
 │   │   ├── base.py             # LightCurve + LightCurveSource interface, stitching
-│   │   ├── synthetic.py        # the generator
+│   │   ├── synthetic.py        # the generator, and sector-wide systematics
 │   │   ├── mast.py             # real TESS/Kepler via lightkurve (same interface)
 │   │   ├── injection.py        # synthetic eclipses injected into real curves
 │   │   ├── toi.py              # TOI table -> per-star CP/KP vs FP/FA labels
+│   │   ├── kepler.py           # Kepler DR25 TCE labels and MAST light curves
 │   │   ├── files.py            # CSV and npz light-curve files
 │   │   ├── tpf.py              # target pixel files: container, npz, lightkurve
 │   │   ├── synthetic_tpf.py    # synthetic pixels: on-target transits and blends
 │   │   └── loader.py           # source -> feature matrix, parallel over curves
 │   ├── preprocess.py           # robust spline + rotation detrending
 │   ├── features.py             # BLS search and vetting statistics
+│   ├── fastbls.py              # the same BLS as array operations, NumPy or CuPy
+│   ├── tls.py                  # Transit Least Squares as the search
+│   ├── search_benchmark.py     # BLS against TLS on the same planets
 │   ├── search.py               # iterative multi-planet search
+│   ├── single.py               # single and duo transits, found without folding
 │   ├── centroid.py             # difference-image and centroid-motion tests
 │   ├── model.py                # split, baselines, training, threshold, save/load
 │   ├── calibration.py          # Platt scaling on out-of-fold scores; Brier, ECE
 │   ├── treeshap.py             # exact SHAP values from the fitted trees
 │   ├── evaluate.py             # PR curves, AP, confusion matrix, failure analysis
 │   ├── benchmark.py            # the trained model scored on real TOI dispositions
+│   ├── views.py                # global, local, odd, even, secondary folded views
+│   ├── kepler_dr25.py          # python -m transitml.kepler_dr25: training set + model
 │   ├── vet.py                  # python -m transitml.vet: one star, one page
+│   ├── single_benchmark.py     # injection-recovery for lone transits
 │   ├── batch.py                # python -m transitml.batch: a sector, cached and ranked
 │   ├── dashboard.py            # the batch's self-contained HTML dashboard
 │   └── plots.py                # figures (matplotlib Agg, no display)
-├── tests/                      # 325 tests, ~4 min
+├── tests/                      # 376 tests, ~6 min
 │   ├── test_generator.py       # imbalance is exact; injected physics is consistent
 │   ├── test_preprocess.py      # depth preservation; why the median was rejected
 │   ├── test_features.py        # recovery vs SNR; the vetting statistics fire
+│   ├── test_fastbls.py         # array BLS equals astropy's; engine changes nothing
+│   ├── test_tls.py             # TLS finds the period; same features; falls back
 │   ├── test_search.py          # two planets found; noise yields nothing
+│   ├── test_single.py          # lone and duo transits found; ramps and noise are not
 │   ├── test_stitch.py          # sectors joined; marginal pair becomes a detection
 │   ├── test_evaluation.py      # no test-set leakage into threshold or metrics
 │   ├── test_calibration.py     # Platt fit, ranking unchanged, proper scores
 │   ├── test_treeshap.py        # SHAP against brute force and the shap package
 │   ├── test_injection.py       # injection is exact, leaves noise alone, runs offline
+│   ├── test_systematics.py     # sector systematics are shared, seeded and switchable
 │   ├── test_toi.py             # TOI parsing, per-star labels, sector choice
 │   ├── test_benchmark.py       # the real-label benchmark, offline, from a cache
 │   ├── test_files.py           # CSV and npz input
 │   ├── test_model_io.py        # saved model reloads with threshold, calibration, features
 │   ├── test_vet.py             # vet end to end on CSV, npz and a stubbed TIC
+│   ├── test_kepler_dr25.py     # DR25 labels, FITS, views and CLI, offline
 │   ├── test_tpf.py             # pixel files: npz round trip, stubbed download
 │   ├── test_synthetic_tpf.py   # synthetic pixels put the light where it belongs
 │   ├── test_centroid.py        # blends flagged, on-target not; bad input survives
@@ -1112,7 +1421,9 @@ transit-detection/
 ```
 
 `python run_pipeline.py --help` exposes `--seed`, `--n-curves`, `--n-jobs`,
-`--no-figures` and the output directories. Runtime scales linearly in
+`--no-figures`, `--systematics` (with `--systematics-scale` and
+`--systematics-components`), `--search` and `--bls-engine`, and the output
+directories. Runtime scales linearly in
 `--n-curves`; the BLS search is the bottleneck and is parallel across curves.
 
 ## Roadmap

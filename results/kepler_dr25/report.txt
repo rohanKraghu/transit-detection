@@ -1,0 +1,26 @@
+Kepler DR25 training set: first model on the folded views
+==========================================================
+
+Catalogue: 34,032 TCEs (4,034 PC, 3,025 AFP, 26,973 NTP).
+Sample:    3,000 TCEs on 2,859 stars (1,000 PC, 1,000 AFP, 1,000 NTP); 0 more could not be built.
+Split by star: 2,094 train, 906 test (307 PC, 298 AFP, 301 NTP).
+
+Ranking (test split)
+  average precision, views model   0.905 (95% bootstrap 0.878 to 0.930)
+  average precision, MES alone     0.312
+  chance level (PC fraction)       0.339
+  ROC AUC, views model             0.945
+
+At a threshold frozen on training folds for 90% PC recall
+                      views model   MES alone
+  PC kept                  88.3%       87.0%
+  AFP rejected             79.9%        7.7%
+  NTP rejected             95.0%       33.2%
+  precision, sample        78.3%
+  precision at the catalogue's class mix: 64.6%
+
+Caveats
+  The labels are the DR25 Robovetter's calls, so this measures agreement
+  with the Robovetter, not with the truth.  The sample is balanced by class;
+  the catalogue-mix precision re-weights the measured per-class pass rates
+  to 4,034 : 3,025 : 26,973.
