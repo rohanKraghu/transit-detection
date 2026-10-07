@@ -248,13 +248,17 @@ class PreprocessConfig:
 
 @dataclass(frozen=True)
 class BLSConfig:
-    """Box Least Squares search grid."""
+    """The periodic transit search: its grid and which algorithm runs it."""
 
     min_period_days: float = 0.5
     #: Capped so at least two transits fit inside the baseline.
     max_period_fraction_of_baseline: float = 0.5
     n_periods: int = 2000
     durations_days: tuple[float, ...] = (0.04, 0.07, 0.11, 0.16, 0.24)
+    #: ``"bls"`` (box least squares) or ``"tls"`` (Transit Least Squares, which
+    #: uses its own period and duration grids between the same period limits).
+    #: Part of the saved model, so ``vet`` searches the way training did.
+    search: str = "bls"
 
 
 @dataclass(frozen=True)

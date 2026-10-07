@@ -23,11 +23,13 @@ htmlcov/
 # the feature matrix is a build artefact and is not.
 results/dataset.npz
 results/real_injection/dataset.npz
+results/tls/dataset.npz
 results/systematics/dataset.npz
 # The fitted classifier is a pickle tied to the scikit-learn version that
 # wrote it; run_pipeline.py rebuilds it in two minutes.
 results/model.joblib
 results/real_injection/model.joblib
+results/tls/model.joblib
 results/systematics/model.joblib
 # Single-star reports from python -m transitml.vet.
 results/vet/
