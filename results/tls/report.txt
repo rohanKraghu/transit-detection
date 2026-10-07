@@ -8,70 +8,146 @@ Average precision (headline metric; chance = positive rate)
   random ranking (chance)            AP = 0.0405
   baseline: depth_threshold          AP = 0.100  [0.083, 0.132]   (ROC-AUC 0.758)
   baseline: bls_snr                  AP = 0.165  [0.136, 0.212]   (ROC-AUC 0.815)
-  model: gradient boosting           AP = 0.766  [0.699, 0.835]   (ROC-AUC 0.929)
+  model: gradient boosting           AP = 0.753  [0.685, 0.824]   (ROC-AUC 0.922)
   (brackets are 68% bootstrap intervals over 2000 test-set resamples)
 
-  lift over chance:            18.9x
-  lift over best baseline:     4.64x  (best baseline: bls_snr)
+  lift over chance:            18.6x
+  lift over best baseline:     4.56x  (best baseline: bls_snr)
   the model beats that baseline in 100.0% of paired bootstrap resamples
 
 Operating point (threshold chosen by CV on the TRAINING split only)
 ------------------------------------------------------------------------
-  rule:      max recall subject to Wilson 1-sigma lower bound on CV precision >= 0.50 (bound 0.504 at 86 candidates)
-  threshold: 0.1889
-  CV on train:  precision = 0.558   recall = 0.774
-  HELD-OUT:     precision = 0.542   recall = 0.765   F1 = 0.634
+  rule:      max recall subject to Wilson 1-sigma lower bound on CV precision >= 0.50 (bound 0.505 at 84 candidates)
+  threshold: 0.2735
+  CV on train:  precision = 0.560   recall = 0.758
+  HELD-OUT:     precision = 0.590   recall = 0.676   F1 = 0.630
 
   Confusion matrix (rows = truth, cols = prediction)
                     pred: no planet    pred: planet
-    truth: no planet          784              22
-    truth: planet               8              26
-    false positives by true object type -> eclipsing_binary: 5, noise: 17
+    truth: no planet          790              16
+    truth: planet              11              23
+    false positives by true object type -> eclipsing_binary: 5, noise: 11
 
 Precision@k (what a k-night follow-up programme would actually get)
 ------------------------------------------------------------------------
-  model_top20                        0.950
+  model_top20                        1.000
   depth_threshold_top20              0.000
   bls_snr_top20                      0.100
+
+Calibrated probability (Platt scaling fitted on out-of-fold training scores)
+------------------------------------------------------------------------
+  P(planet) = 1 / (1 + exp(-(0.654 s - 1.157))), s = the trees' log-odds
+  monotone in the score, so ranking, average precision and verdicts are unchanged
+  the operating threshold is P(planet) = 0.142 at the training planet rate (3.97%)
+
+  held-out probabilities            Brier   log loss      ECE
+  constant training planet rate    0.0388     0.1695   0.0007
+  score read as a probability      0.0209     0.0908   0.0180
+  calibrated                       0.0171     0.0779   0.0086
+
+  planets the calibrated probabilities expect: 37.1 in the test set (34 there),
+  24.3 among the 39 flagged (23 of them planets)
+  calibration slope on test 0.97, intercept -0.24
+  (1 and 0 are ideal; a slope below 1 means the probabilities are too extreme)
+
+  calibrated P(planet)    stars  planets   mean P  observed
+  0 - 0.003                 249        1    0.002     0.004
+  0.003 - 0.01              212        1    0.006     0.005
+  0.01 - 0.03               216        3    0.017     0.014
+  0.03 - 0.1                106        3    0.051     0.028
+  0.1 - 0.3                  28        4    0.146     0.143
+  0.3 - 0.6                   6        1    0.457     0.167
+  0.6 - 1                    23       21    0.850     0.913
 
 Completeness vs injected transit SNR (held-out planets)
 ------------------------------------------------------------------------
   recall = P(search finds the period) x P(classifier keeps it | found)
   SNR bin            n   recall   search  classifier
-  0 - 7              4     0.25     0.25        0.00
+  0 - 7              4     0.00     0.25        0.00
   7 - 12             4     0.25     0.50        0.50
   12 - 20            1     0.00     1.00        0.00
-  20 - 40            8     0.88     0.88        1.00
-  40 - inf          17     1.00     1.00        1.00
+  20 - 40            8     0.75     0.88        0.86
+  40 - inf          17     0.94     1.00        0.94
   overall search recovery on held-out planets: 0.82
 
 Top features (permutation importance in average precision, on test)
 ------------------------------------------------------------------------
-  power_contrast               +0.2617 +/- 0.0432
-  secondary_sigma              +0.1520 +/- 0.0418
-  odd_even_sigma               +0.0823 +/- 0.0266
-  max_single_event_fraction    +0.0695 +/- 0.0187
-  bls_duration                 +0.0289 +/- 0.0165
-  log_depth                    +0.0287 +/- 0.0183
-  bls_sde                      +0.0281 +/- 0.0094
-  harmonic_delta_loglike       +0.0165 +/- 0.0071
+  power_contrast               +0.2370 +/- 0.0481
+  secondary_sigma              +0.1192 +/- 0.0348
+  odd_even_sigma               +0.0576 +/- 0.0303
+  max_single_event_fraction    +0.0541 +/- 0.0164
+  bls_sde                      +0.0289 +/- 0.0057
+  log_depth                    +0.0288 +/- 0.0189
+  bls_duration                 +0.0228 +/- 0.0139
+  half_period_depth_ratio      +0.0179 +/- 0.0076
+
+What moves a star's score (mean |SHAP| on test, in calibrated log-odds)
+------------------------------------------------------------------------
+  every star starts at log-odds -4.76 (P = 0.008); its SHAP values add up to its own
+  max_single_event_fraction    0.575
+  power_contrast               0.466
+  secondary_sigma              0.406
+  log_depth                    0.401
+  odd_even_sigma               0.309
+  bls_sde                      0.249
+  half_period_depth_ratio      0.239
+  duration_over_period         0.230
+
+False positives at the operating threshold, and what pushed each one up (SHAP)
+------------------------------------------------------------------------
+  SYN-000159   eclipsing_binary   score 0.960   P(planet) 0.715
+               -> power_contrast = 8.11 (+1.71), harmonic_delta_loglike = -1.84e+03 (+0.61), bls_sde = 244 (+0.55)
+  SYN-002035   eclipsing_binary   score 0.936   P(planet) 0.645
+               -> power_contrast = 3.3 (+1.44), max_single_event_fraction = 0.151 (+0.69), bls_sde = 85.4 (+0.52)
+  SYN-000724   noise              score 0.908   P(planet) 0.585
+               -> power_contrast = 2.99 (+1.27), secondary_sigma = -0.349 (+0.74), log_depth = -2.62 (+0.48)
+  SYN-001204   noise              score 0.894   P(planet) 0.560
+               -> power_contrast = 5.59 (+1.74), secondary_sigma = -0.181 (+0.73), harmonic_delta_loglike = -721 (+0.61)
+  SYN-001211   eclipsing_binary   score 0.864   P(planet) 0.513
+               -> power_contrast = 19.2 (+1.76), bls_sde = 1.14e+03 (+0.59), max_single_event_fraction = 0.104 (+0.55)
+  SYN-001748   noise              score 0.771   P(planet) 0.410
+               -> power_contrast = 3.02 (+1.64), harmonic_delta_loglike = -650 (+0.94), log_duration_ratio = -0.025 (+0.67)
+  SYN-000960   eclipsing_binary   score 0.700   P(planet) 0.354
+               -> power_contrast = 114 (+1.61), secondary_sigma = 0 (+0.60), max_single_event_fraction = 0.0314 (+0.56)
+  SYN-000491   eclipsing_binary   score 0.597   P(planet) 0.289
+               -> power_contrast = 4.02 (+1.76), log_duration_ratio = -0.473 (+0.58), bls_sde = 80.9 (+0.55)
+  SYN-000698   noise              score 0.535   P(planet) 0.256
+               -> power_contrast = 3.23 (+1.17), max_single_event_fraction = 0.502 (+0.65), harmonic_delta_loglike = -392 (+0.58)
+  SYN-002240   noise              score 0.449   P(planet) 0.216
+               -> max_single_event_fraction = 0.146 (+0.83), power_contrast = 1.2 (+0.56), log_depth = -2.95 (+0.52)
+  SYN-001863   noise              score 0.417   P(planet) 0.202
+               -> power_contrast = 3.35 (+1.05), log_depth = -2.65 (+0.49), bls_sde = 27.9 (+0.40)
+  SYN-000671   noise              score 0.410   P(planet) 0.199
+               -> max_single_event_fraction = 0.224 (+0.77), secondary_sigma = -0.404 (+0.61), flux_skew = -0.019 (+0.50)
+  ... and 4 more
 
 Missed planets (false negatives at the operating threshold)
 ------------------------------------------------------------------------
+  SYN-001633   SNR    3.3  depth    1774 ppm  P   5.31 d  T14  1.25 h  b 0.94  n_tr 5
+               -> search did not recover the period
   SYN-002253   SNR    4.9  depth    1709 ppm  P   5.51 d  T14  1.91 h  b 0.55  n_tr 5
                -> search did not recover the period
   SYN-000420   SNR    5.2  depth     547 ppm  P   5.28 d  T14  1.65 h  b 0.77  n_tr 4
                -> period recovered; classifier rejected it  (odd/even 0.0 sigma, secondary -0.9 sigma, red-noise beta 1.61)
+               pushed down by max_single_event_fraction = 0.92 (-1.66), red_noise_beta = 1.61 (-0.48), power_contrast = 2.05 (-0.16)
   SYN-002073   SNR    5.3  depth     572 ppm  P   9.80 d  T14  2.31 h  b 0.66  n_tr 3
                -> search did not recover the period
   SYN-000250   SNR    7.6  depth    1128 ppm  P   3.81 d  T14  1.45 h  b 0.92  n_tr 6
                -> period recovered; classifier rejected it  (odd/even 0.3 sigma, secondary -1.3 sigma, red-noise beta 1.03)
+               pushed down by power_contrast = 1.79 (-0.64), harmonic_delta_loglike = -16.2 (-0.21), n_transits = 6 (-0.15)
   SYN-000629   SNR    7.8  depth     553 ppm  P   3.80 d  T14  1.65 h  b 0.71  n_tr 6
                -> search did not recover the period
   SYN-000935   SNR   10.7  depth    1302 ppm  P   9.02 d  T14  3.08 h  b 0.74  n_tr 3
                -> search did not recover the period
   SYN-000394   SNR   17.6  depth    1571 ppm  P   6.22 d  T14  4.09 h  b 0.37  n_tr 4
-               -> period recovered; classifier rejected it  (odd/even 0.1 sigma, secondary -2.0 sigma, red-noise beta 1.34)
+               -> period recovered; classifier rejected it  (odd/even 0.1 sigma, secondary -1.9 sigma, red-noise beta 1.34)
+               pushed down by power_contrast = 2.37 (-0.18), n_transits = 4 (-0.12), log_duration_ratio = 0.138 (-0.11)
+  SYN-001254   SNR   27.0  depth    4689 ppm  P   5.44 d  T14  3.41 h  b 0.53  n_tr 5
+               -> period recovered; classifier rejected it  (odd/even 0.2 sigma, secondary -0.5 sigma, red-noise beta 1.62)
+               pushed down by red_noise_beta = 1.62 (-0.64), delta_loglike = 1.5e+03 (-0.22), power_contrast = 1.9 (-0.17)
   SYN-001786   SNR   35.3  depth     656 ppm  P   3.53 d  T14  2.05 h  b 0.46  n_tr 8
                -> search did not recover the period
+  SYN-001000   SNR  253.8  depth    7725 ppm  P  12.88 d  T14  3.17 h  b 0.22  n_tr 2
+               -> period recovered; classifier rejected it  (odd/even 4.5 sigma, secondary 0.2 sigma, red-noise beta 1.25)
+               pushed down by odd_even_sigma = 4.5 (-1.71), half_period_depth_ratio = 0.667 (-0.55), max_single_event_fraction = 0.524 (-0.28)
 ========================================================================

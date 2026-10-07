@@ -889,10 +889,10 @@ TLS finds 491 periods against 485 for BLS: 15 planets only TLS finds and 9
 only BLS does. That is the direction the TLS paper reports, but a 15 to 9
 split is well within chance (p = 0.31, two-sided sign test), and TLS takes
 437 ms per light curve against 100 ms. The full pipeline with TLS scores
-average precision 0.77 [0.70, 0.83] against 0.80 [0.74, 0.86] with BLS on
+average precision 0.75 [0.68, 0.82] against 0.74 [0.67, 0.82] with BLS on
 the default seed ([`results/tls/report.txt`](results/tls/report.txt)). The
-intervals overlap, and nothing here says the template is worth four times
-the search time on this data, so BLS stays the default.
+intervals all but coincide, and nothing here says the template is worth four
+times the search time on this data, so BLS stays the default.
 
 **BLS on a GPU.** `transitml/fastbls.py` computes the same periodogram as
 whole-array operations: every cadence is folded at a block of periods at
