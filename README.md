@@ -579,6 +579,57 @@ folded views does beat this, because transit *shape* carries information that a
 handful of scalars throws away. The choice here is a consequence of the data
 volume, not a claim about architectures.
 
+### Kepler DR25: a training set big enough for shape
+
+The data-volume argument above has a way out: Kepler's final data release.
+The Kepler pipeline flagged 34,032 threshold-crossing events (TCEs) over 17
+quarters, and the DR25 Robovetter sorted every one into a planet candidate
+(PC, 4,034), an astrophysical false positive such as an eclipsing binary
+(AFP, 3,025), or a non-transiting phenomenon such as instrumental noise
+(NTP, 26,973).
+
+```bash
+python -m transitml.kepler_dr25                    # 1000 TCEs per class, about 35 min
+python -m transitml.kepler_dr25 --all --n-jobs 16  # all 34,032 (about 17,000 stars)
+```
+
+This downloads the labels from the NASA Exoplanet Archive (committed as
+`data/kepler_dr25/dr25_tce_labels.csv`), fetches every long-cadence quarter of
+each star from MAST (no `lightkurve` needed; cached per star), detrends with
+all of the star's TCEs masked, and folds each TCE into five views in the
+AstroNet format: a 2001-bin **global** view of the whole orbit, a 201-bin
+**local** view of the transit, the local view of **odd** and **even** transits
+separately, and the local view half an orbit later, where a **secondary**
+eclipse would be.
+
+![DR25 views](figures/kepler_dr25/01_views.png)
+
+On a class-balanced sample of 3,000 TCEs (2,859 stars, split by star so none
+is on both sides), gradient boosting on the binned views, with no Kepler
+pipeline statistic as input, scores the 906 held-out TCEs as follows:
+
+| | Views model | Kepler MES alone |
+| --- | --- | --- |
+| Average precision (chance 0.339) | **0.905** (95% CI 0.878 to 0.930) | 0.312 |
+| PC kept, at a threshold frozen on training folds for 90% recall | 88.3% | 87.0% |
+| AFP rejected | 79.9% | 7.7% |
+| NTP rejected | 95.0% | 33.2% |
+
+MES, the pipeline's detection statistic, ranks below chance: every TCE
+already passed it, and the strongest signals are mostly eclipsing binaries
+(median MES 73 for AFP against 18 for PC in this sample). At the catalogue's own class mix the same per-class pass rates give
+a precision of 64.6% (78.3% on the balanced sample). Full numbers are in
+`results/kepler_dr25/report.txt`.
+
+![DR25 precision-recall](figures/kepler_dr25/02_precision_recall.png)
+
+Two caveats. These labels are the Robovetter's calls, so the score measures
+agreement with the Robovetter rather than with the truth (it labels
+Kepler-10 b, a confirmed planet, as not transit-like). DR24 had a hand-vetted
+subset for this; in DR25 that column is empty for every row. And this model
+sees binned pixels of shape through a tree ensemble, so it is the baseline a
+CNN on the same views has to beat, not the CNN itself.
+
 ---
 
 ## Vetting one star
@@ -892,6 +943,7 @@ transit-detection/
 │   │   ├── mast.py             # real TESS/Kepler via lightkurve (same interface)
 │   │   ├── injection.py        # synthetic eclipses injected into real curves
 │   │   ├── toi.py              # TOI table -> per-star CP/KP vs FP/FA labels
+│   │   ├── kepler.py           # Kepler DR25 TCE labels and MAST light curves
 │   │   ├── files.py            # CSV and npz light-curve files
 │   │   ├── tpf.py              # target pixel files: container, npz, lightkurve
 │   │   ├── synthetic_tpf.py    # synthetic pixels: on-target transits and blends
@@ -903,6 +955,8 @@ transit-detection/
 │   ├── model.py                # split, baselines, training, threshold, save/load
 │   ├── evaluate.py             # PR curves, AP, confusion matrix, failure analysis
 │   ├── benchmark.py            # the trained model scored on real TOI dispositions
+│   ├── views.py                # global, local, odd, even, secondary folded views
+│   ├── kepler_dr25.py          # python -m transitml.kepler_dr25: training set + model
 │   ├── vet.py                  # python -m transitml.vet: one star, one page
 │   └── plots.py                # figures (matplotlib Agg, no display)
 ├── tests/                      # 283 tests, ~4 min
@@ -918,6 +972,7 @@ transit-detection/
 │   ├── test_files.py           # CSV and npz input
 │   ├── test_model_io.py        # saved model reloads with threshold and features
 │   ├── test_vet.py             # vet end to end on CSV, npz and a stubbed TIC
+│   ├── test_kepler_dr25.py     # DR25 labels, FITS, views and CLI, offline
 │   ├── test_tpf.py             # pixel files: npz round trip, stubbed download
 │   ├── test_synthetic_tpf.py   # synthetic pixels put the light where it belongs
 │   ├── test_centroid.py        # blends flagged, on-target not; bad input survives
