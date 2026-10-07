@@ -6,12 +6,15 @@ Four figures, each answering one question:
 ``pr_curve``         Does the model beat the baselines where it matters?
 ``diagnostics``      Where does it fail, and what is it adding over BLS SNR?
 ``feature_importance``  Which vetting statistics are carrying the decision?
+
+With ``--systematics`` a fifth, ``sector_systematics``, shows the shared
+spacecraft signals every star in the sector is built from.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Sequence
+from typing import TYPE_CHECKING, Sequence
 
 import matplotlib
 
@@ -28,6 +31,9 @@ from .data.base import LightCurve  # noqa: E402
 from .data.loader import Dataset  # noqa: E402
 from .evaluate import EvaluationResult  # noqa: E402
 from .model import Split, TrainedModel  # noqa: E402
+
+if TYPE_CHECKING:
+    from .data.synthetic import SectorSystematics
 
 # --- Design tokens ---------------------------------------------------------
 # Categorical slots 1-3 of a CVD-validated palette (worst all-pairs deuteranope
@@ -498,6 +504,51 @@ def plot_all(
     ]
 
 
+def plot_sector_systematics(sector: SectorSystematics, path: Path) -> Path:
+    """The sector's shared signals, one panel per component, one line per camera.
+
+    Every star's systematics are these series times its own couplings, so
+    this is the structure the detrender and the search are up against.
+    Unit amplitude; the dashed lines are perigees.
+    """
+    _style()
+    names = (
+        ("scattered_light", "Scattered light"),
+        ("jitter", "Pointing jitter"),
+        ("momentum_dumps", "Momentum dumps"),
+        ("focus", "Focus settling"),
+    )
+    colours = (*SERIES, INK_SOFT)
+    n_cameras = sector.config.n_cameras
+    fig, axes = plt.subplots(len(names), 1, figsize=(10.5, 8.2), sharex=True)
+    kept = np.abs(sector.time - sector.gap_centre) > sector.gap_days / 2.0
+    series = [sector.components(c) for c in range(n_cameras)]
+    for ax, (key, title) in zip(axes, names):
+        shared = key == "momentum_dumps"
+        for c in range(1 if shared else n_cameras):
+            y = np.where(kept, series[c][key], np.nan)
+            colour = INK_SOFT if shared else colours[c % len(colours)]
+            ax.plot(sector.time, y, lw=0.9, color=colour, label=f"camera {c + 1}")
+        for p in sector.perigees:
+            if sector.time[0] <= p <= sector.time[-1]:
+                ax.axvline(p, color=NEUTRAL, lw=0.7, ls="--")
+        ax.set_title(f"{title} (the same on every camera)" if shared else title, loc="left")
+        ax.set_ylabel("unit level")
+    axes[0].legend(loc="lower right", bbox_to_anchor=(1.0, 1.0), ncol=n_cameras, fontsize=8)
+    axes[-1].set_xlabel("time in sector (days)")
+    fig.suptitle(
+        f"Sector systematics: dumps every {sector.dump_interval:.2f} d, "
+        "perigees dashed",
+        x=0.01,
+        ha="left",
+        fontsize=11,
+        fontweight="bold",
+        color=INK,
+    )
+    fig.tight_layout()
+    return _save(fig, path)
+
+
 # --------------------------------------------------------------------------
 # Single-star vetting report (``python -m transitml.vet``)
 # --------------------------------------------------------------------------
@@ -593,13 +644,24 @@ def plot_vetting_report(lc: LightCurve, flat, result, path: Path) -> Path:
             color=colour,
             label=f"signal {cand.rank}: P = {cand.period:.3f} d, SDE {cand.sde:.1f}",
         )
+    singles = getattr(result, "single_events", None)
+    events = singles.events if singles is not None else ()
+    if events:
+        ax_flat.plot(
+            [e.time for e in events],
+            np.full(len(events), low + 0.06 * (high - low)),
+            "^",
+            ms=7,
+            color=SERIES[3 % len(SERIES)],
+            label=f"single events ({len(events)}, best SNR {max(e.snr for e in events):.1f})",
+        )
     ax_flat.set_ylabel("flux - 1 (ppt)")
     ax_flat.set_xlabel("time (days)")
     ax_flat.set_title(
         "Detrended, with every significant signal from the iterative search", loc="left"
     )
-    if result.candidates:
-        ax_flat.legend(loc="lower right", ncols=min(len(result.candidates), 3))
+    if result.candidates or events:
+        ax_flat.legend(loc="lower right", ncols=min(len(result.candidates) + bool(events), 3))
     else:
         ax_flat.set_title(
             "no signal above the significance threshold",

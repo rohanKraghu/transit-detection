@@ -1,0 +1,45 @@
+{
+  "n_tces": 3000,
+  "n_stars": 2859,
+  "n_failed": 0,
+  "class_counts_sample": {
+    "PC": 1000,
+    "AFP": 1000,
+    "NTP": 1000
+  },
+  "class_counts_catalogue": {
+    "PC": 4034,
+    "AFP": 3025,
+    "NTP": 26973
+  },
+  "n_train": 2094,
+  "n_test": 906,
+  "test_class_counts": {
+    "PC": 307,
+    "AFP": 298,
+    "NTP": 301
+  },
+  "average_precision": 0.9050573332696529,
+  "average_precision_ci": [
+    0.8776773386770366,
+    0.9297345888958912
+  ],
+  "mes_average_precision": 0.3123223049514178,
+  "chance_average_precision": 0.33885209713024284,
+  "roc_auc": 0.94543022301012,
+  "threshold": 0.14580350564802033,
+  "target_recall": 0.9,
+  "test_pass_rates": {
+    "PC": 0.8827361563517915,
+    "AFP": 0.20134228187919462,
+    "NTP": 0.04983388704318937
+  },
+  "test_precision": 0.7832369942196532,
+  "catalogue_precision": 0.6457810256699906,
+  "mes_pass_rates": {
+    "PC": 0.8697068403908795,
+    "AFP": 0.9228187919463087,
+    "NTP": 0.6677740863787376
+  },
+  "mes_threshold": 8.79
+}

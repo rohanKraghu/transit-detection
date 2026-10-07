@@ -28,6 +28,11 @@ feature, the change in score when that feature alone is replaced by its median
 over the training split.  They are not additive and do not sum to the score;
 they show which measured values the model reacted to most for this star.
 
+The single-event search in :mod:`transitml.single` also runs, for transits
+that happen once or twice in the window and so cannot be folded; its events,
+duo pairings and period limits are listed and marked on the figure, but they
+are not scored either.
+
 With ``--tpf`` (a saved :class:`~transitml.data.tpf.TargetPixelData`) or, for
 a TIC, ``--centroids`` (download the target pixel files), the primary signal's
 ephemeris is also run through the centroid tests in :mod:`transitml.centroid`.
@@ -49,7 +54,7 @@ from typing import Any
 import numpy as np
 
 from .centroid import CentroidConfig, CentroidResult, centroid_test
-from .config import MultiPlanetConfig
+from .config import MultiPlanetConfig, SingleEventConfig
 from .data.base import LightCurve, stitch_light_curves
 from .data.files import read_light_curves
 from .data.mast import MASTLightCurveSource
@@ -58,6 +63,7 @@ from .features import FEATURE_NAMES, detrend_and_search, extract_features
 from .model import SavedModel, load_model
 from .preprocess import FlattenedLightCurve
 from .search import CandidateSignal, iterative_search
+from .single import SingleEventSearch, drop_periodic, search_single_events
 
 #: Features shown in the report table, in display order.
 KEY_FEATURES: tuple[str, ...] = (
@@ -83,6 +89,13 @@ CENTROID_NOTE = (
     "trained on centroid features and its score does not use them"
 )
 
+SINGLE_EVENT_NOTE = (
+    "individual dips found without folding, for transits seen once or twice; "
+    "an event inside a listed signal's transits is that signal, ramp-shaped "
+    "dips are listed under ramps rather than as events, and none of this is "
+    "scored"
+)
+
 CONTRIBUTION_METHOD = (
     "approximate: change in score when this feature alone is replaced by its "
     "training-split median; not additive"
@@ -106,6 +119,8 @@ class VetResult:
     #: ``None`` when no centroid test was asked for; else one per target pixel file.
     centroids: list[CentroidResult] | None = None
     centroid_note: str = ""
+    #: Dips found one at a time (:mod:`transitml.single`); ``None`` if not run.
+    single_events: SingleEventSearch | None = None
 
     @property
     def centroid_offset(self) -> bool | None:
@@ -144,6 +159,8 @@ class VetResult:
             "baseline_days": self.baseline_days,
             "model": self.model_provenance,
         }
+        if self.single_events is not None:
+            out["single_events"] = {"note": SINGLE_EVENT_NOTE, **self.single_events.to_dict()}
         if self.centroids is not None:
             out["centroid"] = {
                 "offset_flag": self.centroid_offset,
@@ -206,6 +223,7 @@ def vet_light_curve(
     multi: MultiPlanetConfig | None = None,
     tpfs: list[TargetPixelData] | None = None,
     centroid_config: CentroidConfig | None = None,
+    single: SingleEventConfig | None = None,
 ) -> tuple[VetResult, FlattenedLightCurve]:
     """Detrend, search, featurise and score one light curve.
 
@@ -217,6 +235,12 @@ def vet_light_curve(
     flat, primary = detrend_and_search(lc, model.preprocess, model.bls)
     features = extract_features(flat, model.bls, search=primary)
     candidates = iterative_search(flat, model.bls, multi)
+    singles = drop_periodic(
+        search_single_events(flat, single),
+        flat,
+        [(c.period, c.epoch, c.duration) for c in candidates],
+        single,
+    )
 
     x = np.array([features[name] for name in FEATURE_NAMES], dtype=float)
     score = float(model.score(x)[0])
@@ -238,6 +262,7 @@ def vet_light_curve(
         n_cadences=int(flat.time.size),
         baseline_days=float(flat.baseline_days),
         model_provenance={"threshold_rule": model.threshold_rule, **model.provenance},
+        single_events=singles,
     )
     if tpfs is not None:
         result.centroids = [
@@ -455,6 +480,20 @@ def main(argv: list[str] | None = None) -> int:
         )
     if not result.candidates:
         print(f"  no signal reached SDE {multi.min_sde:g}")
+    for event in result.single_events.events if result.single_events else ():
+        print(
+            f"  single event at {event.time:.3f} d: depth {event.depth * 1e6:.0f} ppm, "
+            f"duration {event.duration * 24:.2f} h, SNR {event.snr:.1f}, period at least "
+            f"{event.min_period:.1f} d (about {event.period_estimate:.0f} d if central)"
+            + (", near a gap" if event.near_gap else "")
+        )
+    for duo in result.single_events.duos if result.single_events else ():
+        periods = ", ".join(f"{p:.2f}" for p in duo.allowed_periods[:6])
+        more = "" if len(duo.allowed_periods) <= 6 else f" and {len(duo.allowed_periods) - 6} more"
+        print(f"  duo {duo.first.time:.2f} + {duo.second.time:.2f} d: P in {{{periods}{more}}} d")
+    if result.single_events and result.single_events.ramps:
+        times = ", ".join(f"{t:.2f}" for t in result.single_events.ramps)
+        print(f"  ramp-shaped dips set aside at {times} d (instrumental, not events)")
     for test in result.centroids or []:
         sector = test.meta.get("sector")
         label = f"sector {sector}" if sector is not None else test.target_id
