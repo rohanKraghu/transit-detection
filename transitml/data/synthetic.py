@@ -8,6 +8,8 @@ signals appear in a real photometric time series::
          + red noise            (1/f^alpha: jitter, thermal drift, background)
          + instrumental ramps   (momentum dumps)
          + flares               (upward outliers -- these break naive sigma clipping)
+         + sector systematics   (optional: scattered light, camera jitter, focus;
+                                 shared by every star in the sector)
          - transit / eclipse    (trapezoidal, from real geometry)
          + white noise          (shot + read, from a magnitude-scatter relation)
 
@@ -42,6 +44,7 @@ from ..config import (
     PlanetConfig,
     StarConfig,
     SurveyConfig,
+    SystematicsConfig,
 )
 from ..physics import RHO_SUN_CGS, scaled_semi_major_axis, transit_durations
 from .base import LightCurve, LightCurveSource
@@ -52,23 +55,35 @@ CurveKind = Literal["planet", "eclipsing_binary", "noise"]
 # --------------------------------------------------------------------------
 # Component builders.  Each is a pure function of (time, params, rng).
 # --------------------------------------------------------------------------
-def sample_time_grid(survey: SurveyConfig, rng: np.random.Generator) -> NDArray[np.float64]:
+def sample_time_grid(
+    survey: SurveyConfig,
+    rng: np.random.Generator,
+    *,
+    sector: SectorSystematics | None = None,
+) -> NDArray[np.float64]:
     """Build an irregular TESS-like time axis.
 
     A regular cadence grid, minus a mid-sector downlink gap, minus randomly
     scattered dropped cadences.  Real light curves are never gap-free and the
     detrending has to cope with that.
+
+    With ``sector``, the gap is the sector's (every star in a sector shares
+    it) and the momentum-dump cadences are dropped as well.
     """
     n = int(round(survey.baseline_days / survey.cadence_days))
     time = np.arange(n, dtype=np.float64) * survey.cadence_days
 
     # Mid-sector data downlink, jittered so every curve has a different gap.
     gap_centre = survey.baseline_days * rng.uniform(0.45, 0.55)
+    if sector is not None:
+        gap_centre = sector.gap_centre
     half = survey.downlink_gap_days / 2.0
     keep = np.abs(time - gap_centre) > half
 
     # Scattered losses: scattered light near perigee, momentum dumps, cosmic rays.
     keep &= rng.random(n) > survey.random_dropout_fraction
+    if sector is not None:
+        keep &= ~sector.flagged
     return time[keep]
 
 
@@ -161,6 +176,159 @@ def stellar_flares(
     return signal
 
 
+#: The sector systematics, in the order :meth:`SectorSystematics.for_star` draws them.
+SYSTEMATIC_COMPONENTS: tuple[str, ...] = (
+    "scattered_light",
+    "jitter",
+    "momentum_dumps",
+    "focus",
+)
+
+
+def _log_uniform(rng: np.random.Generator, bounds: tuple[float, float]) -> float:
+    return float(10 ** rng.uniform(*np.log10(bounds)))
+
+
+class SectorSystematics:
+    """The spacecraft systematics of one sector, shared by every star in it.
+
+    Real TESS systematics are not independent per star: scattered light,
+    pointing and focus follow the spacecraft's orbit and attitude, so every
+    star on a camera sees the same time structure and differs only in how
+    strongly it responds.  That is what lets a real pipeline find them by
+    comparing stars (cotrending), and what makes them hard for a per-star
+    detrender: a momentum dump repeats at a fixed interval and costs flux for
+    an hour or two, which is a periodic, transit-shaped dip.
+
+    The time structure is drawn once, from the source's seed, on the full
+    regular cadence grid; :meth:`for_star` then draws one star's camera and
+    couplings and returns its systematics on that star's cadences.  See
+    :class:`~transitml.config.SystematicsConfig` for the three components.
+    """
+
+    def __init__(self, survey: SurveyConfig, config: SystematicsConfig, seed: int) -> None:
+        if config.n_cameras < 1 or len(config.camera_scattered_light) < config.n_cameras:
+            raise ValueError("need a scattered-light level for every camera")
+        unknown = set(config.components) - set(SYSTEMATIC_COMPONENTS)
+        if unknown:
+            raise ValueError(f"unknown systematics components: {sorted(unknown)}")
+        rng = np.random.default_rng([seed, 0, 0, 9])
+        dt = survey.cadence_days
+        n = int(round(survey.baseline_days / dt))
+        self.config = config
+        self.cadence_days = dt
+        self.time = np.arange(n, dtype=np.float64) * dt
+
+        # TESS downlinks at perigee, so the mid-sector gap *is* a perigee and
+        # the others are one orbit either side of it.
+        self.gap_centre = float(survey.baseline_days * rng.uniform(0.45, 0.55))
+        self.gap_days = survey.downlink_gap_days
+        self.perigees = self.gap_centre + config.orbit_days * np.arange(-2, 3)
+
+        # Momentum dumps: spacecraft-wide, at a fixed interval.
+        interval = float(rng.uniform(*config.momentum_dump_interval_days_range))
+        first = float(rng.uniform(0.0, interval))
+        self.dump_interval = interval
+        self.dump_times = np.arange(first, survey.baseline_days, interval)
+        self.flagged = np.zeros(n, dtype=bool)
+        self.flagged[np.clip(np.floor(self.dump_times / dt).astype(int), 0, n - 1)] = True
+        self.dumps = np.zeros(n)
+        dump_settle = config.momentum_dump_settle_days
+        for t0 in self.dump_times:
+            after = self.time > t0
+            self.dumps[after] += np.exp(-(self.time[after] - t0) / dump_settle)
+
+        # Scattered light: rises into each perigee, falls away after it, and
+        # the Earthshine part is modulated at the Earth's rotation.
+        rise = float(rng.uniform(*config.scattered_light_rise_days_range))
+        decay = float(rng.uniform(*config.scattered_light_decay_days_range))
+        modulation = float(rng.uniform(*config.earthshine_modulation_range))
+        phase = float(rng.uniform(0.0, 2.0 * np.pi))
+        light = np.zeros(n)
+        for p in self.perigees:
+            before = self.time <= p
+            light[before] += np.exp((self.time[before] - p) / rise)
+            light[~before] += np.exp(-(self.time[~before] - p) / decay)
+        light *= 1.0 + modulation * np.sin(2.0 * np.pi * self.time / 1.0 + phase)
+        self.scattered_light = [
+            config.camera_scattered_light[c] * light for c in range(config.n_cameras)
+        ]
+
+        # Pointing jitter and focus are per camera.
+        self.jitter = [
+            power_law_noise(n, dt, config.jitter_alpha, 1.0, rng)
+            for _ in range(config.n_cameras)
+        ]
+        self.focus = []
+        for _ in range(config.n_cameras):
+            settle = float(rng.uniform(*config.focus_settle_days_range))
+            focus = np.zeros(n)
+            for p in self.perigees:
+                after = self.time > p
+                focus[after] += np.exp(-(self.time[after] - p) / settle)
+            self.focus.append(focus)
+
+    def for_star(
+        self,
+        time: NDArray[np.float64],
+        sigma_white: float,
+        rng: np.random.Generator,
+    ) -> tuple[NDArray[np.float64], dict[str, Any]]:
+        """One star's systematics on its own cadences ``time``.
+
+        The star's camera and its coupling to each component are drawn from
+        ``rng``; amplitudes are in units of ``sigma_white``.  Scattered-light
+        and jitter residuals take either sign (background over- or
+        under-subtracted, star on either side of the aperture centre); dumps
+        and defocus only ever lose flux.
+        """
+        cfg = self.config
+        index = np.rint(time / self.cadence_days).astype(int)
+        camera = int(rng.integers(cfg.n_cameras))
+
+        def sign() -> float:
+            return float(rng.choice((-1.0, 1.0)))
+
+        couplings = {
+            "scattered_light": sign()
+            * _log_uniform(rng, cfg.scattered_light_sigma_range)
+            * sigma_white,
+            "jitter": sign() * float(rng.uniform(*cfg.jitter_sigma_range)) * sigma_white,
+            "momentum_dumps": -_log_uniform(rng, cfg.momentum_dump_sigma_range) * sigma_white,
+            "focus": -float(rng.uniform(*cfg.focus_sigma_range)) * sigma_white,
+        }
+        # Every coupling is drawn whatever is switched on, so turning a
+        # component off or scaling it leaves the others exactly as they were.
+        for name in couplings:
+            on = name in cfg.components
+            couplings[name] *= cfg.scale if on else 0.0
+        series = self.components(camera)
+        signal = sum(couplings[name] * series[name][index] for name in couplings)
+        meta = {
+            "camera": camera + 1,
+            "scattered_light_coupling": couplings["scattered_light"],
+            "jitter_coupling": couplings["jitter"],
+            "momentum_dump_depth": -couplings["momentum_dumps"],
+            "momentum_dump_interval": self.dump_interval,
+            "focus_coupling": -couplings["focus"],
+        }
+        return np.asarray(signal, dtype=np.float64), meta
+
+    def components(self, camera: int) -> dict[str, NDArray[np.float64]]:
+        """The unit-amplitude series camera ``camera`` (0-based) sees, on :attr:`time`.
+
+        Momentum dumps are spacecraft-wide, so every camera gets the same
+        series; scattered light has the same shape on every camera at a
+        different level; jitter and focus are each camera's own.
+        """
+        return {
+            "scattered_light": self.scattered_light[camera],
+            "jitter": self.jitter[camera],
+            "momentum_dumps": self.dumps,
+            "focus": self.focus[camera],
+        }
+
+
 def trapezoid_transit(
     time: NDArray[np.float64],
     period: float,
@@ -235,6 +403,7 @@ class SyntheticTESSSource(LightCurveSource):
         star: StarConfig | None = None,
         planet: PlanetConfig | None = None,
         eb: EclipsingBinaryConfig | None = None,
+        systematics: SystematicsConfig | None = None,
     ) -> None:
         if not 0.0 <= positive_rate <= 1.0:
             raise ValueError("positive_rate must be in [0, 1]")
@@ -250,6 +419,12 @@ class SyntheticTESSSource(LightCurveSource):
         self.star = star or StarConfig()
         self.planet = planet or PlanetConfig()
         self.eb = eb or EclipsingBinaryConfig()
+        self.systematics = systematics or SystematicsConfig()
+        self.sector = (
+            SectorSystematics(self.survey, self.systematics, self.seed)
+            if self.systematics.enabled
+            else None
+        )
         self._kinds = self._assign_kinds()
 
     # -- class composition --------------------------------------------------
@@ -293,7 +468,7 @@ class SyntheticTESSSource(LightCurveSource):
         """Generate light curve ``index`` (0-based). Deterministic given the seed."""
         kind = self._kinds[index]
         rng = self._curve_rng(index)
-        time = sample_time_grid(self.survey, rng)
+        time = sample_time_grid(self.survey, rng, sector=self.sector)
         n = time.size
 
         # --- host star -----------------------------------------------------
@@ -326,6 +501,13 @@ class SyntheticTESSSource(LightCurveSource):
             systematics += instrumental_ramps(time, sigma_white, rng)
         if rng.random() < self.noise.flare_probability:
             systematics += stellar_flares(time, sigma_white, rng)
+        if self.sector is not None:
+            # A separate stream, so the sector's draws never shift the
+            # star's own.
+            sector_rng = np.random.default_rng([self.seed, index, 1])
+            shared, shared_meta = self.sector.for_star(time, sigma_white, sector_rng)
+            systematics += shared
+            meta.update(shared_meta)
 
         # --- eclipse signal -------------------------------------------------
         if kind == "planet":
