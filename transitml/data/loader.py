@@ -90,6 +90,11 @@ def process_light_curve(
     meta["target_id"] = lc.target_id
     meta["n_cadences"] = lc.n_cadences
     meta["sigma_flat"] = flat.scatter
+    # The ephemeris the features were measured on, for tests that need one
+    # (the TOI benchmark's centroid test).
+    meta["search_period"] = float(search["period"])
+    meta["search_epoch"] = float(search["transit_time"])
+    meta["search_duration"] = float(search["duration"])
     return feats, meta
 
 
@@ -125,6 +130,9 @@ _META_COLUMNS: tuple[str, ...] = (
     "camera",
     "momentum_dump_interval",
     "n_cadences",
+    "search_period",
+    "search_epoch",
+    "search_duration",
 )
 
 
