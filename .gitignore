@@ -43,6 +43,13 @@ results/real_injection/base_curves.npz
 # TOI table in data/toi_benchmark/ by one run.
 results/**/toi_curves.npz
 results/**/toi_curves.tried.json
+# Their target pixel files for the centroid test (about 1 MB a star).
+results/**/toi_tpfs/
+# The sector 1 to 13 replication of the TOI benchmark commits only its report;
+# its model and metrics are the default run's.
+results/toi_sectors_01_13/*
+!results/toi_sectors_01_13/toi_benchmark.json
+!results/toi_sectors_01_13/toi_benchmark.txt
 # Batch mode: the per-star result cache and downloaded sector curves are
 # rebuilt by one run; candidates.csv, summary.json and dashboard.html of the
 # demo sector are committed.

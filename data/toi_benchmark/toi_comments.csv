@@ -1,0 +1,1418 @@
+# ExoFOP TOI comments (exofop.ipac.caltech.edu/tess/download_toi.php, 2026-10-07)
+# for every TOI that exofop_toi_2026-10-06.csv lists as FP or FA.
+TOI,Comments
+133.01,increasing odd-even from ~ 2 sigma in spoc-s01-s36 TEC plots to ~4 to 7 sigma odd-even in spoc-s01-s69 TEC plots; retired as TFOP FP/EB
+137.01,TFOP FA
+146.01,Signal coming from a faint star to the SE. At least for the brighter of those it could be a planet. TFOP FP.
+147.01,transit is V-shaped; the minimum planet radius is large (26 Re); the light curve shows a slightly eccentric secondary eclipse; TFOP FP/EB
+151.01,Large with possible synchronization; SG1 confirms NEB
+152.01,retired as NEB
+154.01,TFOP FP
+156.01,EB confirmed with CHIRON RVs
+158.01,retired as NPC
+160.01,Source is star to the WSW (253917292). Retired as NEB.
+164.01,Potential blend with 79395356 to NE; retired as NPC
+165.01,EBLM J0555-57; 85 Mjup; retired as TFOP FP/SEB1
+171.02,Likely EB and possibly double the period; retired as TFOP FP/EB
+176.01,
+183.01,TFOP FP; retired as EB
+184.01,1000 ppm secondary; retiredTFOP FP/EB
+187.01,v-shaped; very likely EB; TFOP APC previously retired as BEB due to chromaticity; retired as EB due to significant odd-even; actual period is 2x alerted period (
+188.01,~10 sigma odd/even in spoc-s01-s69; retired as TFOP FP/EB
+189.01,v-shaped; retired as TFOP EB/BEB
+203.01,M dwarf; first transit is on/near momentum dump; the transit duration is a bit long for the reported period;
+207.01,follow-up in progress
+217.01,TFOP FP; retired as NEB
+219.01,TFOP APC; HATS and Feros notes this is a SB1; clear secondary in SPOC s61; retired as TFOP FP/SEB1
+221.01,TFOP FP; event is on event is on the dT= 0.24 fainter neighbor ~8
+222.01,SB1 / EBLM (Lendl et al. 2020)
+223.01,TFOP FA;
+226.01,The second event is not real. Single transit (no period). Retired as TFOP FP/NEB
+227.01,still a single transit at TBJD ~1364 as of s1-s69 SPOC report; retired as TFOP FA
+230.01,The transit signal maybe caused by scattered light.
+236.01,1700 ppm secondary. Likely EB.
+242.01,The detected secondary could have a wrong; depth estimation because of the low points near 1380.
+254.01,not seen in K2; TFOP FA
+258.01,secondary; retired as EB
+273.01,NEB on 279740439 (SG1)
+274.01,TFOP FP; retired as NEB. Centroid offset onto another star a pixel away. V-shaped. Offset also apparent in SPOC multisector and s38.
+276.01,TFOP FP/SB1
+282.02,TFOP FA; mismatched transits and noise
+284.01,retired as NEB
+287.01,synchronized with stellar rotation; ~3000 ppm secondary in spoc-s1-s69; retired as TFOP FP/EB
+290.01,retired as EB due to size
+291.01,
+297.01,~6000 ppm secondary in SPOC s1-s69; retired as TFOP FP/EB
+300.01,TFOP FP; retired as NEB
+304.01,TFOP FP; retired as EB
+307.01,~2000 ppm secondary in spoc-s01-s69; retired as TFOP FP/EB
+313.01,target star is two stars in Gaia; TFOP FP; retired as NEB
+315.01,odd-even; TFOP FP; retired as EB
+320.01,TFOP FP; retired as NEB
+321.01,TFOP FP; retired as NEB
+331.01,possible centroid offset; the fainter star to the north has a smaller radius than the target.
+335.01,TFOP FP; retired as NEB
+336.01,TFOPWG FP Retired as NEB
+337.01,TFOP FP: retired as eccentric EB
+339.01,WASP confirms NEB; TFOP FP
+342.01,TFOP FP; retired as SEB2
+343.01,~8 sigma odd-even in SPOC s1-s69; retired as TFOP FP/EB
+348.01,a/Rs < 2; 5+ sigma odd-even in s1-s69 SPOC TEC plots; retired as TFOP FP/EB
+349.01,400 ppm secondary; synchronized; retired as TFOP EB/ST2
+353.01,Too large radius for a planet; 3 sigma odd-even in multisector report; retired as TFOP FP/EB
+357.01,weak signal; Event on TIC 220016046 in spoc multisector
+360.01,Centroid shift. Potential secondary at 0.4 phase (eccentric). Very large/inflated planet radius for period. Retired as TFOP FP/NEB.
+366.01,~2000 ppm secondary in spoc-s01-s69; retired as TFOP FP/EB
+367.01,TFOP FP; retired as eccentric EB
+368.01,two stars in the same pixel; retired as FP
+373.01,target is likely 9032367 (still possible to be a planet); rereleased on TIC 9032367 as TOI 6731.01
+377.01,possible centroid offset; TFOP FP; retired as NPC
+378.01,2 stars in same pixel with dmag 1; TFOP FP retired as NEB
+379.01,NEB 45
+381.01,TFOP FP; retired as NEB
+382.01,TFOP FP; retired as NEB
+383.01,likely large planet on TIC 167418903(TOI 746.01); this TIC ID is for a NPC (nearby Planet Candidate)
+384.01,big; TFOP FP; retired as EB
+385.01,TFOP FP; retired as EB; too large with clear odd-even (~8 sigma)
+387.01,NEB; HATSouth observations show the event is on the neighbor 92359852
+389.01,TFOP FP; retired as NEB
+390.01,TFOP FP; NEB 6
+393.01,retired as TFOP FP/NPC; continued as TIC 29960110.01 / TOI-1201.01
+397.01,close companion star 219379014; TFOP FP; retired as NEB
+399.01,follow-up in progress
+401.01,may be on 259701232
+405.01,NEB on 176984248; TFOP FP retired as NEB
+408.01,TFOP NEB
+409.01,centroid offset on 167754526
+410.01,Retired as FP by TFOP
+412.01,
+414.01,TFOP FP; SG1 finds NEB in 4
+416.01,tropical Jupiter
+417.01,may be on 339733023; TOFP FP/NEB
+419.01,Rstar 0.55; may be on 279251647; retired as NEB
+420.01,SG1 check if it is on target. Retired as NEB.
+424.01,centroid offset; significant odd-even; retired as TFOP FP/NEB
+425.01,retired as SB1
+430.01,Retired as NEB
+432.01,
+433.01,secondary eclipse; two stars in the same pixel; depth is 3.6 ppt; TFOP FP
+436.01,v-shaped due to short transit duration; retired as NEB
+440.01,two stars in the same pixel;
+441.01,SG1 check if the target is 316916663; possible odd-even; retired as NEB
+456.01,
+459.01,synchronized to variability; same period as Gaia SB1; retired as TFOP FP/EB
+460.01,Retired as SEB2
+463.01,clear odd-even; some synchronization; retired as a TFOP EB
+464.01,hot subdwarf star; deep secondary; retired as TFOP FP/EB due to 11000 ppm secondary
+467.01,TFOP FP; retired as NEB
+478.01,centroid shift because of nearby bright star; some phase variation (non-synchronized) and possible secondary; DR2 RVs show 6.4 km/s scatter.
+482.01,TFOP FP; retired as NEB
+484.01,could be on 427348561 which is 3x as large (2 Rsun) and 33% fainter; depth in 561 is 14.4 ppt so Rp=26 Re assuming Gaia lower percentile R* = 1.99.
+485.01,2 stars in same pixel; dmag 0.4
+497.01,TFOP FP; retired as NEB
+504.01,TFOP FP; retired as EB
+506.01,Retired as NEB
+513.01,on TIC 431999916; retired as TFOP FP/NEB
+517.01,9.9 day eccentric system ; retired as TFOP FP/EB
+522.01,V-shaped and short period; GAIA Rp=1.6 Rsun; sinusoidal light curve; likely SV; retired as TFOP FA
+523.01,Transits could be the result of detrending residuals from stellar variability
+524.01,Potentially instrument noise; retired as TFOP FA
+526.01,possibly marginal; retired as TFOP FP/NEB
+528.01,TFOP FP/NPC acutally on TIC 403693870; continued as TOI 6875.01
+529.01,
+531.01,
+538.01,
+543.01,possible secondary; retired as TFOP FP/NEB
+549.01,marginal signal
+550.01,TFOP EB primary
+550.02,Gaia DR2 R = 1 R_Sun; likely grazing eccentric binary with nearly equal brightness stars; TFOP EB secondary
+553.01,Period could be half because of a data gap; based on multi-sector data there are likely transits from two separate planets combined to make this 14-day false target; mix and match of other two TOIs
+556.01,validated planet K2-78b later found to be EB; retired as NEB
+566.01,Retired as NEB
+568.01,phase shift in odd & even events; GAIA Teff=9422K; likely large stellar radius; possibly double the period; SPOC is assuming solar radius
+570.01,V-shaped; crowded field; retired as TFOP FP/EB due to 5+ sigma odd-even in spoc-s1-s65 report
+575.01,
+581.01,slightly v-shaped; 4+ sigma odd-even; retired as TFOP FP/EB
+582.01,TFOP FP; retired as NEB
+584.01,possibly too large; potential odd-even; possible synchronization; TFOP FP/EB
+586.01,likely too large for insolation
+587.01,low-mass stellar companion from RVs; was FP now PC (for period refinement)
+589.01,TFOP FP/NEB on TIC 412961704 (Tmag = 11.271)
+590.01,possible EB but could be PC at half or quarter the period; likely offset and could be on 270841758 which is brighter in the optical; host is likely a giant
+591.01,8.5 day signal is EB
+592.01,possible BD; centroid offset to the NW
+593.01,TFOP FP; retired as EB
+595.01,TFOP FP; Retired as NEB
+596.01,TFOP FP; retired as NEB
+597.01,two stars on the same pixel; retired as TFOP FP/NEB
+598.01,
+599.01,
+600.01,R=9 Re using the TIC Rstar
+604.01,retired as TFOP FP/NEB; offset to north
+606.01,TFOP NEB/FP
+607.01,TFOP FP; retired as NEB
+610.01,need to check 80275180; TFOP FP/NEB
+611.01,possible offset towards 154459164; retired as TFOP FP/NEB
+614.01,
+617.01,TFOP NEB; centroid offset
+619.01,TFOP NEB/FP
+623.01,retired as TFOP FP/SB1
+627.01,check nearby bright stars; might be synchronized
+631.01,synchronized; TFOP FP retired as EB
+632.01,Secondary; too large to be a planet
+633.01,Follow-up (Will Waalkes and Zach Berta-Thompson) ruled out a transit on TOI 633 but confirmed a 9.6 ppt event on 348755728; GAIA stellar parameters: Teff = 3414 K; R = 0.567 R_solar
+634.01,Diff Image Quality flagged as unreliable
+635.01,could be on TIC 286132422; TIC 78154863 in same TESS pixel; Likely false alarm since TIC 344926234.01 (TOI 634.01) and TIC 286132427.01 (TOI 635.01) and TIC 78154865.01 (TOI 638.01) all have the same ephemeris
+636.01,crowded field; likely EB off target to SSE; but check if nearby PC.
+638.01,not found in additional data; retired as TFOP FA; TIC 78154863 in same TESS pixel; Likely false alarm since TIC 344926234.01 (TOI 634.01) and TIC 286132427.01 (TOI 635.01) and TIC 78154865.01 (TOI 638.01) all have the same ephemeris
+639.01,Crowded field; likely EB off target to SSE; but check if nearby PC (not a cut and paste error; same comment as line 104).
+643.01,period might be double; crowded field; retired as TFOP FP/NEB
+644.01,possible NEB to E; TIC 63303496; centroid offset in consecutive sectors; retired as TFOP FP/NEB
+645.01,Either diluted or blended PC: matches 17000 ppm deep eclipse on 157568287 of dT=1.8 mag; retired as TFOP FP/NEB
+646.01,4-sigma odd-even; TFOP FP. Retire.
+648.01,possible odd-even; GAIA DR2 Teff = 4060 K and Rad = 10.8 Rsun
+650.01,likely NEB on TIC 349411363 130
+653.01,TFOP FP; retired as NEB
+658.01,also alerted as TOI 659 on TIC 48476908
+662.01,TFOP FP; retired as NEB
+665.01,TFOP FP; retired as SB1
+670.01,TFOP FP/ NPC; true source is TIC 147660207
+673.01,GAIA DR2 R = 1.7 Rsolar; transiting object might be slightly bigger; TFOP FP/SB1
+679.01,TFOP APC/SB1
+681.01,Likely EB; likely too large to be a planet at this irradiation; low mass star (Grieves+2021); 89 +/- 2.5 M_Jup; retired as TFOP FP/SEB1
+688.01,TFOP FP/NEB
+689.01,TFOP FP/NEB
+690.01,true period is actually 7.28417 days; TFOP FP/NEB; need SG1 to check 101497184; assuming R ~ 1.0 R_solar (TIC) transiting object is about 5 Rearth
+691.01,offset on another star; TFOP FP/NEB
+692.01,low S/N transit; follow-up determines signal likely due to pulsations at half period
+693.01,Column effect introduced during calibration; not a real transit
+694.01,likely gas giant
+701.01,transits in close proximity to some but not all momentum dumps
+708.01,large scatter in centroid from sector to sector; very crowded field; possible secondary; retired as TFOP FP/NEB
+710.01,v-shaped; period could be shorter; TFOP FP
+712.03,first transit is momentum dump; second is likely instrument noise but could be a single transit; TFOP FA
+716.01,potentially planet on a neighboring star; centroid shift in y; long transit duration; depth increase with larger aperture
+717.01,SG1 to check faint neighbor in the south; likely BEB judging from difference images; retired as NEB
+718.01,SG1 to check which host; neighbor in the same pixel 150247131
+719.01,TFOP FP/NEB
+720.01,neighboring star could be source of signal; needs SG1 to confirm host; TFOP FP; retired as NEB
+725.01,retired as NEB
+726.01,Could be EB; V-shape in SPOC data
+728.01,low SNR; events reduced by systematics correction
+729.01,likely asteroid based on difference image in s9; no additional events; retired as TFOP FA
+734.01,~21000 ppm secondary in SPOC s1-s65; retired as TFOP FP/SEB1
+735.01,
+742.01,A type star;
+758.01,Possible EB; ~1000 ppm eccentric secondary near ~0.4 phase; retired as TFOP FP/EB
+765.01,Low SNR; possible secondary; not recovered in QLP or later SPOC sectors despite additional observations
+775.01,likely EB; odd-even; large; v-shaped
+792.01,low MES; crowded; TFOP FP/NEB
+793.01,TFOP SEB1/FP
+796.01,blue supergiant host star would put this candidate inside star; TFOP FA
+803.01,TFOP FP/NEB
+804.01,Crowded field. Low SNR. Some depth aperture correlation. Asymmetric transit shape. No stellar radius. Match to NEB OGLE-LMC-ECL-25824 at half of alerted period (~1.419 days) with significant (~5+ sigma) odd-even; retired as TFOP FP/NEB
+814.01,likely BEB; eclipse on a lower left neighbor; retired as NEB
+816.01,likely BEB on 175180784 (evolved star according to Gaia)
+817.01,odd-even and a significant secondary just before 0.50 on the s27 QLP report
+821.01,low SNR (7.3); not recovered in later sectors; retired as TFOP FA
+832.01,possible 600 ppm secondary; TFOP FP; retired as EB
+838.01,period updated to 7.62 days with s37 data; TFOP FP; retired as SB1
+844.01,centroid offset on TIC 380886534
+845.01,warm Jupiter; might be too big; period might be double; retired as TFOP FP; eccentric EB
+846.01,likely warm Jupiter
+848.01,TFOP FP; retired as EB
+854.01,offset on TIC 160221748 (Tmag~14.4) in SPOC-s1-s69; retired as TFOP FP/NEB
+861.01,TFOP NEB; crowded field
+866.01,Could also be around 381976959; needs SG1 to check; signal not found in QLP s39; retired as TFOP FA/SV
+868.01,probably NEB; V-shaped transits and ultra short period; needs SG1 to confirm if on target or neighbor; crowded field; slight centroid offset in difference images
+869.01,Possible single event (second event is on momentum dump); first event could be systematic
+878.01,TFOP FP
+879.01,Clear centroid shift; Need SG1 to check the low parallax target 37161310.
+881.01,2 stars in the same pixel; check 237808865; TFOP NEB
+882.01,centroid offset on TIC 92013174 (Tmag~13 ); TFOP FP/NEB
+884.01,TFOP FP; giant star; EB with variability
+886.01,TFOP FP; NEB
+888.01,A clear centroid shift; signal comes from a blended star. Check neighbors
+889.01,blended with something faint; and the matches 284288094 or 284288093 is an EB but with the period 7.3 days
+891.01,Centroid page weirdness; check all neighbors
+893.01,
+894.01,V shaped; TFOP FP; retired as NEB
+895.01,crowded field; might be variability
+896.01,marginal signal; unable to be recovered in later sectors; retired as TFOP FA
+897.01,TFOP FP; retired as NEB
+898.01,single-transit; retired as TFOP FP/NEB
+909.01,High priority (2.7 Rp); bright; nearby star; retired as TFOP FP/NEB
+914.01,v-shaped; likely offset to W
+915.01,retired as TFOP FP/NEB
+916.01,slightly off target; hint of an odd-even difference; retired as NEB
+918.01,may be real HJ around giant star.
+920.01,period is double; star is likely a giant; TFOP FP
+922.01,giant; TFOP EB
+923.01,Centroid offset centered on nothing in S31. Weak signal; possibly V
+925.01,TFOP NEB; giant star
+927.01,minor centroid offset
+928.01,TFOP FP; retired as NEB
+935.01,Low priority
+937.01,V shaped; likely EB; retired as NEB
+944.01,Hint of secondary may be driven by momentum dumps in second orbit.
+946.01,TFOP FP; retired as SB2
+949.01,Same as TOI 426.01; retired as duplicate/TFOP FP
+950.01,may be on 245947692
+951.01,NEB from WASP-South
+953.01,SB1 from WASP-South SB1 RV variation=30 km/s
+955.01,possibly an EB. May be on 146467673. Retired as TFOP FP
+956.01,possibly an EB; retired as NEB
+957.01,Rstar = 1.96 Rsun in TIC. Rp = 4 Re.
+959.01,
+960.01,TFOP FP; retired as NEB
+961.01,
+962.01,V shaped and maybe odd even difference
+964.01,short period and V-shaped
+965.01,check TIC 179159990
+967.01,TFOP FP; retired as NEB
+968.01,no planet radius estimate because no stellar radius estimate but star is likely to be evolved so planet likely to be large.
+971.01,retired as TFOP FP/NEB
+972.01,BEB or diluted planet; almost exactly same aperture for 125894951; TFOP FP
+973.01,BEB or diluted planet; multiple stars in the aperture; blended; centroid shift; giant star; TFOP FP
+974.01,TFOP FP/NEB
+975.01,too big; Rstar = 152 Rsun in tic8
+976.01,TFOP FP; retired as EB
+977.01,TFOP EB; Gaia suggests the star is evolved based on parallax and Teff
+979.01,Saturn-sized; Slight centroid shift; potentially blended (BEB or diluted planet); need SG1 to check
+980.01,TFOP FP; retired as NEB
+981.01,centroid offset to W and depth aperture correlation; retired as TFOP NEB
+982.01,TFOP FP; retired as EB
+983.01,TFOP FP/NEB
+984.01,planet radius mass and Teff are inconsistent.
+985.01,period might be twice
+986.01,TFOP FP/EB/BEB; 8+ sigma odd-even from SPOC s1-s65
+987.01,
+988.01,marginal signal; crowded field
+992.01,3 stars in central pixel
+994.01,
+995.01,TFOP NEB; impact param >1 with not a great fit to transit shape
+996.01,
+997.01,TFOP FP; retired as EB
+998.01,TFOP FP/NEB
+999.01,centroid offset; TFOP FP/NEB
+1000.01,TFOP FP; retired as NEB
+1002.01,TFOP FP; retired as NEB
+1003.01,No Gaia DR2 radius but might be evolved so transiting object might be too big; TIC8 gives a radius of ~80 Rsun which makes the companion radius stellar in size
+1004.01,SPOC s34 shows an offset ~20'' NW (near TIC 238597889); TFOP FP/NEB
+1005.01,TFOP FP; retired as NEB
+1006.01,TFOP FP; retired as NEB
+1008.01,retired as TFOP FP/NEB
+1010.01,TFOP FP; retired as EB
+1013.01,hot star; transiting object might be too big; Gaia DR2 delta r mag for 97700562 = 8 mag
+1014.01,phantom TIC; real stars are TIC 772008799 and TIC 772008800; retired as TFOP FP/EB
+1015.01,centroid offset centered near TIC 155044728 (Tmag ~14); secondary in spoc-s61; Rp~32 Re; retired as TFOP NEB/FP
+1016.01,TFOP FP; retired as NEB
+1017.01,possibly off target to N
+1018.01,
+1020.01,slightly V shaped; possibly off target to N
+1021.01,
+1022.01,low SNR; could be instrument noise
+1023.01,retired as FP/NEB
+1024.01,depth-aperture correlation; centroid image towards SW in past QLP sectors; v-shaped transits
+1025.01,literature EB (https://ui.adsabs.harvard.edu/abs/2021A%26A...652A.120I/abstract); retired as TFOP FP/NEB
+1026.01,TFOP NEB
+1028.01,crowded; need SG1 to check neighbors
+1029.01,GAIA DR2: Teff = 6109 K; R = 1.091 R_solar; the planet is probably jupiter size; retired as NEB
+1030.01,Looks like a ~12 day transit candidate blended with a ~1.5 day EB/variability; TFOP FP/NEB
+1031.01,centroid offset in spoc s36; 2 stars with one pixel separation (304021495); TFOP FP; retired as NEB
+1033.01,transit depth distorted by detrending; retired as TFOP FP/NEB
+1034.01,TFOP FP; retired as NEB
+1037.01,TFOP FP; retired as EB
+1038.01,TFOP FP; retired as NEB
+1040.01,crowded; hot star; TFOP FP/NEB
+1041.01,TFOP FP; retired as EB
+1042.01,v-shaped; offset near other stars in spoc-s01-s65-b0A consistent with ground follow up location; retired as TFOP FP/NEB
+1043.01,TFOP FP/NEB
+1045.01,TFOP FP; retired as BEB
+1046.01,TFOP FP; retired as NEB/SB2
+1047.01,Check 2 minute data for odd even
+1048.01,probably EB
+1051.01,Potential level one target around bright star; retired as TFOP FA after no subsequent detections in later sectors
+1053.01,Crowded field
+1058.01,Centroid offset and a single transit in Y3; centroid offset centered near TIC 31553886 Tmag ~13.3 in spoc-s1-s69; retired as TFOP FP/NEB
+1061.01,Likely stellar variability but it is a potential level one candidate; retired as TFOP FP/NEB
+1070.01,triggered by nearby event on 31858843 (WASP-123b)
+1072.01,Possible secondary
+1087.01,possibly 2x period
+1088.01,possible spot-crossing in transit
+1089.01,only 1 full transit; could be a single transit with a different period
+1090.01,Could be inflated hot Jupiter or Brown Dwarf at a short period
+1092.01,v-shaped; possible EB
+1093.01,period could be 2 or 4x
+1096.01,NEB on 375225447 from TFOP
+1100.01,centroid offset towards TIC 318608752 in spoc s1-s39 multisector
+1101.01,Check neighbor star; odd-even; retired as TFOP FP/NEB
+1102.01,Possible aperture-depth correlation; retired as TFOP FP/NEB
+1104.01,TFOP FP/SEB1; retired as EB; EB at ~171 d (half alerted TESS period)
+1108.01,Large; retired as TFOP FP/NEB
+1109.01,TFOP FP; retired as NEB
+1110.01,TFOP FP; target is on 446549906 (TOI 2107.01)
+1111.01,TFOP FP/SB1
+1112.01,TFOP FP/NEB
+1113.01,2 stars in the same pixel (290348383); retired as TFOP NPC
+1118.01,Likely EB
+1120.01,on neighbor TIC 143257768; has stellar companion TIC 143257770 with equal brightness and stellar mass; this target is retired as TFOP FP
+1121.01,possibly stellar variability
+1122.01,retired as TFOP NEB/FP
+1126.01,TFOP NEB
+1127.01,Possible centroid shift
+1128.01,
+1129.01,centroid shift; slightly v-shaped transit
+1132.01,TFOP FP
+1133.01,
+1134.01,alerted as single; now have period but identified as SB1 by TFOP; retired as TFOP FP
+1138.01,Possibly EB; retired as TFOP FP/NEB
+1140.01,TICv8 JOIN with TOI 1344.01 (TIC 1400770435); SPOC s14-s41 shows a 600 ppm eccentric secondary; retired as FP
+1141.01,TOI released on secondary of an EB with primary transit visible in multisector data
+1142.01,synced phase modulations; 30 sigma odd-even; v-shaped transits; large radius; TFOP FP; retired as EB
+1143.01,TFOPWG FP Retired as SB1
+1145.01,Likely EB
+1146.01,TFOP FP; retired as NEB
+1147.01,Too large to be a planet for this period (46 RE from MCMC); TFOP FP/ retired as EB
+1152.01,this star is a phantom; TOI has been rereleased on TIC 1715469662 as TOI 2183.01
+1155.01,Gaia parameters suggest giant star
+1156.01,centroid offset near TIC 117256550 (Tmag~15.568); no stellar parameters; TFOP FP/NEB
+1157.01,v-shaped; size inconsistent with insolation or planetary nature; Rp > 30 Re in qlp-s47-tois
+1158.01,Could be on neighbor; retired as TFOP FP/NEB
+1159.01,
+1160.01,large; centroid offset centered on TIC 89509984 (Tmag ~15.226) in SPOC sector 41; retired as TFOP FP/NEB
+1164.01,retired as TFOP FP/NEB
+1166.01,retired as TFOP FP/NEB
+1167.01,Period is likely 2x7.6 days
+1168.01,TFOP FP/EB/SB2
+1170.01,EB at 2x alerted period off-target on TIC 294176981; TFOP FP
+1171.01,retired as TFOP FP/NEB
+1172.01,TFOP FP / SB2
+1175.01,offset to TIC 30329564; TFOP FP; retired as NEB
+1177.01,Could be on neighbor; retired as TFOP FP/NEB
+1178.01,shallow V-shaped transit; TFOP FP
+1182.01,TFOPWG FP
+1183.01,TFOPWG FP Retired as NEB; released three times with same ephemeris as TIC 1718201850 (TOI-1351.01 T=10.33) TIC 258777137 (TOI-1183.01 T=9.95) and TIC 258777134 (TOI-1299.01 T=10.45); TIC 1718201850 (TOI-1351.01 T=10.33) remains active others are retired
+1185.01,Could be on neighbor; TFOP FP/NEB
+1186.01,TFOPWG SB1/FP; strong secondary; too large for insolation; possible eccentric EB
+1188.01,Could be on neighbor
+1191.01,TFOP FP; retired as NEB; centroid offset centered on offset to TIC 237194795; v-shaped; large for 15 day period
+1193.01,retired as TFOP FP/NEB
+1195.01,retired as TFOP FP/NEB
+1200.01,TFOP FP/retired as EB; v-shaped; odd-even transit difference
+1202.01,Single transit
+1206.01,Possible background EB
+1210.01,Potential egress detected on nearby star with SG1 suggesting possible NEB but not high-enough SNR to be sure; retired as TFOP FP/NEB
+1213.01,Possible EB; V-shaped; crowded field; Retired as TFOP SEB1/EB
+1223.01,Some centroid offset across sectors. TFOP FP/NEB
+1234.01,retired as TFOP FP/NEB
+1250.01,Nearby bright star
+1253.01,slightly evolved star; 2 stars in pixel; Retired as NPC on TIC 233684823
+1256.01,TFOP FP
+1270.01,TFOP SB1/APC; see observing notes; strong secondary; too large for insolation
+1275.01,Possible single transit (first event).
+1276.01,TFOP FA; retired as NEB
+1277.01,Single transit at ~1729.54 TBJD found to be FA
+1284.01,Potential L1 candidate; check 267561450
+1285.01,TFOP FP/NEB; clear offset in recent TESS data
+1289.01,short period; possible stellar variability; possible centroid offset
+1292.01,odd-even indicates likely FP; TFOP FP
+1297.01,TFOP FP
+1299.01,2 stars in the pixel; TFOP FP
+1303.01,1-sigma centroid offset; possible secondary
+1304.01,centroid offset centered on TIC 186000959; TFOP FP/NEB
+1305.01,TFOP FP; Might be on other star; possible secondary and odd-even
+1306.01,TFOP FP
+1308.01,centroid offset centered on another star; likely EB
+1309.01,TFOP FP
+1310.01,NPC from TFOP; 2 stars in pixel; actual source of transits is TIC 294179385 (TOI 1454.01); possible synchronization
+1312.01,TFOP FP/SEB1
+1313.01,retired as TFOP FP/NEB
+1314.01,Noisy evolved star; low SNR transit; retired as TFOP FP/NEB
+1315.01,TFOP FP; retired as NEB
+1316.01,Slight aperture depth correlation
+1317.01,TFOP FP/NEB; period of NEB is 7.45 d
+1319.01,TFOP FP / NEB
+1321.01,Large and slight depth-aperture correlation
+1323.01,TFOP FP; retired as NEB
+1324.01,centroid offset on TIC 266688547 in spoc s56; retired as TFOP FP/NEB
+1325.01,retired as TFOP FP/NEB
+1326.01,eccentric EB in qlp-s55-tois; previously released on secondaries; retired as TFOP FP/EB
+1328.01,centroid offset to N in qlp-s55
+1329.01,retired as TFOP FP/NEB; clear offset in recent TESS data
+1330.01,No stellar radius; Likely giant based on color. Symbiotic binary from literature.
+1331.01,TFOP FP/NEB
+1332.01,
+1334.01,
+1335.01,TFOP FP; retired as NEB
+1336.01,likely eccentric EB; 1000ppm secondary;
+1340.01,Centroid offset centered on TIC 233681148; TFOP FP/NEB
+1341.01,significant secondary in spoc-s14-s41 multisector (849 ppm); retired as EB
+1342.01,TFOP FP/NEB
+1343.01,Some depth-aperture correlation; crowded field; retired as TFOP FP/NEB
+1344.01,TICv8 JOIN; refer to TOI 1140.01 (TIC 320525204); v-shaped
+1348.01,Low SNR; TFOP FP/NEB
+1353.01,centroid offset to N; retired as TFOP FP/NEB
+1354.01,TFOP FP; retired as NEB
+1357.01,TFOP FP/NEB
+1358.01,TFOP FP; retired as EB
+1359.01,TFOP FP; retired as EB
+1360.01,Raw light curve aperture 2 and 3 look like they have different depths. Possible depth/aperture correlation and EB.
+1363.01,TFOP FP; retired as NPC; signal on 230017324.01 (TOI-1280.01)
+1365.01,V-shaped; depth-aperture correlation; TFOP FP/NEB
+1366.01,clear eccentric EB
+1367.01,TFOP FP; retired as NEB
+1368.01,Low SNR; some depth-aperture correlation
+1369.01,clear primary/secondary eclipses
+1370.01,Possible secondary; two stars in pixel; >3 sigma centroid offset
+1372.01,Minor depth-aperture correlation; actual signal on TOI 2375.01
+1374.01,TFOP FP; retired as NEB
+1375.01,Minor depth-aperture correlation; TFOP NEB/FP
+1376.01,centroid offset on TIC 190743999 in spoc-s56; retired as TFOP FP/NEB
+1377.01,no Rs; could be off target
+1378.01,TFOP SB1/FP; too big; V-shaped; ~900 ppm secondary; 2 stars in pixel
+1380.01,TFOP FP; retired as NEB
+1382.01,
+1383.01,TFOP FP/NEB
+1384.01,TFOP FP
+1385.01,TFOP FP/EB; SPOC is assuming solar radius; ~800 ppm secondary not quite at half phase
+1387.01,
+1390.01,Minor depth-aperture correlation; retired as TFOP FP
+1391.01,Potential level 1 candidate; retired as TFOP FP/NEB
+1392.01,
+1393.01,significant odd-even; centroid offset towards brighter stars in pixel; retired as TFOP FP/EB
+1394.01,L1 candidate; retired as TFOP FP/NEB
+1395.01,retired as TFOP FP/NEB; clear offset in recent TESS data
+1396.01,TFOP FP/NEB
+1397.01,TFOP FP/NEB
+1399.01,centroid offset centered on another star in spoc-s57-b0A
+1400.01,
+1401.01,strong secondary; large for insolation
+1402.01,Likely EB
+1403.01,TFOP FP/NEB
+1405.01,TFOP FP; Need stellar radius; possible secondary at ~0.2; second transit in s17 happens just after start of orbit
+1418.01,
+1421.01,Likely EB given star is pulsating and therefore likely > 2 Rsun which would give possible Rp of ~35 Re; TFOP FP/SEB1; no stellar radius
+1423.01,some odd-even; retired as TFOP FP/NEB
+1424.01,L1 candidate; multiple stars in pixel; slightly asymmetric transit shape; retired as TFOP FP/NEB
+1426.01,v-shaped
+1427.01,could be a multi-planet system or an EB
+1428.01,Retired as TFOP NEB
+1429.01,KOI-272; Kepler PC
+1447.01,Possibly stellar variability; possible phase modulations (~10s of ppm); retired as TFOP FA
+1459.01,
+1460.01,possible heartbeat binary
+1474.01,3-sigma centroid offset towards another star.
+1479.01,V-shaped. Highly likely EB. Rp>40Re. TFOP FP/EB
+1480.01,highly variable star; no stellar radius; system is published EB (https://ui.adsabs.harvard.edu/abs/2021yCat..36520120I/abstract); retired as TFOP FP/EB
+1481.01,strong stellar variability; apparent odd-even may be due to bad detrending; possibly synchronized; likely too large; retired as TFOP FP/EB
+1483.01,Some centroid offset; retired as TFOP FP/NEB
+1484.01,TFOP NEB/FP
+1485.01,Giant star; likely SV
+1486.01,Potential level 1 candidate; 3 stars in pixel; TFOP FP
+1487.01,Likely FP around evolved star; retired as TFOP FA due to lack of detection in later sectors
+1488.01,rapid rotator; TFOP FA; retired as SV
+1489.01,Possibly wrong period; some odd-even
+1492.01,
+1495.01,Gaia parameters suggest star is a giant; transiting object likely too large; TFOP FP/NEB
+1496.01,Period is 21.65 days
+1497.01,Variable star; slight depth-aperture correlation; TFOP FP/NEB
+1498.01,TFOP FP/NEB
+1499.01,Likely giant; Rs < 10 Rsun will save it as a PC.
+1500.01,Matched with 377420603; two stars in the same pixel; depth-aperture correlation; retired as TFOP FP/NEB
+1501.01,Crowded field; TFOP FP/NEB
+1502.01,V-shaped and some odd-even; retired as TFOP FP
+1503.01,TFOP FP/NEB
+1504.01,TFOP FP/NEB
+1505.01,retired as TFOP FP/NEB
+1506.01,Likely Jupiter sized; centroid offset centered on another star in spoc-s57-b0A; TFOP/NEB
+1507.01,high frequency variability in the star; TFOP FP/NEB; clear offset in recent TESS data
+1508.01,Crowded field; centroid offset and depth aperture correlation in qlp-s57-tois
+1509.01,Likely EB; depth-aperture correlation; V-shaped
+1510.01,TFOP FP; retired as NEB
+1511.01,Some centroid offset; 2 stars in pixel; TFOP FP/NEB
+1512.01,No stellar info; could be evolved or a small star; if evolved then likely EB; centroid offset centered near another star in spoc-s57; TFOP FP/NEB
+1513.01,Slight depth-aperture correlation
+1514.01,TFOP FP; retired as NEB
+1515.01,Possible depth-aperture correlation
+1517.01,Retired as TFOP NEB FP; no stellar parameters; could be twice the period
+1519.01,TFOP FP/NEB
+1520.01,Slight depth-aperture correlation; retired as TFOP FP/NEB
+1521.01,Match to equally bright TIC 366074071 which has been determined as the correct source by TFOP; retired as TFOP NPC
+1522.01,multiple stars in pixel; TFOP FP; retired as NEB
+1523.01,TFOP FP; possible timing variations
+1524.01,Some odd-even; retired as TFOP FP
+1525.01,a/r = 1.3; outside star; retired as NEB
+1526.01,retired as TFOP FP/NEB; Variable star; some depth-aperture correlation
+1529.01,Some odd-even
+1530.01,Significant secondary; likely EB; Slight depth-aperture correlation; variable star
+1534.01,Secondary eclipse; likely EB
+1535.01,TFOP NEB/FP
+1536.01,Some depth-aperture correlation; strong centroid offset towards another star in spoc-s58-b0A; retired as TFOP FP/NEB
+1539.01,TFOP FP/NEB
+1540.01,TFOP FP/NEB; possible secondary; Gaia parameters suggest star is a giant
+1541.01,Slight depth-aperture correlation; transit looks asymmetric; retired as TFOP FP/EB
+1542.01,momentum dump according to astronet
+1543.01,
+1545.01,V-shaped; TFOP FP/EB
+1547.01,Likely SV; low SNR
+1548.01,Potential level 1 candidate; could be half the period
+1549.01,slight odd-even; TFOP FP/NEB
+1550.01,TFOP FP/NEB
+1552.01,Variable star
+1555.01,secondary; synchronized; TFOP FP/EB/SB1
+1556.01,centroid offset; TFOP FP/NEB
+1557.01,TFOP FP; retired as NEB
+1558.01,
+1561.01,Slightly V-shaped
+1562.01,Significant odd-even; likely EB
+1566.01,
+1567.01,single transit; close in epoch to TIC 251384275 but with no underlying systematic linking the two
+1568.01,check neighbors
+1569.01,
+1570.01,other features at different periods in the BLS
+1571.01,Possible depth aperture correlation
+1572.01,Asymmetric transit shape; uncertain period
+1574.01,single transit; other signals in raw lc between 1780-1785 BJD
+1575.01,TFOP FP/retired as NEB
+1576.01,centroid centered between two fainter stars to E; possible phase modulation; retired as TFOP FP/NEB
+1577.01,Check neighbor 332154930
+1578.01,Difference images failed. Possible depth aperture correlation between 2 and 3.
+1579.01,likely EB; Rs 2.5; Rp ~26
+1581.01,Single transit
+1582.01,TFOP FP/NEB
+1583.01,planet roughly 10 Re; check neighbors; possible stellar variability
+1584.01,likely EB; retired as TFOP FP/NEB
+1585.01,
+1587.01,Centroid offset; depth-aperture correlation; NEB/TFOP FP
+1589.01,alerted as a single transit; have period with additional data but has also been retired as TFOP FP/EB
+1590.01,Slightly crowded field; uncertain planet radius
+1591.01,single event
+1592.01,check neighbors
+1593.01,large pc around large star (Rs 6.1)
+1594.01,odd/even
+1595.01,V-shaped; secondary which is also consistent with the secondary from a Hot Jupiter; could be on TIC 642958048. Check neighbors.
+1596.01,SG1 determined correct source as TIC 431899136
+1597.01,
+1600.01,a/Rs only slightly bigger than 1; short period; retired as TFOP FP/EB
+1602.01,2 stars in pixel; correlation with stellar variability
+1604.01,Possible signature of exomoon ~6 hours before the primary transit.
+1607.01,small depth aperture correlation; large planet candidate; TFOP FP; retired as NEB
+1608.01,active star; retired as TFOP FP/SEB1
+1609.01,potential L1 candidate
+1613.01,crowded field; brighter star nearby
+1614.01,Likely EB; a/Rs close to 1; TFOP FP/NEB
+1615.01,ExoFOP FP; Retired as SB1
+1617.01,retired as TFOP FP/NEB; potential synchronization in s18; some depth-aperture correlation
+1618.01,TFOP retired as NEB; some depth-aperture correlation
+1619.01,depth aperture correlation; ~300 ppm secondary at half phase in spoc-s14-s60 multisector; offset towards dimmer neighbors in; retired as TFOP FP/NEB; QLP s77+s78 signal includes primary and secondary for half period
+1622.01,check 1981348402 - no stellar information; TFOP FP/NEB
+1623.01,consistent centroid offset towards TIC 407394747; retired as TFOP FP/NEB
+1624.01,Centroid offset; significant depth-aperture correlation; TFOP NEB
+1625.01,shallow secondary eclipse might be due to a planet
+1632.01,Check neighbors
+1633.01,TFOP FA; likely IS; alerted ephemeris not identified in following sectors
+1635.01,TFOP FP
+1636.01,Large; v-shaped; ~12 sigma odd-even in spoc-s58-b0A; TFOP FP/EB
+1637.01,strong secondary; large; TFOP FP/SEB1
+1639.01,Level one candidate; check neighbors; crowded field
+1644.01,V-shaped; seems to be synchronized with variability; TFOP FP; retired as SB2
+1645.01,synchronized; retired as SB1
+1646.01,TFOP FA
+1647.01,Radius too large; follow-up suggests a low-mass binary companion; retired as FP/SB1
+1649.01,possibly synchronized; possible secondary; possible centroid offset; retired as TFOP FP/SEB1
+1650.01,
+1652.01,possible centroid offset on nearby star (TIC 950860257); possible odd-even; retired as TFOP FP/NEB
+1657.01,V-shaped; slight odd-even; shoulders before/after ingress/egress; TFOP/NEB
+1658.01,very short orbital period possibly too close to the star; a/Rstar = 1.3; centroid offset on another star in spoc-s59
+1660.01,retired as TFOP FP/NEB
+1661.01,Gaia Teff = 8000 K; Gaia distance from parallax may not be reliable; host likely giant; strong centroid offset in SPOC towards TIC 312122953
+1662.01,large; non-synchronized stellar activity; secondary (200ppm); TFOP FP/EB
+1663.01,
+1665.01,very crowded field; v-shaped; matches to 723801895 which is 0.1 mag and 723801891 which is 1.8 mag fainter
+1666.01,
+1667.01,
+1668.01,retired as TFOP FP; potential centroid offset; minor depth-aperture correlation
+1671.01,might be 2x period
+1672.01,TFOP NEB/FP on 468828877; flux depth aperture correlation
+1673.01,Matches to a nearby star 668056616 at Tmag=10.3
+1674.01,could be 2x period; likely there is a background EB with distinctly shorter period from transiting event
+1678.01,strong secondary; phase modulations; v-shaped; large; TFOP EB/FP
+1679.01,Possibly variability; check 9837855; retired as TFOP FP/NEB
+1688.01,possibly too large for insolation
+1689.01,Potentially on the neighboring star; possibly has a stellar companion; retired as TFOP FA
+1700.01,small centroid offset; potential odd-even
+1702.01,potential L1 candidate; ultra short period
+1704.01,v-shaped; Centroids show source is TIC 95129100
+1705.01,possible secondary at phase 0.45; centroid offset to NW on TIC 37500799; retired as TFOP FP/NEB
+1707.01,slight depth/aperture correlation; missing transit; retired as NEB
+1711.01,Gaia RV error is 7 km/s; check for secondaries; period could be 2x; observed transits could be secondaries
+1712.01,TFOP SB2/APC; Hot host star; likely too large to be planetary; possible phase modulations
+1715.01,V-shaped; close neighbor TIC 142090063 w/ Tmag~11; ~150 ppm secondary at phase 0.56; retired as TFOP FP/NEB
+1724.01,centroid offset towards a brighter star (TIC 81212289).
+1729.01,Likely M dwarf or brown dwarf orbitting a white dwarf
+1733.01,Small depth-aperture correlation; odd/even not reliable because fit fails; short transit duration for a big star; steep ingress and shallow egress could be due to disintegrating planet
+1760.01,v-shaped; close visual binary; this signal is actually from neighboring TIC 420112589.01 and has been rereleased as TOI 1452.01
+1770.01,TIC 457138168 (Tmag ~13.915) nearby; v-shaped
+1786.01,v shaped; retired as TFOP FP/SEB1
+1788.01,
+1790.01,2.3 sigma odd-even
+1791.01,weak shape with 8 events; likely SV; TFOP retired as FA
+1795.01,Possibly nearby EB; need SG1 to check
+1808.01,centroid offset; TIC 307734818 is the true source; retired as TFOP FP/NEB
+1813.01,V-shaped; low SNR
+1815.01,~1000 ppm secondary transit; strong phase modulations; TFOP FP/EB/SB1
+1816.01,FA caused by momentum dump and gap
+1819.01,
+1830.01,TFOP FP; retired as SB1
+1836.02,TOI-1836 c/.02
+1837.01,Centroid offset at 3sigma; but consistent with a bright star.
+1843.01,check nearby stars; ephemeris match to tic258871779; CTOI from Ethan Kruse; retired as TFOP TFOP FP/SEB1
+1848.01,match to 219824470
+1856.01,period may be shorter than max period of ~197 days; retired as TFOP/SEB1
+1863.01,Likely EB; V-shaped; must be grazing if planet; CTOI from Ethan Kruse; ~500+ ppm secondary; TFOP FP/NEB
+1867.01,Likely EB; some depth-aperture correlation; CTOI from Ethan Kruse; offset in recent SPOC data
+1871.01,Depth-aperture correlation; stellar activity; CTOI from Ethan Kruse; retired as TFOP FP/NEB
+1877.01,CTOI from Ethan Kruse; potential shallow secondary; retired as TFOP FP/EB
+1881.01,V-shaped; some odd-even; crowded field; CTOI from Luke Bouma
+1888.01,TFOP FP; retired as NEB
+1897.01,alerted as a single; matches depth of additional transits at ~2729 and 2923 TBJD; likely 48.5 d EB with .01 as primaries and .02 as secondaries; retired as TFOP FP/EB
+1897.02,alerted as a single but now have an additional transit of similar depth at ~2031 TBJD; likely 48.5 d EB with .01 as primaries and .02 as secondaries
+1918.01,"Originally released as a KP, apparently in error. QLP s10 shows significant depth-aperture correlation. SAFFIs likely show an offset ~30"
+1939.01,B8III host; transiting object likely too large; SPOC assuming solar radius
+1941.01,retired as TFOP FP/NEB
+1942.01,possibly stellar variability; TFOP FP; retired as NEB
+1944.01,Large centroid offset. Crowded field. Bad transit shape. Likely SV.
+1945.01,still planet-sized if on 357536500; possible secondary
+1946.01,eccentric EB; retired as TFOP FP/NEB
+1947.01,Likely large star; TFOP FP/retired as NEB
+1948.01,significant depth aperture correlation in qlp and centroid offset on another star (TIC 726278150) in spoc multi-sector; retired as TFOP FP/NEB
+1950.01,possible centroid offset; TFOP retired as NEB
+1952.01,need SG1 to check 394509842
+1953.01,centroid offset closer to neighboring star; TFOP FP; retired as EB
+1955.01,two stars in the same pixel
+1956.01,Short period; crowded field
+1957.01,centroid offset centered on another star in spoc-s1-s65 multisector; retired as TFOP FP/NEB
+1959.01,centroid offset centered nearer another star in SPOC s37 and s38; retired as TFOP FP/NEB
+1962.01,TFOP FP; transit signal is coming from 141663460
+1963.01,~12000 ppm secondary in SPOC s1-s65; retired as TFOP FP/SEB1
+1964.01,two stars in pixel; ~350 ppm secondary in SPOC s1-s65 multisector
+1965.01,no stellar radius; B8IV/V host; odd-even + centroid offset centered on another star in SPOC s38; retired as TFOP FP/NEB
+1969.01,possible blend and likely FP; event is on 293708831
+1971.01,TFOP FP/NEB; centroid offset centered nearby
+1975.01,crowded field
+1977.01,crowded field; eccentric EB; TFOP FP; retired as NEB
+1978.01,V* V560 Car; SB with P=6.0803; TFOP FP; retired as SEB1
+1979.01,crowded field
+1980.01,possibly 2x period
+1983.01,TFOP FP; retired as NEB
+1984.01,V-shaped; possible centroid offset; retired as TFOP FP/NEB
+1988.01,NEB on 161156158; centroid offset centered on another star
+1989.01,spoc assuming solar radius; likely too large to be planetary if host is B8II
+1990.01,Crowded field; secondary; synchronized; TFOP FP; retired as EB
+1991.01,TFOP FP; retired as SEB1
+1992.01,same signal as 147340931; event is actually on 941340744
+1993.01,v-shaped; large; stellar variability; TFOP FP; retired as EB
+1996.01,Period might be double
+1998.01,minor centroid shift to the north west
+2002.01,V-shaped; crowded field; TFOP FP; retired as NEB
+2004.01,
+2006.01,evolved star; but difference images do not provide consistent centroid information to conclude it's a NEB
+2008.01,former single transit; now has second transit in Y3; period is longest alias; CTOI from Nora Eisner; SEB1
+2017.01,TIC match 357416480 (12.5 TESS mag star); TFOP FP as an EB with a low mass M dwarf companion
+2022.01,V-shaped; crowded field
+2027.01,Possibly in the Neptune desert!
+2028.01,crowded field; check bright neighbors; minor depth-aperture correlation
+2029.01,potential centroid offset; some depth-aperture correlation; large star
+2034.01,crowded field; 2 stars in pixel; minor depth-aperture correlation
+2041.01,potential L1 candidate
+2042.01,potential centroid offset
+2044.01,Minor depth aperture correlation; TFOP NEB/FP
+2047.01,TFOP SB1/FP; ~85 MJup
+2052.01,TFOP retired as NEB; slight offset in difference image; minor flux depth aperture correlation; tic match to 1100766815 and 445884778; latter is phantom tic
+2053.01,ephemeris match to 315755491; centroid offset to TIC 315755494; TFOP FP; retired as NEB
+2054.01,Check nearby stars - possible NEB but no odd-even; centroid; or depth aperture. Lightcurve shows variability; retired as TFOP FP/NEB
+2058.01,crowded field; minor depth-aperture correlation
+2059.01,some depth-aperture correlation; TFOP FP/NEB
+2060.01,bad transit shape; hot star (10000 K); potential SV; strong centroid offset towards other ~16 Tmag stars; retired as TFOP FP/NEB
+2061.01,weak signal; crowded field; potential secondary; possible depth-aperture correlation
+2062.01,possible secondary; crowded field
+2066.01,Large planet candidate around host star close to 141663464 (TOI 1962.01)
+2078.01,potential L1 candidate; low snr; crowded field
+2084.02,TFOP FP (NEB); ~800 ppm secondary
+2097.01,low SNR potential L1 candidate; crowded field - check nearby stars
+2099.01,centroid offset onto two fainter stars (TIC 230386395; TIC 230386399); retired as NEB
+2106.01,check nearby star in pixel; odd/even in spoc s14-23
+2110.01,potential L1 candidate; has not been recovered with additional data; retired as TFOP FA
+2111.01,TFOP FP/NEB
+2113.01,2 stars in pixel; 116159262 is a phantom tic
+2115.01,TFOP NEB/FP
+2116.01,slight depth-aperture correlation; possible centroid offset to SW; artifact TIC 289140634 close by; retired as TFOP FP/NEB
+2117.01,slight depth aperture and a slight centroid offset towards NW
+2118.01,Active star but clear and phased signal; some depth-aperture correlation; 2 stars in pixel; artifact TIC 17416751 close by
+2138.01,large and V-shaped; significant odd-even; retired as TFOP EB
+2146.01,artifact TIC 158916429 close by
+2148.01,V-shaped; other potential dips in LC; retired as TFOP FP/EB
+2150.01,slight depth-aperture correlation; TFOP FP; retired as NEB
+2151.01,possibly EB with primary transit in data gap; Gaia RV error = 5 km/s
+2153.01,centroid offset centered on TIC 406855040; TFOP FP/NEB
+2156.01,Likely EB; evolved star; a/Rs under 2; artifact TIC 158367929 close by; offset near TIC 258402422; TFOP FP; retired as NEB
+2157.01,retired as TFOP FP/SEB1
+2161.01,centroid offset centered on NEB 40
+2162.01,odd-even; slight depth-aperture correlation; TFOP FP retired as NEB on TIC 284564232
+2164.01,Likely EB; evolved star; a/Rs under 2; crowded field
+2167.01,V-shaped; Gaia rv error = 3 km/s; large for its period; some odd-even; retired as TFOP EB/SB1
+2168.01,slightly V-shaped with 3.6 sig odd-even; retired as TFOP FP/NEB
+2171.01,Anti-depth aperture correlation; bright neighbor to NW
+2172.01,Likely EB; evolved star; asymmetric transit; a/Rs under 2
+2173.01,TFOP FP/NEB
+2205.01,near neighbor TIC 737476974; V-shaped; large PC
+2208.01,V-shaped; 7+ sigma odd-even in both TEC plots for spoc-s1-s69; retired TFOP FP/SEB1
+2228.01,
+2230.01,likely EB; small a/r
+2231.01,no stellar parameters; TFOP FA; the phantom in a split with 1989628303 and 1989628301
+2237.01,short period; a/R ~ 2
+2239.01,planet might be too large; retired as FP after TFOP determined signal actually coming from TIC 388130237 / TOI 5151.01
+2240.01,slight centroid offset; ephemeris match 98494101; v-shaped transit
+2246.01,Two stars within a TESS pixel; visual binary; TFOP FP/retired as NEB
+2247.01,phantom join with 1990842033; TFOP APC
+2249.01,possible small secondary; small a/r; TFOP FP/NEB
+2250.01,retired as TFOP FP/NEB; Centroid shifts likely due to low-SNR in sectors with scattered light.
+2253.01,retired as TFOP FA due to no detections in later data
+2258.01,eccentric EB; secondary at phase 0.25
+2269.01,false alarm; likely due to 2.8d signal in 2269.02; possible three-planet multi where the inner two are in 2:1 resonance with independent epochs; crowded field; SG1 should clear neighbors; odd-even depth difference
+2283.01,low SNR; possible offset towards another star to the north; retired as TFOP FA
+2284.01,TFOP NEB/FP
+2299.01,signal at TJD ~ 1798 is a possible single transit; TIC 1718317037 overlaps TIC 362220495; both are flagged as cool dwarfs and are individual sources; TIC 362222686 is a few asecs away and likely a double star of similar brightness; centroid offset towards not a particular star; bad transit shape; only two transits; retired as TFOP FA
+2303.01,likely in the NE star; also observed in S01
+2316.01,possible synchronization; slight odd-even; large; also observed in S01
+2317.01,CTOI from Planet Hunters
+2320.01,CTOI from Planet Hunters; Rp is at least 2x9.4Re; single transit
+2323.01,4-sigma odd-even; but perhaps b/c is low SNR
+2340.01,v-shaped; CTOI from Marco Montalto
+2341.01,v-shaped; potentially grazing incident; CTOI from Marco Montalto
+2342.01,Crowded field; refer to 100589633/TOI 2726 as on-target; CTOI from Marco Montalto
+2354.01,a/R ~ 1.85; CTOI Marco Montalto; TFOP FP; retired as EB
+2358.01,Very slight depth-aperture correlation; CTOI from Marco Montalto; artifact TIC 124095880 close by
+2360.01,CTOI from Marco Montalto; retired as TFOP FP/SEB1
+2365.01,v-shaped; low SNR; CTOI from Marco Montalto; multiple stars in pixel; retired as TFOP FP/NEB
+2372.01,CTOI from Marco Montalto; ~5 sigma odd-even; possibly synchronized; retired as TFOP FP/EB
+2400.01,shallow secondary; CTOI from Marco Montalto
+2404.02,possible eclipsing binary with TOI 2404.03 as eccentric secondary based on spoc-s01-s69; retired as TFOP FP/EB
+2404.03,period found to match that of TOI 2404.02 with additional data; likely eccentric secondary of TOI 2404.02; retired as TFOP FP/EB
+2409.01,
+2412.01,TOI 2412. False Alarm. Phantom target with TOI 722.
+2413.01,Period could be half (6.7 d)
+2415.01,~7000 ppm secondary and phase modulations in SPOC s1-s69; retired as TFOP FP/EB
+2417.01,Depth-aperture. Potential visual binary 2arcsec away in Gaia with similar distance and proper motion but 3 mags fainter.
+2418.01,Only two transits; one Y1 one Y3. 25.867 days is one of at least 27 possible period aliases; retired as TFOP FP/NEB
+2424.01,large radius; single transit; CTOI from Jana Steuer; artifact TIC 313891530 close by
+2438.01,Short transit duration. Likely a Jupiter around WD!! Planet radius is calculated for Sun-like star and should not be included with the alert delivery.
+2442.01,P=2x8.6d; RV error ~4 km/s; TFOP FP EB
+2448.01,on neighbor TIC 231721006; retired as TFOP NPC
+2451.01,some stellar variability; high proper motion
+2452.01,significant odd-even from multiyear analysis; FP
+2468.01,some depth-aperture correlation; retired as TFOP FP/NEB
+2469.01,variable star with bright neighbor; large radius
+2475.01,
+2477.01,alerted as a single but now have period of 34.8 days; centroid offset centered on 412060659
+2480.01,slight depth-aperture correlation; could be on neighboring star
+2483.01,very minor depth-aperture correlation; retired by TFOP as NEB
+2492.01,found in faint-star QLP search
+2508.01,found in faint-star QLP search
+2510.01,TFOP FP/NEB
+2511.01,slight depth aperture correlation
+2515.01,v-shaped
+2517.01,TFOP FP; retired as NEB
+2544.01,Eccentric EB with secondaries at 0.54 phase; originally alerted on secondaries at period of 10.5 days; retired as TFOP FP/EB
+2550.01,centroid offset on TIC 294500963; retired as TFOP NEB
+2554.01,stellar variability at timescales shorter than orbital period
+2555.01,period should half (~8 days)
+2571.01,CTOI from Olmschenk (2021)
+2585.01,TFOP FP; retired as NEB
+2591.01,potentially too large for reported period
+2598.01,possible centroid offset to W but neighboring stars likely too dim for depth of events
+2603.01,possibly synchronized; EB NGTS J0930-18 b (https://arxiv.org/abs/2008.07354); 85 Mjup; retired as TFOP FP/SEB1
+2607.01,Possible secondary (200ppm at 4.4 sigma)
+2610.01,true source of signal is TIC 268914378 which has also been determined to be an EB; this TOI is retired as TFOP FP/NEB
+2611.01,found in faint-star QLP search; ambiguous diff image
+2618.01,found in faint-star QLP search; slight odd-even; consistent offset near TIC 231076041 (Tmag~16.4) in spoc-s01-s69; retired as TFOP FP/NEB
+2623.01,likely EB due to secondary and out of transit variability; found in faint-star QLP search
+2625.01,found in faint-star QLP search; no stellar radius; phase modulations and secondary in SPOC s1-s69; retired as TFOP FP/EB
+2632.01,found in faint-star QLP search
+2651.01,found in faint-star QLP search; TFOP FP; retired as EB
+2664.01,v-shaped; possible odd-even; TFOP SB1/FP
+2667.01,evolved host; two stars in pixel; SG1 determined true source to be TIC 348684814 (Tmag~11.5) and has retired this target as NPC
+2671.01,slight centroid offset possible on TIC 190081483 or fainter neighbors; possibly EB; offset centered on TIC 190081499(Tmag~16.7) in SPOC s62; retired as TFOP FP/NEB
+2675.01,V-shaped; found in faint-star QLP search
+2680.01,V-shaped; found in faint-star QLP search
+2708.01,found in faint-star QLP search; CTOI from Olmschenk et al. (2021)
+2713.01,found in faint-star QLP search
+2717.01,found in faint-star QLP search
+2728.01,found in faint-star QLP search
+2732.01,V-shaped; found in faint-star QLP search
+2736.01,found in faint-star QLP search; possible centroid offset towards TIC 91869777
+2743.01,found in faint-star QLP search
+2744.01,no radius; found in faint-star QLP search
+2754.01,found in faint-star QLP search
+2759.01,slightly V-shaped; found in faint-star QLP search; centroid offset entered near TIC 770789231 (Tmag ~17) in SPOC-s61; retired as TFOP FP/NEB
+2760.01,found in faint-star QLP search; retired as TFOP FP/NEB; centroid offset near TIC 130611755 (Tmag ~17) in spoc-s61-b0A
+2771.01,found in faint-star QLP search
+2775.01,V-shaped; found in faint-star QLP search
+2779.01,found in faint-star QLP search
+2784.01,found in faint-star QLP search
+2789.01,found in faint-star QLP search
+2805.01,TFOP NEB/FP
+2811.01,evolved host star
+2812.01,possible centroid offset to ESE
+2816.01,found in faint-star QLP search; centroid offset centered on neighboring stars in SPOC-s61; TIC 131581534 (17
+2828.01,found in faint-star QLP search; ~4000 ppm secondary at phase 0.41 in SPOC s61 and s62; retired as TFOP EB/VPC
+2829.01,V-shaped; found in faint-star QLP search; retired as TFOP FP/NEB
+2835.01,found in faint-star QLP search; secondary; retired as TFOP FP
+2838.01,found in faint-star QLP search
+2839.01,found in faint-star QLP search
+2845.01,found in faint-star QLP search
+2846.01,found in faint-star QLP search
+2848.01,no radius; found in faint-star QLP search; CTOI from Olmschenk et al; retired as TFOP FP/EB
+2855.01,found in faint-star QLP search
+2856.01,found in faint-star QLP search
+2863.01,found in faint-star QLP search
+2871.01,found in faint-star QLP search
+2872.01,found in faint-star QLP search
+2874.01,found in faint-star QLP search; centroid offset centered near TIC 123106484 (Tmag~16.5)+ ~700 ppm secondary in SPOC s62; retired as TFOP FP/NEB
+2878.01,found in faint-star QLP search
+2879.01,found in faint-star QLP search; ~8000 ppm secondary in SPOC s61; v-shaped
+2902.01,found in faint-star QLP search; retired as TFOP FP/NEB
+2933.01,found in faint-star QLP search; centroid offset near TIC 29336132 (Tmag~18.2) in SPOC multisector; retired as TFOP FP/NEB
+2936.01,found in faint-star QLP search
+2944.01,found in faint-star QLP search; ~2000-3000 ppm secondary in SPOC s1-s65 at half phase; retired as TFOP FP/EB
+2947.01,found in faint-star QLP search; TFOP FP; retired as EB
+2951.01,found in faint-star QLP search; retired as TFOP EB
+2953.01,found in faint-star QLP search; slight depth aperture correlation; no stellar radius; ~1300 ppm secondary in spoc-s1-s65; retired as TFOP FP/EB
+2958.01,found in faint-star QLP search; retired as TFOP NEB
+2959.01,found in faint-star QLP search
+2963.01,V-shaped; found in faint-star QLP search; centroid offset centered near TIC 441343811 (Tmag~14.7); retired as TFOP FP/NEB
+2967.01,V-shaped; found in faint-star QLP search
+2987.01,found in faint-star QLP search; centroid offset centered near other stars in spoc s61+s62; retired as TFOP FP/NEB
+2999.01,found in faint-star QLP search
+3001.01,found in faint-star QLP search
+3004.01,found in faint-star QLP search
+3005.01,found in faint-star QLP search
+3008.01,found in faint-star QLP search; retired as TFOP FP/NEB
+3011.01,V-shaped; found in faint-star QLP search; no stellar radius; ~1300 ppm secondary in SPOC s1-s65; Gaia DR3 RV error ~ 7.3 km/s; parallax and temperature and log g suggest host star is distant evolved F star; retired as TFOP FP/EB
+3018.01,found in faint-star QLP search; TFOP FP/NEB
+3036.01,found in faint-star QLP search
+3044.01,found in faint-star QLP search
+3049.01,found in faint-star QLP search; TFOP FP; retired as EB
+3059.01,found in faint-star QLP search; offset centered near TIC 464067208 (Tmag ~15.6); likely too large; red giant; distance ~5000 pc; retired as TFOP FP/NEB
+3060.01,found in faint-star QLP search; slight depth aperture correlation; possibly SV; centroid offset centered on another star (TIC 463680985; Tmag~ 16.8); retired as TFOP FP/NEB
+3078.01,found in faint-star QLP search; ~7 sigma odd-even in TEC plots; retired as TFOP FP/EB
+3085.01,found in faint-star QLP search; TFOP FP; retired as EB
+3109.01,found in faint-star QLP search; TFOP FP retired as EB
+3110.01,found in faint-star QLP search; retired as TFOP FP/NEB
+3122.01,found in faint-star QLP search; retired as TFOP FP/SEB1
+3137.01,found in faint-star QLP search; no stellar parameters; phase modulations and secondary in SPOC s1-s69; retired as TFOP FP/EB
+3146.01,found in faint-star QLP search; CTOI from Olmschenk et al. (2021)
+3153.01,found in faint-star QLP search; centroid offset in spoc-s1-s65 multisector centered near TIC 924329774 (Tmag~16.205)
+3159.01,found in faint-star QLP search; retired as TFOP FP/NEB; offset centered near star 54 (TIC 449548882 Tmag ~10.62) in spoc-s1-s65
+3164.01,found in faint-star QLP search
+3165.01,found in faint-star QLP search; Rp ~ 29 Re in spoc-s1-s65; retired as TFOP FP/EB
+3174.01,found in faint-star QLP search; v-shaped; possible centroid offset to SE
+3176.01,found in faint-star QLP search; offset on another star TIC 389999912 (16.7 Tmag 12
+3181.01,found in faint-star QLP search; CTOI from Olmschenk et al. (2021)
+3189.01,found in faint-star QLP search
+3205.01,V-shaped; found in faint-star QLP search
+3216.01,found in faint-star QLP search
+3217.01,V-shaped; found in faint-star QLP search; TFOP FP; retired as EB
+3220.01,found in faint-star QLP search
+3221.01,found in faint-star QLP search; TFOP FP/NEB
+3236.01,found in faint-star QLP search; TFOP FP; retired as EB
+3253.01,found in faint-star QLP search
+3257.01,found in faint-star QLP search; TFOP FP; retired as EB
+3290.01,found in faint-star QLP search
+3306.01,found in faint-star QLP search; TFOP NPC/FP
+3311.01,found in faint-star QLP search; possible secondary at ~0.7 phase
+3313.01,found in faint-star QLP search; retired as TFOP FP/EB
+3319.01,found in faint-star QLP search
+3323.01,V-shaped; found in faint-star QLP search; retired as TFOP FP/NEB
+3332.01,found in faint-star QLP search; TFOP FP; retired as NEB
+3343.01,found in faint-star QLP search
+3347.01,found in faint-star QLP search
+3357.01,centroid plot failed
+3358.01,possible centroid shift to E
+3369.01,found in faint-star QLP search
+3372.01,found in faint-star QLP search
+3375.01,found in faint-star QLP search
+3377.01,V-shaped; found in faint-star QLP search
+3379.01,found in faint-star QLP search
+3381.01,found in faint-star QLP search
+3385.01,found in faint-star QLP search
+3388.01,found in faint-star QLP search
+3389.01,V-shaped; found in faint-star QLP search; ~800 ppm secondary in SPOC-s61; retired as TFOP FP/EB
+3392.01,V-shaped; found in faint-star QLP search
+3399.01,found in faint-star QLP search
+3402.01,found in faint-star QLP search
+3408.01,may be a secondary; potential V-shaped primary or second planet single transit at 2244 days; found in faint-star QLP search
+3420.01,found in faint-star QLP search
+3423.01,found in faint-star QLP search
+3424.01,found in faint-star QLP search
+3435.01,V-shaped; found in faint-star QLP search
+3436.01,found in faint-star QLP search
+3440.01,found in faint-star QLP search
+3466.01,found in faint-star QLP search
+3467.01,found in faint-star QLP search
+3468.01,found in faint-star QLP search
+3472.01,found in faint-star QLP search
+3482.01,found in faint-star QLP search; TFOP FP; retired as EB
+3503.01,10+ sigma odd-even in spoc-s01-s65; star is a pulsator; retired as TFOP FP/EB
+3504.01,found in faint-star QLP search; TFOP SB1/APC
+3507.01,low SNR; found in faint-star QLP search
+3508.01,found in faint-star QLP search
+3512.01,some odd-even; V-shaped; found in faint-star QLP search
+3524.01,found in faint-star QLP search
+3525.01,found in faint-star QLP search
+3526.01,found in faint-star QLP search; retired as TFOP FP/NEB
+3528.01,V-shaped; found in faint-star QLP search
+3536.01,V-shaped; found in faint-star QLP search
+3537.01,V-shaped; found in faint-star QLP search; strong odd/even depth difference in the V-shaped event in qlp-s41-tois
+3541.01,found in faint-star QLP search; possible centroid offset in qlp-s41-tois
+3542.01,found in faint-star QLP search; TFOP FP/SEB1
+3548.01,ultra-short orbital period; found in faint-star QLP search
+3549.01,V-shaped; found in faint-star QLP search; retired as TFOP FP/NEB
+3557.01,known FP from Kepler (KOI 6204.01)
+3561.01,found in faint-star QLP search
+3562.01,V-shaped; found in faint-star QLP search
+3565.01,found in faint-star QLP search; double alert with TIC 313408643/TOI 3533; this one retired as TFOP FP
+3566.01,found in faint-star QLP search; retired as NEB by TFOP
+3572.01,found in faint-star QLP search
+3578.01,low SNR; found in faint-star QLP search; TFOP FP/NEB
+3579.01,found in faint-star QLP search
+3580.01,found in faint-star QLP search
+3581.01,V-shaped; found in faint-star QLP search
+3608.01,found in faint-star QLP search
+3610.01,found in faint-star QLP search; weak centroid offset; variable host; retired as TFOP FP/NEB
+3614.01,found in faint-star QLP search
+3621.01,found in faint-star QLP search
+3626.01,found in faint-star QLP search
+3627.01,V-shaped; found in faint-star QLP search
+3631.01,found in faint-star QLP search
+3634.01,V-shaped; found in faint-star QLP search
+3643.01,found in faint-star QLP search
+3644.01,found in faint-star QLP search
+3658.01,found in faint-star QLP search; strong phase modulations and ~3000 ppm secondary; no stellar radius; Teff ~8000 K; retired as TFOP FP/EB
+3659.01,low SNR; found in faint-star QLP search; significant odd-even; centroid offset towards two other stars
+3663.01,found in faint-star QLP search; centroid offset in SPOC s58 centered on TIC 354151220 (Tmag~15)
+3672.01,found in faint-star QLP search
+3677.01,found in faint-star QLP search
+3678.01,found in faint-star QLP search; strong but shallow secondary of ~700 ppm and likely phase modulations; retired as TFOP FP/SEB1
+3684.01,potential weak secondary; V-shaped; found in faint-star QLP search
+3712.01,found in faint-star QLP search; potential secondary
+3725.01,found in faint-star QLP search
+3728.01,V-shaped; found in faint-star QLP search; no stellar radius; stellar radius from Gaia DR2 is ~5.1 Rsun which would make candidate Rp~50 Re; very likely EB
+3733.01,found in faint-star QLP search
+3740.01,found in faint-star QLP search
+3742.01,found in faint-star QLP search; signal coming from brighter neighbor TIC 286696848; TOI 3742 retired as FP/NPC by TFOP
+3745.01,found in faint-star QLP search
+3746.01,found in faint-star QLP search
+3753.01,found in faint-star QLP search; odd-even in S43 and s44; likely EB
+3759.01,low SNR; found in faint-star QLP search
+3766.01,low SNR; found in faint-star QLP search
+3781.01,found in faint-star QLP search; slight depth aperture correlation in QLP; centroid offset on TIC 470974160 (Tmag ~15.334) in spoc-s47; retired as NEB
+3790.01,found in faint-star QLP search
+3794.01,low SNR; found in faint-star QLP search
+3795.01,found in faint-star QLP search
+3796.01,period may be half; found in faint-star QLP search; retired as EB/SB1
+3799.01,found in faint-star QLP search
+3808.01,found in faint-star QLP search; ~4 sigma odd-even in spoc-s14-s60 multisector
+3810.01,no offset in s44/45/46; offset in spoc-s47 likely due to scattered light; low MES; found in faint-star QLP search; 10-sigma odd-even in spoc-s42-s46-b0A; retired as EB
+3824.01,found in faint-star QLP search; Same signal as TOI-3777.01 but this star is a phantom; retired as TFOP FA
+3825.01,V-shaped; found in faint-star QLP search; eccentric EB
+3827.01,found in faint-star QLP search
+3843.01,found in faint-star QLP search
+3845.01,found in faint-star QLP search; 2000 ppm secondary; centered on TIC 840790978; retired as TFOP FP
+3864.01,found in faint-star QLP search
+3883.01,found in faint-star QLP search; Retired as SEB1 by TFOP
+3885.01,found in faint-star QLP search
+3890.01,found in faint-star QLP search
+3914.01,found in faint-star QLP search
+3917.01,found in faint-star QLP search; demoted as artifact in TICv8.2
+3920.01,V-shaped; found in faint-star QLP search
+3921.01,found in faint-star QLP search; Same signal as TOI-3977.01 which is brighter so this TOI has been retired as an NPC
+3924.01,found in faint-star QLP search
+3925.01,found in faint-star QLP search
+3938.01,found in faint-star QLP search
+3948.01,found in faint-star QLP search
+3957.01,found in faint-star QLP search
+3963.01,found in faint-star QLP search; possible depth aperture correlation; asymmetric transit shape
+3964.01,found in faint-star QLP search
+3975.01,V-shaped; found in faint-star QLP search
+3979.01,found in faint-star QLP search
+3981.01,found in faint-star QLP search
+3983.01,V-shaped; found in faint-star QLP search
+3985.01,found in faint-star QLP search
+3986.01,found in faint-star QLP search
+3987.01,found in faint-star QLP search
+3989.01,found in faint-star QLP search; no stellar radius in TIC but Gaia DR2 stellar radius is 5.86 Rsun
+3990.01,V-shaped found in faint-star QLP search
+3991.01,found in faint-star QLP search
+3994.01,found in faint-star QLP search
+3996.01,V-shaped; found in faint-star QLP search
+3999.01,found in faint-star QLP search
+4000.01,found in faint-star QLP search; retired as TFOP FP/SEB1
+4002.01,found in faint-star QLP search; TFOP FP/NEB
+4005.01,found in faint-star QLP search
+4006.01,found in faint-star QLP search; TOI4006.01:Same signal as TOI-4075.01 but this star is reported as a phantom so has been retired as an FA.
+4008.01,found in faint-star QLP search; centroid offset on TIC 379629860 in SPOC s58
+4019.01,V-shaped; found in faint-star QLP search; Gaia DR2 Rstar ~2.04 slightly larger than TIC value; nearby TIC 284305330 (delta Tmag 3.2 separation 4.52'')
+4020.01,found in faint-star QLP search; TFOP FA/Phantom
+4032.01,V-shaped; found in faint-star QLP search
+4036.01,found in faint-star QLP search
+4037.01,found in faint-star QLP search; possible offset in spoc-s14-s60
+4044.01,found in faint-star QLP search
+4047.01,found in faint-star QLP search
+4048.01,potential weak secondary; found in faint-star QLP search
+4051.01,V-shaped; found in faint-star QLP search; SPOC s14-s78 shows a 6 odd/even depth difference; retired as TFOP FP/EB
+4052.01,found in faint-star QLP search
+4053.01,found in faint-star QLP search; V-shaped; no stellar radius; centroid offset towards TIC 235684390; ~1500 ppm secondary at 0.58 phase; retired as TFOP FP/NEB
+4061.01,found in faint-star QLP search; same signal as TOI 4022; this one retired as TFOP FA
+4067.01,found in faint-star QLP search; actual source is TIC 162577468 / TOI 5669.01
+4068.01,V-shaped; found in faint-star QLP search
+4083.01,found in faint-star QLP search
+4091.01,found in faint-star QLP search
+4102.01,found in faint-star QLP search
+4110.01,found in faint-star QLP search; retired as NEB on TIC 230075121
+4112.01,found in faint-star QLP search; TOI4112.01:Same signal as TOI-1697.01 but this star is a phantom; retired as an FA
+4116.01,found in faint-star QLP search; retired as TFOP FP/SEB2
+4123.01,V-shaped; found in faint-star QLP search; nearby TIC 802691143
+4126.01,found in faint-star QLP search
+4130.01,found in faint-star QLP search
+4134.01,found in faint-star QLP search
+4135.01,found in faint-star QLP search; significant centroid offset and depth aperture correlation; likely NEB
+4139.01,found in faint-star QLP search
+4143.01,found in faint-star QLP search
+4148.01,found in faint-star QLP search; TFOP FP/NEB
+4157.01,V-shaped; found in faint-star QLP search; off target in spoc-s14-s55-b0A-PC on TIC 461538932
+4164.01,found in faint-star QLP search; potential centroid offset; bad transit shape
+4167.01,found in faint-star QLP search; depth aperture correlation
+4178.01,TFOP FP (SEB2)
+4181.01,V-shaped but consistent with grazing incidence; possible odd-even; TFOP FP/EB
+4188.01,
+4207.01,found in faint-star QLP search
+4213.01,found in faint-star QLP search
+4216.01,found in faint-star QLP search
+4217.01,found in faint-star QLP search; centroid offset centered on TIC 108939491 (Tmag~16.3) in spoc-s61-b0A; TIC 108939491 Gaia EB candidate at 2xP. Retired as NEB.
+4219.01,found in faint-star QLP search; TFOP FP; retired as NEB
+4222.01,found in faint-star QLP search
+4225.01,found in faint-star QLP search; TFOP FP/NEB
+4229.01,found in faint-star QLP search
+4232.01,found in faint-star QLP search
+4233.01,found in faint-star QLP search
+4235.01,found in faint-star QLP search
+4251.01,found in faint-star QLP search
+4255.01,found in faint-star QLP search; possible centroid centered near TIC 82302236
+4256.01,V-shaped; found in faint-star QLP search
+4257.01,found in faint-star QLP search; offset on TIC 75208617 in SPOC s62; retired as TFOP FP/NEB
+4258.01,found in faint-star QLP search
+4261.01,found in faint-star QLP search; no stellar parameters but Gaia DR2 parallax of ~0.06 and color indicate host is likely red giant; two stars in pixel; ~2300 ppm secondary in spoc-s62-b0A; retired as TFOP FP/NEB
+4263.01,found in faint-star QLP search; possible centroid offset to the S; multiple stars in pixel
+4265.01,found in faint-star QLP search
+4268.01,found in faint-star QLP search
+4275.01,V-shaped; found in faint-star QLP search; no stellar radius
+4279.01,found in faint-star QLP search; true signal source is TIC 1104064500; TOI 4279.01 has been retired as TFOP/NPC
+4281.01,found in faint-star QLP search; no stellar radius
+4292.01,found in faint-star QLP search; retired as TFOP FP/NPC; true source is TIC 255918904
+4294.01,found in faint-star QLP search
+4296.01,retired as TFOP FA; this is a combination of two transits of ~5 day signal (.02) at TBJD ~ 1399.5 and TBJD ~ 2138.4) and one transit of the ~12 day signal (.03) at TBJD ~2118.4
+4300.01,V-shaped; some stellar variability; possibly
+4312.01,low SNR; potential stellar variability; ~ 726 is longest possible period; may be shorter period; Identified as an asteroid crossing event in https://arxiv.org/abs/2310.17268 due to presence of correlated peaks in SAPBKG
+4314.01,low SNR; potential stellar variability
+4320.02,two transits; actual period likely shorter than 742.55 days; possible multi; determined to be part of 25 days transitting planet identified with other alerted TOI; retired as FA
+4323.01,potential L1 planet; low SNR; fit appears to be underestimating depth; centroid offset but not centered on anything; TFOP retired as FA
+4323.02,possible 3:2 resonance; 3.6 sigma odd-even; retired as TFOP FA
+4330.01,short duration for period and star; a/Rs < 2
+4332.01,possible centroid offset; retired as TFOP FP/NPC with true source as TIC 178959057 which is expected to have Rp~23 Re
+4335.01,TFOP FP; retired as NEB
+4337.01,low SNR; possible instrument systematics; v-shaped; retired as TFOP FP/NEB
+4339.01,check neighbor TIC 7439480
+4341.01,even transit looks better than odd; low SNR
+4346.01,crowded field; potential L1 planet
+4357.01,TFOP FP; retired as EB; contact binary
+4359.01,other dips in LC; possible SV or multi; slight depth aperture correlation
+4367.01,possible L1 planet; possible centroid offset; weak signal; centroid offset near other stars 30
+4368.01,~800 ppm secondary in SPOC s1-s65 multisector along with Rp~34 Re; retied as TFOP FP/EB
+4375.01,possible secondary not at phase 0.5; hot host star; centroid shift in s39; TFOP FP; retired as NEB
+4383.01,possible synchronization; v-shaped; possible odd-even
+4394.01,a/Rs < 2; evolved star; orbital period close to variability period but not exact; centroid offset; 9+ sigma odd-even; retired as TFOP FP/NEB
+4396.01,possible depth aperture correlation; systematics may be effecting TCE at ~1633 TBJD; TFOP FP/NEB
+4397.01,crowded field; weak signal; inconsistent stellar parameters
+4412.01,crowded field; possible odd-even; slight increase in flux imeadiately after transit; retired as TFOP FP/EB
+4414.01,centroid offset but not onto another star; weak transit shape; no stellar information
+4420.01,V-shaped; ~600 ppm secondary; possible offset to N; retired as TFOP FP/EB
+4421.01,some depth-aperture correlation; some odd-even; TFOP NEB/FP
+4423.01,small centroid offset; retired as TFOP FP/NEB
+4433.01,KOI 6918.01; no stellar radius; SPOC assuming solar stellar parameters; KOI 6918.01; in Kepler EB catalog
+4453.01,~2000 ppm secondary in spoc-s14-s55 multisector; retired as TFOP FP/EB
+4461.01,potential L1; matched to neighboring TIC 149282076 in pixel; retired as TFOP FP/NEB
+4462.01,TFOP FP(SEB1)
+4477.01,possibly too large for period/insolation; retired as TFOP SEB1/APC
+4498.01,ambiguous centroid plot; potential L1 candidate; clear offset in recent TESS data; retired as TFOP FP/NEB
+4500.01,low SNR; check nearby matched star TIC 406190550
+4502.01,star is hot and variable; retired as TFOP NEB/FP
+4522.01,very short Tdur; could be on fainter M dwarf nearby; EPIC 220448185.01
+4528.01,match to TOI 4545
+4564.01,slight centroid offset to W; retired as TFOP FP/NEB
+4569.01,weak signal; somewhat V-shaped; possibly off-target or SV
+4583.01,no stellar parameters
+4591.01,likely too large for insolation; ~2000 ppm secondary at phase 0.18; retired as TFOP FP/EB
+4594.01,KOI 3728.01 / Kepler-1517 b; retired as FP; Just above H-burning mass limit (83+/-13 MJup) from Lillo-Box et al 2016
+4605.01,possible centroid offset and secondary in QLP s44; very sight centroid shift in QLP s45-tois; retired as TFOP FP/NEB
+4610.01,centroid offset to SW in QLP s71+s73; TFOP FP/NEB
+4627.01,v-shaped; alerted on secondaries; identified as eccentric EB with spoc-s01-s65-b0A-PC multi sector
+4634.01,EPIC 210754505; odd-even in multiple K2 pipelines as well as SPOC s1-s72 multisector; retired as TFOP FP/EB
+4635.01,retired as TFOP FP/SEB1
+4636.01,TFOP FP; retired as SEB1
+4668.01,V-shaped; found in faint-star QLP search
+4669.01,found in faint-star QLP search
+4682.01,potential slight offset to E but star seems isolated; found in faint-star QLP search
+4683.01,found in faint-star QLP search; actual source is TIC 264460009 which will be released as new TOI; this one is retired as TFOP NPC/FA
+4715.01,found in faint-star QLP search
+4738.01,found in faint-star QLP search
+4759.01,found in faint-star QLP search
+4800.01,found in faint-star QLP search; follow-up confirms the true source is TIC 280307607; this TOI has been retired as TFOP NPC
+4808.01,found in faint-star QLP search
+4817.01,found in faint-star QLP search
+4827.01,period likely several times shorter than max period of ~736 days; found in faint-star QLP search; retired as TFOP FP/EB
+4829.01,found in faint-star QLP search
+4838.01,K2-399 b; found in faint-star QLP search; v-shaped; possible triple-star system; retired as TFOP FP/EB; hierarchical eclipsing binary (Lillo-Box et al 2024)
+4840.01,found in faint-star QLP search; possible L1 candidate with Rp error
+4846.01,found in faint-star QLP search
+4849.01,found in faint-star QLP search
+4856.01,found in faint-star QLP search; slight depth aperture correlation; TFOP FP/retired as 27.884670 d EB
+4858.01,found in faint-star QLP search; v-shaped; Rp likely too large for M dwarf host
+4863.01,found in faint-star QLP search
+4879.01,found in faint-star QLP search
+4886.01,found in faint-star QLP search
+4902.01,found in faint-star QLP search
+4934.01,found in faint-star QLP search
+4946.01,crowded; found in faint-star QLP search
+4948.01,found in faint-star QLP search; transit slightly difficult to see because period is folded on a multiple of the cadence
+4964.01,V-shaped; found in faint-star QLP search; large but could be inflated at period
+4985.01,found in faint-star QLP search; likely inflated hot Jupiter; retired as TFOP FP/NEB
+5016.01,found in faint-star QLP search; v-shaped; crowded field
+5041.01,found in faint-star QLP search; ~8-10 sigma odd-even in SPOC s1-s69; v-shaped; retired as TFOP FP/EB
+5055.01,V-shaped; found in faint-star QLP search; retired as TFOP FP/NPC due to identification of true source of signal as TIC 1104064500
+5070.01,multiple stars in pixel; offset on TIC 319968110 (Tnag~13.2) in SPOC s1-s72
+5075.01,possible odd-even; short period for host star; TFOP FP/NEB
+5079.01,visual binary; TFOP NEB/FP
+5107.01,weak signal but strong BLS; possible centroid offset
+5119.01,TFOP FP/NEB
+5124.01,a/Rs ~ 1.4; evolved host; possible phase modulations
+5133.01,retired as SB1/EB
+5134.01,TFOP NEB/FP
+5135.01,TFOP FP; retired as NEB
+5150.01,TFOP FP/NEB
+5184.01,found in faint-star QLP search; retired as TFOP FP/NEB
+5189.01,found in faint-star QLP search; centroid offset centered on another star in spoc s59
+5198.01,found in faint-star QLP search; retired as TFOP FP/SEB1
+5199.01,found in faint-star QLP search
+5212.01,found in faint-star QLP search; retired as TFOP FP/EB
+5226.01,found in faint-star QLP search; retired as TFOP FP/SEB1
+5231.01,found in faint-star QLP search; retired as TFOP FP/NEB
+5240.01,found in faint-star QLP search
+5246.01,found in faint-star QLP search
+5257.01,found in faint-star QLP search; retired as TFOP FP/SEB1; phase modulations; synchronized
+5258.01,found in faint-star QLP search
+5260.01,found in faint-star QLP search; potential L1 candidate
+5262.01,found in faint-star QLP search; potential L1 candidate
+5266.01,found in faint-star QLP search; retired as TFOP FP/NEB
+5268.01,found in faint-star QLP search; slightly v-shaped
+5273.01,found in faint-star QLP search; retired as TFOP FP/NEB
+5275.01,found in faint-star QLP search; low SNR
+5283.01,found in faint-star QLP search; centroid offset centered on another star in SPOC s56; retired as TFOP NPC
+5296.01,similar brightness neighbour (241102582); found in faint-star QLP search; retired as NPC
+5308.01,found in faint-star QLP search
+5310.01,found in faint-star QLP search
+5321.01,found in faint-star QLP search; retired as retired as TFOP FP/SEB1
+5337.01,found in faint-star QLP search
+5353.01,found in faint-star QLP search
+5361.01,found in faint-star QLP search
+5381.01,centroid offset centered near TIC 241174784 (Tmag~14.05) and TIC 741666846 (Tmag~ 15) in spoc-s14-s60 multisector
+5396.01,slight depth aperture correlation in QLP s75; possible centroid offset towards TIC 202428245; retired as TFOP FP/NEB
+5399.01,weak centroid offset; possibly multi
+5418.01,found in faint-star QLP search
+5424.01,found in faint-star QLP search
+5429.01,found in faint-star QLP search
+5434.01,found in faint-star QLP search
+5440.01,found in faint-star QLP search
+5446.01,found in faint-star QLP search; possible centroid offset towards TIC 84788789
+5447.01,found in faint-star QLP search
+5450.01,found in faint-star QLP search
+5456.01,found in faint-star QLP search
+5467.01,found in faint-star QLP search
+5478.02,found in faint-star QLP search; new multi-planet signal
+5496.01,found in faint-star QLP search; retired as TFOP FP/EB
+5503.01,found in faint-star QLP search
+5513.01,found in faint-star QLP search
+5540.01,possibly too large for period; short period; significant odd-even at 2x previous period (0.55 d); retired as TFOP FP/NEB
+5547.01,odd-even; V-shaped; Rv error ~2.77 km/s
+5574.01,found in faint-star QLP search
+5576.01,found in faint-star QLP search
+5621.01,found in faint-star QLP search
+5640.01,found in faint-star QLP search
+5648.01,found in faint-star QLP search; retired as TFOP FA; actual source of signal is TIC 23863106 and released as TOI 5671.01
+5695.01,found in faint-star QLP search
+5702.01,low SNR; ambiguous difference image but no nearby ephemeris matches
+5742.01,evolved variable host; possible centroid offset; retired as TFOP FP/NEB
+5746.01,duo transit two years apart; ~711 days in the maximum period; period is likely shorter; v-shaped
+5769.01,found in faint-star QLP search
+5784.01,crowded field; low SNR
+5787.01,TFOP NEB/FP;crowded field; possible depth-aperture; low SNR
+5791.01,slight depth-aperture correlation; slight offset towards TIC 11093647
+5804.01,potential coincident asteroid
+5811.01,match to TIC 331484427 (which is a fainter star)
+5830.01,found in faint-star QLP search; crowded field
+5839.01,found in faint-star QLP search
+5850.01,found in faint-star QLP search
+5855.01,found in faint-star QLP search; retired as TFOP FP/NEB
+5862.01,found in faint-star QLP search; retired as TFOP FP/SEB1
+5866.01,found in faint-star QLP search
+5867.01,found in faint-star QLP search
+5876.01,found in faint-star QLP search; retired as TFOP FP/NEB
+5886.01,found in faint-star QLP search; retired as TFOP FP/NEB
+5887.01,found in faint-star QLP search; retired as TFOP NEB/FP
+5892.01,found in faint-star QLP search
+5896.01,found in faint-star QLP search
+5899.01,V-shaped; found in faint-star QLP search
+5901.01,found in faint-star QLP search
+5908.01,found in faint-star QLP search
+5910.01,found in faint-star QLP search
+5915.01,found in faint-star QLP search
+5920.01,period may be half; found in faint-star QLP search
+5924.01,found in faint-star QLP search
+5940.01,found in faint-star QLP search; retired as TFOP FP/NEB
+5942.01,found in faint-star QLP search; retired as TFOP FP/NEB
+5954.01,V-shaped; evolved variable host; slight depth aperture correlation; retired as TFOP FP/SEB1
+5962.01,Two stars in pixel; retired as TFOP FP/NEB
+5966.01,variable host; retired as TFOP FP/SEB1
+5976.01,possibly flaring host star; possible SV or NEB; retired as TFOP FP/NEB
+6020.01,multiple stars in pixel; retired as TFOP FP/SEB1
+6023.01,weak signal; evolved host star; possible SV; retired as TFOP FP/NEB
+6024.01,potential secondary; possibly SV; retired as TFOP FP/NEB
+6037.01,shallow transits; somewhat evolved host; retired as TFOP FP/NEB
+6039.01,slightly V-shaped; evolved variable host star; Rp may be underestimated; TFOP FP/SB1
+6042.01,slight odd-even likely due to detrending; possibly too large
+6065.01,slight depth-aperture correlation; possible centroid offset towards bright star to ESE; potential L1 candidate based off Rp uncertainty
+6069.01,low MES; host is listed as part of 148 day SB (2022yCat.1357....0G); only occurs in s60; retired as TFOP FA
+6084.01,v-shaped; retired as TFOP FP/SEB1
+6092.01,Single transit candidate at TBJD ~2746
+6094.01,possible centroid offset to NNW
+6096.01,possible centroid offset to S; retired as TFOP FP/NEB
+6116.01,found in faint-star QLP search; no stellar radius
+6128.01,found in faint-star QLP search
+6133.01,found in faint-star QLP search
+6143.01,found in faint-star QLP search
+6147.01,found in faint-star QLP search
+6152.01,found in faint-star QLP search
+6157.01,found in faint-star QLP search
+6172.01,found in faint-star QLP search; retired as TFOP FP/NEB
+6181.01,found in faint-star QLP search; retired as TFOP FP/NEB
+6186.01,found in faint-star QLP search
+6196.01,found in faint-star QLP search
+6207.01,found in faint-star QLP search
+6242.01,found in faint-star QLP search
+6279.01,very crowded field; slight depth aperture correlation
+6280.01,variable host; slightly v-shaped; multiple stars in pixel
+6286.01,found in faint-star QLP search
+6287.01,found in faint-star QLP search
+6298.01,found in faint-star QLP search
+6343.01,found in faint-star QLP search
+6355.01,found in faint-star QLP search
+6367.01,found in faint-star QLP search
+6368.01,found in faint-star QLP search
+6377.01,found in faint-star QLP search
+6396.01,found in faint-star QLP search; varying transit depth and possible odd-even; retired as TFOP FP/SEB2
+6398.01,found in faint-star QLP search
+6447.01,found in faint-star QLP search
+6486.01,found in faint-star QLP search
+6542.01,slightly asymmetric transit shape; two stars in pixel
+6585.01,found in faint-star QLP search
+6645.01,ambiguous offset and possible depth-aperture correlation; TFOP NEB/FP
+6650.03,potential multi; TFOP FP/NPC; true source of this of this signal is TIC 64837877 (Tmag = 12.9)
+6654.01,evolved host; Rstar may be smaller (~5.8 Rsun in Sharma+ 2018); possible depth aperture correlation; TFOP retired as NEB
+6656.01,nearby M dwarf in visual binary; bright neighbor to NW; not found by observers; retired as TFOP FA
+6693.01,variable evolved host; possibly synchronized; retired as TFOP FP/SEB1
+6696.01,Possible phase modulations; ~800 ppm secondary; Gaia DR3 RV error ~5 km/s; CTOI from Greg Olmschenk
+6711.01,low SNR; scatter in centroids
+6741.01,found in faint-star QLP search; TFOP NPC (on TIC 263203214: T=15.1Â dT=2.3)
+6750.01,found in faint-star QLP search
+6764.01,found in faint-star QLP search
+6768.01,found in faint-star QLP search
+6783.01,found in faint-star QLP search
+6849.01,found in faint-star QLP search; duo-transit; period likely shorter than maximum period of ~1825 d; retired as TFOP FP/EB
+6866.01,found in faint-star QLP search
+6874.01,multiple stars in pixel; retired as TFOP FP/SEB1
+6876.01,possible centroid offset to S
+6878.01,Possible slight centroid offset to N/NE; retired as TFOP FP/NEB
+6882.01,low SNR; multiple stars in pixel; near neighbor TIC 293075734 (Tmag~18.4); possible odd-even; a/R* ~ 1.7; slightly evolved host; also found in faint-star QLP search; retired as TFOP FP/NEB
+6895.01,possible offset to SW; no depth aperture correlation
+6920.01,found in faint-star QLP search
+6921.01,found in faint-star QLP search; ~3200 ppm secondary at about 0.3 phase in SPOC s42-s46
+6952.01,found in faint-star QLP search
+6969.01,Gaia DR3 RV error ~1.9 km/s; one of candidates may be planetary but needs follow-up to determine which
+6989.01,found in faint-star QLP search
+6994.01,found in faint-star QLP search
+6996.01,found in faint-star QLP search
+6999.01,found in faint-star QLP search; also a CTOI from Rafael Rodrigues (TESS Planet Hunters)
+7007.01,found in faint-star QLP search; retired as TFOP NEB/EB
+7042.01,slight depth aperture correlation; weak BLS; low SNR
+7051.01,slightly v-shaped; brighter component of visual binary (fainter component is TIC 18574161); TIC 18574160 is a phantom composite/split of the two real stars
+7065.01,possible offset to E
+7071.01,offset to N but no clear star in that direction; slight depth aperture correlation that may be consistent with bright host star
+7086.01,found in faint-star QLP search; possible slight odd-even
+7104.01,found in faint-star QLP search; possible slight odd-even
+7106.01,found in faint-star QLP search
+7114.01,found in faint-star QLP search
+7121.01,found in faint-star QLP search
+7137.01,found in faint-star QLP search; retired as TFOP FP/NEB with notes indicating that actual source is TIC 161687211
+7146.01,found in faint-star QLP search
+7163.01,found in faint-star QLP search; retired as TFOP NPC (nearby planet candidate)
+7164.01,crowded field; L1 candidate with only two transits and one partial; maximum period is ~736.55 days but true period is likely shorter; retired as TFOP FP/NEB
+7173.01,V-shaped; multiple stars in pixel; CTOI from Yoshi Eschen
+7183.01,weak transit shape; possibly SV
+7193.01,found in faint-star QLP search
+7220.01,found in faint-star QLP search
+7244.01,found in faint-star QLP search
+7245.01,found in faint-star QLP search
+7247.01,found in faint-star QLP search
+7252.01,found in faint-star QLP search
+7255.01,found in faint-star QLP search
+7260.01,found in faint-star QLP search
+7275.01,found in faint-star QLP search
+7302.01,found in faint-star QLP search
+7314.01,found in faint-star QLP search; no stellar radius; possible transit duration difference
+7324.01,found in faint-star QLP search; retired as TFOP FP/NEB
+7332.01,found in faint-star QLP search
+7335.01,found in faint-star QLP search
+7338.01,V-shaped; possible offset; possible odd-even
+7343.01,found in faint-star QLP search
+7345.01,found in faint-star QLP search
+7350.01,found in faint-star QLP search
+7352.01,found in faint-star QLP search
+7372.01,found in faint-star QLP search
+7373.01,found in faint-star QLP search
+7375.01,found in faint-star QLP search
+7415.01,found in faint-star QLP search; L1 candidate
+7416.01,found in faint-star QLP search; possible slight odd-even
+7417.01,found in faint-star QLP search
+7418.01,found in faint-star QLP search; retired as TFOP FP/SEB1
+7419.01,found in faint-star QLP search
+7431.01,found in faint-star QLP search
+7505.01,evolved B star host at 1.6 kpc; possible offset but not a period match to Gaia NEB
+7519.01,found in faint-star QLP search; retired as TFOP FP/SEB1
+7527.01,found in faint-star QLP search; retired as TFOP FP/NEB; true source is TIC 187495613
+7533.01,found in faint-star QLP search
+7542.01,found in faint-star QLP search
+7560.01,found in faint-star QLP search; retired as TFOP FP/NEB
+7605.01,found in faint-star QLP search; etired as TFOP FP/NEB; true source is TIC 393626865 which is Gaia NEB
+7676.01,found in faint-star QLP search
+7905.01,evolved host; low SNR; CTOI from Marco Montalto

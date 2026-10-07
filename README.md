@@ -20,7 +20,7 @@ whose coverage is measured by injection.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python run_pipeline.py            # ~3 min on 4 cores
-pytest                            # ~5 min, 435 tests
+pytest                            # ~5 min, 464 tests
 ```
 
 It writes `results/metrics.json`, `results/report.txt`, the trained model
@@ -519,29 +519,107 @@ forgave so many binaries that synthetic CV AP fell to 0.717.
 - **Blended binaries look like planets in a light curve.** The false positives
   the model keeps have median odd/even and secondary significances well under
   1 sigma, indistinguishable from the planets'. That is what a background
-  eclipsing binary diluted by a brighter neighbour looks like. Separating them
-  needs pixel data. `vet --centroids` runs a centroid test from target pixel
-  files (see "Centroid test" below), but the model and this benchmark see
-  light curves only.
+  eclipsing binary diluted by a brighter neighbour looks like, and it takes
+  the pixels to see. The centroid veto below removes a quarter of them.
+
+**Pixels: the centroid veto.** A binary on a neighbouring star dims the
+pixels where that star is, not where the target is. `--benchmark-centroids`
+downloads each scored host's TESS-SPOC target pixel file for its benchmark
+sector (about 1 MB a star, cached in `toi_tpfs/` beside the curves) and runs
+the difference-image test from "Centroid test" below on the period, epoch and
+duration the search found. A star is flagged when the dip in the difference
+image sits at least 3 sigma and at least half a pixel (10.5 arcsec) from the
+catalogue position. The veto moves every flagged star below every unflagged
+one and leaves the order otherwise alone, so the model is the same and the
+comparison is paired. All 746 hosts have a pixel file; for 147 the dip is too
+weak in the difference image to place (SNR under 3), and those are never
+flagged.
+
+The false positives are sorted by the comment ExoFOP gives for each
+(`data/toi_benchmark/toi_comments.csv`, downloaded 2026-10-07). The sort is a
+keyword match in `false_positive_reason`, and coarse, since the comments are
+written for observers:
+
+| Scored hosts | Flagged by the centroid test |
+|---|---|
+| Confirmed planets (CP/KP) | 6 of 376 (1.6%) |
+| False positives placed on another star (NEB, BEB, NPC, a centroid offset) | 42 of 142 (30%) |
+| False positives that are binaries on the target (EB, SB, a secondary, V shape) | 12 of 98 (12%) |
+| False positives with no reason given | 22 of 103 (21%) |
+| False alarms (FA) | 2 of 27 (7%) |
+
+| Model trained on | AP alone | AP with the veto | Gain (68% interval) | Planets kept | False positives rejected |
+|---|---|---|---|---|---|
+| Injections into real sector 14 noise | 0.61 [0.58, 0.64] | 0.66 [0.64, 0.69] | +0.055 [+0.045, +0.065] | 0.56 to 0.55 | 0.63 to 0.72 |
+| Synthetic light curves | 0.61 [0.59, 0.64] | **0.68** [0.65, 0.71] | +0.068 [+0.054, +0.081] | 0.57 to 0.56 | 0.58 to 0.69 |
+
+**The pixels add what the light curves could not.** The veto raises average
+precision for both models in every paired bootstrap resample, by far more than
+any of the light-curve fixes above, none of which moved it by more than 0.02.
+At the frozen threshold it costs 4 or 5 of the 210 to 215 planets each model
+keeps and removes a quarter of the false positives each keeps: 41 of 157 for
+the synthetic-trained model, 34 of 137 for the injection-trained one. It flags
+30% of the false positives that follow-up placed on another star, the class it
+is built for. The rest of that class passes for reasons one sector of pixels
+cannot fix: for 43 of the 142 the dip is too weak in the difference image to
+place, 30 sit more than half a pixel away but under 3 sigma, and 27 measure
+within half a pixel, where on-target dips land too (TOI 1310.01's source, for
+one, is a star in the same pixel). The test also flags 12% of the binaries on
+the target, which should not move the centroid. Some of their comments point
+elsewhere as well, to a depth that changes with the aperture (TOI 1509.01 and
+1867.01, the latter "offset in recent SPOC data") or a crowded field (TOI
+2062.01), so part of that is the sort.
+
+**The floor was set on other stars.** At the 0.1-pixel floor that suits the
+synthetic stamps, the test flags 12.5% of the confirmed planets here, which is
+how the problem showed up: on real pixels, for about a fifth of the confirmed
+planets the difference image can place, the dip's centroid lands 0.1 to 0.5
+pixel from the catalogue position, further than its bootstrap error allows (an
+undersampled, asymmetric PRF, and catalogue and WCS errors). The floor was
+then chosen on the TOI hosts of sectors 1 to 13, in the southern ecliptic
+hemisphere, which share no star with this benchmark, using each TOI's
+catalogue ephemeris. Of the 458 confirmed planets there with pixel files, 86
+showed a significant offset with no floor, 71 of them between 0.1 and 0.5
+pixel. Half a pixel left 8 (1.7%) while still flagging 28% of the false
+positives, and was frozen before this run. On the search's own ephemeris the
+two sets agree:
+
+| Offset floor | Planets flagged, sectors 1 to 13 | False positives flagged, 1 to 13 | Planets flagged, 14 to 26 | False positives flagged, 14 to 26 |
+|---|---|---|---|---|
+| 0.1 pixel | 17.0% | 30.5% | 12.5% | 26.8% |
+| 0.25 pixel | 7.2% | 25.6% | 3.5% | 23.2% |
+| **0.5 pixel** | 2.2% | 22.2% | 1.6% | 21.1% |
+| 1 pixel | 1.1% | 17.1% | 1.3% | 15.7% |
+
+The whole benchmark on sectors 1 to 13 gives the same result, though it is
+not independent of the floor, since it holds the planets the floor was set
+on: 845 hosts with curves and pixel files (458 planets, 387 false positives,
+chance AP 0.54), synthetic-trained AP 0.72 [0.70, 0.74] alone and 0.77
+[0.75, 0.79] with the veto, a gain of +0.053 [+0.043, +0.063]. Report:
+[`results/toi_sectors_01_13/toi_benchmark.txt`](results/toi_sectors_01_13/toi_benchmark.txt).
 
 The search is the other ceiling: BLS recovers the catalogued period for 73% of
 planets in one sector (88% above TOI SNR 40, 32% below 10), and when it
 misses the period the planet is kept 4 to 7% of the time.
 
 To reproduce (downloads about 750 curves the first time and caches them to
-`toi_curves.npz` beside the results; the hosts' TIC values are read from
-`data/toi_benchmark/tic_stars.csv`, and only stars missing from it are looked
-up at MAST):
+`toi_curves.npz` beside the results, and with `--benchmark-centroids` as many
+target pixel files, 0.8 GB, to `toi_tpfs/`; the hosts' TIC values are read
+from `data/toi_benchmark/tic_stars.csv`, and only stars missing from it are
+looked up at MAST):
 
 ```bash
 python run_pipeline.py --inject-into data/real_injection/targets_s0014.txt \
     --exclude-tois data/real_injection/toi.csv --sector 14 \
-    --benchmark-tois data/toi_benchmark/exofop_toi_2026-10-06.csv --benchmark-sectors 14-26
+    --benchmark-tois data/toi_benchmark/exofop_toi_2026-10-06.csv --benchmark-sectors 14-26 \
+    --benchmark-centroids
 ```
 
 The same flags work after the synthetic run (drop `--inject-into` and
-`--exclude-tois`). A fresh table comes from
-`https://exofop.ipac.caltech.edu/tess/download_toi.php?output=csv`.
+`--exclude-tois`), and `--benchmark-sectors 1-13 --results-dir
+results/toi_sectors_01_13` runs the replication. A fresh table comes from
+`https://exofop.ipac.caltech.edu/tess/download_toi.php?output=csv`; it
+carries the comments too, so `--benchmark-comments` can point at it.
 
 ---
 
@@ -1180,9 +1258,12 @@ quoted as a Gaussian-equivalent sigma. Treating the bootstrap covariance as
 exact was badly miscalibrated: a nominal 3-sigma offset was reached by 7% of
 on-target transits with 9 transits and by 43% with 3. An offset is flagged
 when the dip is detected in the difference image (SNR at least 3), the
-offset is at least 3 sigma, and it is at least 0.1 pixel (2 arcsec; TESS
-pixels are 21 arcsec), a floor for what the bootstrap cannot see: an
-undersampled, asymmetric real PRF and catalogue and WCS errors.
+offset is at least 3 sigma, and it is at least half a pixel (10.5 arcsec;
+TESS pixels are 21 arcsec), a floor for what the bootstrap cannot see: an
+undersampled, asymmetric real PRF and catalogue and WCS errors. The floor was
+set on real pixel files of confirmed planets (see "Pixels: the centroid veto"
+under the TOI benchmark); synthetic stamps, with a circular PSF and exact
+positions, would do with 0.1 pixel.
 
 On synthetic stamps (`transitml/data/synthetic_tpf.py`: Gaussian stars
 integrated over pixels, photon, sky and read noise, 0.005-pixel pointing
@@ -1206,6 +1287,10 @@ pulled towards the window's centre (a neighbour 1.8 pixels away measures at
 1.5 to 1.7), so the direction and the significance are what to read and the
 length is a lower bound.
 
+That table was measured with a 0.1-pixel floor, and half a pixel changes none
+of it: on 150 fresh scenes for each row, every flagged offset, on the
+neighbour or not, was at least 0.8 pixel long.
+
 The result goes into the JSON as a `centroid` section (`offset_flag`, one
 entry per file with every number above, and a status such as
 `no_in_transit_cadences` or `weak_difference_image` when the test cannot
@@ -1216,14 +1301,18 @@ the numbers. A flagged offset is also called out under the title and printed.
 features, so the centroid result is a separate vetting test reported beside
 it, not folded into it.
 
-**The download has only been tested offline**, with lightkurve replaced by
-stand-ins, as for the light curves: this environment could not reach MAST.
-The conversion reads the pipeline aperture (falling back to lightkurve's
-threshold mask), the CCD origin, and the target position from the WCS.
-Nothing has been run on a real target pixel file, and the synthetic PSF is a
-circular Gaussian, much tidier than the TESS PRF. The test also uses only the
-primary signal and one ephemeris per run, and is not applied in the
-`run_pipeline.py` evaluation, which has no pixels.
+**On real pixels.** The conversion, which reads the pipeline aperture
+(falling back to lightkurve's threshold mask), the CCD origin, and the target
+position from the WCS, has now read about 1,600 real TESS-SPOC target pixel
+files, those of the TOI hosts in sectors 1 to 26; on a sample, `--centroids`'
+own download returned the same pixels. Real pixels needed the larger floor
+above. On them the test flags 1.6% of confirmed planets and a fifth of known
+false positives, and as a veto it lifts the TOI benchmark from AP 0.61 to
+0.68 (see "Pixels: the centroid veto" under the TOI benchmark). The synthetic
+PSF is still a circular Gaussian, much tidier than the TESS PRF. The test
+uses only the primary signal and one ephemeris per run, and the model never
+sees it: the synthetic evaluation has no pixels, and the benchmark applies it
+beside the score.
 
 ## Vetting a whole sector
 
@@ -1621,10 +1710,13 @@ Three further gaps:
   inside the same pixel. It looks exactly like a shallow planet transit and is
   separated by *centroid motion*: the flux-weighted centroid shifts during the
   event, which takes pixel-level data to see. The classifier and the headline
-  numbers still see light curves only. `vet` can now run a difference-image
+  numbers still see light curves only. `vet` can run a difference-image
   centroid test from target pixel files beside the score (see "Centroid test"
-  above), but it has been checked only on synthetic pixels with a Gaussian
-  PSF, not on real TESS data, and it is not part of the evaluation.
+  above). On real TOIs it flags 30% of the false positives that follow-up
+  placed on another star and 1.6% of confirmed planets, and as a veto it
+  raises the TOI benchmark's average precision from 0.61 to 0.68; the rest of
+  the blends are too faint in the difference image or too close to the
+  target for one sector of pixels.
 - **Labels.** Ground truth is known by construction here. On real data it has to
   come from a catalogue that inherits the selection function of the pipelines
   being benchmarked against, or from injection-recovery, which only measures
@@ -1695,7 +1787,7 @@ transit-detection/
 │   ├── batch.py                # python -m transitml.batch: a sector, cached and ranked
 │   ├── dashboard.py            # the batch's self-contained HTML dashboard
 │   └── plots.py                # figures (matplotlib Agg, no display)
-├── tests/                      # 435 tests, ~5 min
+├── tests/                      # 464 tests, ~5 min
 │   ├── test_generator.py       # imbalance is exact; injected physics is consistent
 │   ├── test_preprocess.py      # depth preservation; why the median was rejected
 │   ├── test_features.py        # recovery vs SNR; the vetting statistics fire
@@ -1711,6 +1803,7 @@ transit-detection/
 │   ├── test_systematics.py     # sector systematics are shared, seeded and switchable
 │   ├── test_toi.py             # TOI parsing, per-star labels, sector choice
 │   ├── test_benchmark.py       # the real-label benchmark, offline, from a cache
+│   ├── test_benchmark_centroids.py  # the centroid veto on synthetic pixel scenes
 │   ├── test_stars.py           # host-star parameters and the occultation allowance
 │   ├── test_files.py           # CSV and npz input
 │   ├── test_model_io.py        # saved model reloads with threshold, calibration, features
@@ -1751,7 +1844,6 @@ on. Sizes are rough: S is a few hours, M a day or two, L longer.
 - Multi-sector stitching (`--stitch`, `stitch_light_curves`).
 - Centroid vetting from target pixel files (`vet --tpf`, `--centroids`):
   a difference-image offset and centroid motion, reported beside the score.
-  Checked on synthetic pixels only so far.
 - Benchmark against real TOI dispositions (`--benchmark-tois`; 746 hosts in
   sectors 14 to 26, AP 0.61 against a chance level of 0.50).
 - Binary tests that hold up on bright real stars: odd/even and secondary
@@ -1779,12 +1871,24 @@ on. Sizes are rough: S is a few hours, M a day or two, L longer.
   secondary test forgives only what the hottest plausible planet could make
   around that star (TIC temperature and density). 90 of 94 confirmed planets
   above TOI SNR 100 are kept, up from 86.
+- A CNN on the DR25 views (`python -m transitml.cnn`, PyTorch optional):
+  AP 0.919 against 0.915 for boosting on the same 2,720 held-out TCEs, a tie.
+- Centroid veto on the real TOI benchmark (`--benchmark-centroids`): flags
+  30% of false positives placed on another star and 1.6% of confirmed
+  planets, and lifts AP from 0.61 to 0.68 for the synthetic-trained model
+  and 0.61 to 0.66 for the injection-trained one (sectors 1 to 13
+  replicate: 0.72 to 0.77). Run on about 1,600 real pixel files, with the
+  half-pixel offset floor set on real data.
 
-**Planned**
+**Next**
 
-| Item | What it adds | Size |
+Every item on the original roadmap is built. What the results above point
+to next:
+
+| Item | Why | Size |
 | --- | --- | --- |
-| CNN on the DR25 folded views, in progress | A model that learns transit shape, now that there are enough labels | L |
+| Training on real TOI labels, in progress | Both TOI models are trained on synthetic or injected signals; training on the dispositions of sectors 1 to 13 and testing on 14 to 26 checks what real labels add | M |
+| Both models on the full 34,032 DR25 TCEs, in progress | On 9,075 TCEs the CNN ties boosting; its case rests on more data or views boosting cannot use | L |
 
 ## References
 

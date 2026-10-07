@@ -33,7 +33,9 @@ time)::
 
 scores the trained model, unchanged, on TOI hosts whose follow-up disposition
 is known (CP/KP planets, FP/FA false positives) and writes
-``toi_benchmark.json`` and ``toi_benchmark.txt`` beside the metrics.
+``toi_benchmark.json`` and ``toi_benchmark.txt`` beside the metrics.  With
+``--benchmark-centroids`` it also downloads each host's target pixel file and
+scores the model again with the centroid test as a veto.
 """
 
 from __future__ import annotations
@@ -196,6 +198,26 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="CSV of the hosts' TIC temperatures and densities, read if present; stars "
         "it lacks are looked up at MAST. None means tic_stars.csv beside the TOI table.",
     )
+    bench.add_argument(
+        "--benchmark-centroids",
+        action="store_true",
+        help="Also run the centroid test on each host's target pixel file and score the "
+        "model with it as a veto.",
+    )
+    bench.add_argument(
+        "--benchmark-tpfs",
+        type=Path,
+        default=None,
+        help="Directory of downloaded target pixel files, one npz per star; None means "
+        "toi_tpfs/ beside --benchmark-cache.",
+    )
+    bench.add_argument(
+        "--benchmark-comments",
+        type=Path,
+        default=None,
+        help="CSV of ExoFOP comments (TOI, Comments) used to sort the false positives by "
+        "why they were retired; None means toi_comments.csv beside the TOI table.",
+    )
     args = parser.parse_args(argv)
     default_results = args.results_dir == ROOT / "results"
     default_figures = args.figures_dir == ROOT / "figures"
@@ -231,6 +253,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         args.benchmark_cache = args.results_dir / "toi_curves.npz"
     if args.benchmark_tois is not None and args.benchmark_stars is None:
         args.benchmark_stars = args.benchmark_tois.parent / "tic_stars.csv"
+    if args.benchmark_tois is not None and args.benchmark_tpfs is None:
+        args.benchmark_tpfs = Path(args.benchmark_cache).parent / "toi_tpfs"
+    if args.benchmark_tois is not None and args.benchmark_comments is None:
+        args.benchmark_comments = args.benchmark_tois.parent / "toi_comments.csv"
     return args
 
 
@@ -334,11 +360,14 @@ def run_toi_benchmark(
     from transitml.benchmark import (
         benchmark,
         build_benchmark_dataset,
+        centroid_tests,
         format_benchmark_report,
         load_or_fetch_curves,
+        load_or_fetch_tpfs,
         plot_benchmark,
         with_tic_stars,
     )
+    from transitml.data.toi import read_toi_comments
 
     spec = args.benchmark_sectors or str(args.sector if args.sector is not None else 14)
     sectors = parse_sector_spec(spec)
@@ -365,6 +394,23 @@ def run_toi_benchmark(
     dataset = build_benchmark_dataset(
         curves, preprocess=config.preprocess, bls=config.bls, n_jobs=args.n_jobs
     )
+    centroids = None
+    if args.benchmark_centroids:
+        scored = {lc.target_id for lc in curves}
+        paths = load_or_fetch_tpfs(
+            [t for t in targets if t.target_id in scored],
+            args.benchmark_tpfs,
+            author=args.author,
+            exposure_time=args.exposure_time,
+            n_workers=args.download_workers,
+        )
+        print(f"  {len(paths)} have a target pixel file; running the centroid test ...")
+        centroids = centroid_tests(dataset, paths, n_jobs=args.n_jobs)
+    comments = (
+        read_toi_comments(args.benchmark_comments)
+        if Path(args.benchmark_comments).exists()
+        else None
+    )
     result = benchmark(
         dataset,
         targets,
@@ -374,6 +420,8 @@ def run_toi_benchmark(
         n_without_curve=len(targets) - len(curves),
         top_k=config.evaluation.top_k,
         seed=config.seed,
+        centroids=centroids,
+        comments=comments,
     )
     report = format_benchmark_report(result)
     print()

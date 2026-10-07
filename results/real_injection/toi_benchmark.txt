@@ -32,6 +32,29 @@ Ranking (average precision; chance = positive rate)
   precision of depth_threshold_top20          0.350
   precision of bls_snr_top20                  0.650
 
+Centroid veto: is the dip on the target?
+------------------------------------------------------------------------
+  stars with a pixel file: 746 of 746   (ok 599, weak_difference_image 147)
+  flagged as off target (difference-image centroid at least 3 sigma and 0.5 pixel
+  from the catalogue position, on the search's own ephemeris):
+    planets (CP/KP)            n = 376  with pixels 376  flagged 6    (2%)
+    false positives (FP/FA)    n = 370  with pixels 370  flagged 78   (21%)
+    CP                         n = 269  with pixels 269  flagged 5    (2%)
+    FA                         n = 27   with pixels 27   flagged 2    (7%)
+    FP                         n = 343  with pixels 343  flagged 76   (22%)
+    KP                         n = 107  with pixels 107  flagged 1    (1%)
+    FP, off target             n = 142  with pixels 142  flagged 42   (30%)
+    FP, binary on target       n = 98   with pixels 98   flagged 12   (12%)
+    FP, not stated             n = 103  with pixels 103  flagged 22   (21%)
+  model with the centroid veto       AP = 0.662  [0.637, 0.693]   (ROC-AUC 0.685)
+  gain over the model alone: +0.055 [+0.045, +0.065]; the veto wins in 100.0% of paired resamples
+  at the frozen threshold: planets kept 0.559 -> 0.545, false positives rejected 0.630 -> 0.722
+  flagged at other offset floors (planets / false positives, of those with pixels):
+    0.10 pixel   12.5% / 26.8%
+    0.25 pixel   3.5% / 23.2%
+    0.50 pixel   1.6% / 21.1%
+    1.00 pixel   1.3% / 15.7%
+
 Did the search find the catalogued signal?
 ------------------------------------------------------------------------
   BLS period matches the TOI period (or a low-order alias): planets 0.73, false positives 0.73
