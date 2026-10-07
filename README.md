@@ -337,7 +337,7 @@ injected. Held-out set: 980 curves, 39 planets. Full report in
 
 | | Synthetic | Real sector 14 |
 |---|---|---|
-| Model average precision | 0.75 | **0.46** [0.39, 0.56] |
+| Model average precision | 0.74 | **0.46** [0.39, 0.56] |
 | Best baseline (BLS SNR) | | 0.10 |
 | Held-out precision / recall | | 0.48 / 0.59 |
 | Precision of top 20 | | 0.65 |
@@ -1214,13 +1214,13 @@ sectors of 2000 stars, 80 planets each, scored by the same saved model:
 
 | Sample | Stars | Planets | Flagged | Planets flagged | Precision | Recall | Average precision | Expected planets |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| Held-out split (seed 42) | 840 | 34 | 49 | 26 | 0.53 | 0.76 | 0.75 | 37.1 |
+| Held-out split (seed 42) | 840 | 34 | 49 | 26 | 0.53 | 0.76 | 0.74 | 37.1 |
 | Fresh sector, seed 7 | 2000 | 80 | 116 | 49 | 0.42 | 0.61 | 0.62 | 80.0 |
 | Fresh sector, seed 8 | 2000 | 80 | 118 | 61 | 0.52 | 0.76 | 0.73 | 86.8 |
 | Fresh sector, seed 9 | 2000 | 80 | 97 | 53 | 0.55 | 0.66 | 0.59 | 79.4 |
 
 "Expected planets" is the sum of P(planet) over every star in the sample.
-Average precision on the fresh sectors was 0.62, 0.73 and 0.59, against 0.75
+Average precision on the fresh sectors was 0.62, 0.73 and 0.59, against 0.74
 on the held-out split: that figure, from 34 planets, sits at the lucky end
 of what this model does, and about 0.65 is the better single number. The
 threshold was chosen so that out-of-fold training precision was at least 0.5
@@ -1562,7 +1562,7 @@ Three further gaps:
   positives only slightly better than a signal-to-noise ranking.
 - **Sample size.** 96 positives in total and 34 in the test set. The bootstrap
   interval on average precision is [0.671, 0.819], roughly ±0.074, so the
-  move from 0.80 to 0.75 between the last two versions of this README is
+  move from 0.80 to 0.74 between the last two versions of this README is
   noise (cross-validation puts both at 0.74), and only the gap to the
   baselines is meaningful. The pipeline reports the interval so this cannot
   be over-read.
@@ -1573,7 +1573,7 @@ whose noise is easier than reality. Injection-recovery into genuine TESS
 photometry, which keeps the systematics real while keeping the labels
 trustworthy, has now been run on sector 14 (see "Injection-recovery on real
 photometry" above), and it confirmed the prediction: average precision fell
-from 0.75 to 0.46 on the held-out split (about 0.55 in cross-validation over
+from 0.74 to 0.46 on the held-out split (about 0.55 in cross-validation over
 all 2800 curves), with most false positives coming from real stars that had
 nothing injected.
 
