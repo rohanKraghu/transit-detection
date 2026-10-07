@@ -23,10 +23,12 @@ htmlcov/
 # the feature matrix is a build artefact and is not.
 results/dataset.npz
 results/real_injection/dataset.npz
+results/systematics/dataset.npz
 # The fitted classifier is a pickle tied to the scikit-learn version that
 # wrote it; run_pipeline.py rebuilds it in two minutes.
 results/model.joblib
 results/real_injection/model.joblib
+results/systematics/model.joblib
 # Single-star reports from python -m transitml.vet.
 results/vet/
 # Downloaded MAST light curves (~60 MB); data/real_injection/ lists the
@@ -39,3 +41,7 @@ results/real_injection/base_curves.npz
 # TOI table in data/toi_benchmark/ by one run.
 results/**/toi_curves.npz
 results/**/toi_curves.tried.json
+# Kepler DR25: per-star light curves (about 0.5 MB each) and the folded views.
+# data/kepler_dr25/dr25_tce_labels.csv lists every TCE, so one run rebuilds both.
+results/kepler_dr25/curves/
+results/kepler_dr25/training_set.npz
