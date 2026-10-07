@@ -1844,8 +1844,10 @@ on. Sizes are rough: S is a few hours, M a day or two, L longer.
   AP 0.919 against 0.915 for boosting on the same 2,720 held-out TCEs, a tie.
 - Centroid veto on the real TOI benchmark (`--benchmark-centroids`): flags
   30% of false positives placed on another star and 1.6% of confirmed
-  planets, and lifts AP from 0.61 to 0.68 (sectors 1 to 13 replicate: 0.72
-  to 0.77).
+  planets, and lifts AP from 0.61 to 0.68 for the synthetic-trained model
+  and 0.61 to 0.66 for the injection-trained one (sectors 1 to 13
+  replicate: 0.72 to 0.77). Run on about 1,600 real pixel files, with the
+  half-pixel offset floor set on real data.
 
 **Next**
 
@@ -1854,6 +1856,7 @@ to next:
 
 | Item | Why | Size |
 | --- | --- | --- |
+| Training on real TOI labels, in progress | Both TOI models are trained on synthetic or injected signals; training on the dispositions of sectors 1 to 13 and testing on 14 to 26 checks what real labels add | M |
 | Both models on the full 34,032 DR25 TCEs, in progress | On 9,075 TCEs the CNN ties boosting; its case rests on more data or views boosting cannot use | L |
 
 ## References
