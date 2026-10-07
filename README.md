@@ -1879,6 +1879,10 @@ on. Sizes are rough: S is a few hours, M a day or two, L longer.
   and 0.61 to 0.66 for the injection-trained one (sectors 1 to 13
   replicate: 0.72 to 0.77). Run on about 1,600 real pixel files, with the
   half-pixel offset floor set on real data.
+- Both DR25 models on all 34,032 TCEs (`--all`): on the 10,243 held-out
+  TCEs the CNN scores AP 0.910 against 0.893 for boosting (paired bootstrap
+  gain +0.009 to +0.026), so it pulls ahead at full scale after tying on
+  9,075.
 
 **Next**
 
@@ -1888,7 +1892,6 @@ to next:
 | Item | Why | Size |
 | --- | --- | --- |
 | Training on real TOI labels, in progress | Both TOI models are trained on synthetic or injected signals; training on the dispositions of sectors 1 to 13 and testing on 14 to 26 checks what real labels add | M |
-| Both models on the full 34,032 DR25 TCEs, in progress | On 9,075 TCEs the CNN ties boosting; its case rests on more data or views boosting cannot use | L |
 
 ## References
 
