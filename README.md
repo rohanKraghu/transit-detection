@@ -20,7 +20,7 @@ whose coverage is measured by injection.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python run_pipeline.py            # ~3 min on 4 cores
-pytest                            # ~5 min, 484 tests
+pytest                            # ~5 min, 486 tests
 ```
 
 It writes `results/metrics.json`, `results/report.txt`, the trained model
@@ -2091,7 +2091,7 @@ transit-detection/
 │   ├── dashboard.py            # the batch's self-contained HTML dashboard
 │   ├── real_check.py           # known planets' fits and a real sector, against the archives
 │   └── plots.py                # figures (matplotlib Agg, no display)
-├── tests/                      # 482 tests, ~5 min
+├── tests/                      # 486 tests, ~5 min
 │   ├── test_generator.py       # imbalance is exact; injected physics is consistent
 │   ├── test_preprocess.py      # depth preservation; why the median was rejected
 │   ├── test_features.py        # recovery vs SNR; the vetting statistics fire
@@ -2205,6 +2205,10 @@ on. Sizes are rough: S is a few hours, M a day or two, L longer.
   transitml.tess_transfer`): unchanged, they score AP 0.767 (boosting) and
   0.761 (CNN) on 723 TOI hosts, against 0.615 for the TESS synthetic-trained
   model; the Kepler threshold does not transfer.
+- The centroid test in the batch (`batch --centroids N`, on the N
+  best-ranked flagged stars): on real sector 14 it puts 11 of 37 flagged
+  false positives and 1 of 53 planets off target, and as a veto lifts
+  planets against false positives from AP 0.65 to 0.69.
 
 **Next**
 
