@@ -54,7 +54,7 @@ at 0.742, so the drop is the split, not the change.
 
 That test set is one draw. On three fresh sectors of 2000 stars from the same
 generator, which the model never saw, average precision was 0.62, 0.73 and
-0.66; see "Vetting a whole sector" below.
+0.59; see "Vetting a whole sector" below.
 
 ![Precision-recall](figures/02_precision_recall.png)
 
@@ -1189,8 +1189,9 @@ The committed demo is `results/batch/synthetic_seed7/`, from
 `python -m transitml.batch --synthetic 2000 --seed 7 --reports 3 --fit 10`:
 2000 stars the model has never seen, from the training generator with a
 different seed, with transit fits for the ten best-ranked (see "Fitting a
-candidate's transit" below). It took 274 s on 4 cores. Without the fits the
-same sector takes 236 s, about half a core-second per star.
+candidate's transit" below). It took 311 s on 4 cores. Without the fits a
+sector of the same size takes about 290 s (seeds 8 and 9 below), about 0.6
+core-seconds per star.
 
 **Caching.** There are two layers, so a sector can be stopped and resumed
 and a rerun does only what changed. Downloaded light curves are saved in
@@ -1213,23 +1214,23 @@ sectors of 2000 stars, 80 planets each, scored by the same saved model:
 
 | Sample | Stars | Planets | Flagged | Planets flagged | Precision | Recall | Average precision | Expected planets |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| Held-out split (seed 42) | 840 | 34 | 50 | 26 | 0.52 | 0.76 | 0.80 | 38.3 |
-| Fresh sector, seed 7 | 2000 | 80 | 115 | 49 | 0.43 | 0.61 | 0.62 | 83.7 |
-| Fresh sector, seed 8 | 2000 | 80 | 113 | 57 | 0.50 | 0.71 | 0.73 | 88.8 |
-| Fresh sector, seed 9 | 2000 | 80 | 98 | 52 | 0.53 | 0.65 | 0.66 | 79.1 |
+| Held-out split (seed 42) | 840 | 34 | 49 | 26 | 0.53 | 0.76 | 0.75 | 37.1 |
+| Fresh sector, seed 7 | 2000 | 80 | 116 | 49 | 0.42 | 0.61 | 0.62 | 80.0 |
+| Fresh sector, seed 8 | 2000 | 80 | 118 | 61 | 0.52 | 0.76 | 0.73 | 86.8 |
+| Fresh sector, seed 9 | 2000 | 80 | 97 | 53 | 0.55 | 0.66 | 0.59 | 79.4 |
 
 "Expected planets" is the sum of P(planet) over every star in the sample.
-Average precision on the fresh sectors was 0.62, 0.73 and 0.66, against
-0.80 on the held-out split: that figure, from 34 planets, sits at the lucky
-end of what this model does, and about 0.67 is the better single number.
-The threshold was chosen so that out-of-fold training precision was at
-least 0.5 at one sigma; on fresh stars precision came in at 0.43 to 0.53,
-0.48 pooled over the three sectors, so expect about half of the flagged
-stars to be planets. The top 20 were planets in 59 of 60 cases. The
-probabilities run a little high: pooled over the three sectors they add up
-to 252 planets where there are 240, about 5% too many, in the same
-direction as the held-out 38.3 against 34. The ranking is the dependable
-part; treat P(planet) as a slight overstatement.
+Average precision on the fresh sectors was 0.62, 0.73 and 0.59, against 0.75
+on the held-out split: that figure, from 34 planets, sits at the lucky end
+of what this model does, and about 0.65 is the better single number. The
+threshold was chosen so that out-of-fold training precision was at least 0.5
+at one sigma; on fresh stars precision came in at 0.42 to 0.55, 0.49 pooled
+over the three sectors, so expect about half of the flagged stars to be
+planets. The top 20 were planets in 57 of 60 cases. The probabilities run
+slightly high: pooled over the three sectors they add up to 246 planets
+where there are 240, about 3% too many, in the same direction as the
+held-out 37.1 against 34. The ranking is the dependable part; treat
+P(planet) as a slight overstatement.
 
 **Payload.** The dashboard carries every star, but only the flagged stars
 and the top 300 by score carry their folded light curve, signals and

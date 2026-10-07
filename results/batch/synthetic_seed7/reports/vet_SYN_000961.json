@@ -1,19 +1,19 @@
 {
   "target_id": "SYN-000961",
-  "score": 0.9990236768739658,
-  "threshold": 0.2075118029479268,
+  "score": 0.9988499790602755,
+  "threshold": 0.20511228952516056,
   "above_threshold": true,
   "verdict": "planet candidate (score at or above the operating threshold)",
-  "probability": 0.9419971128985383,
+  "probability": 0.9401423135832311,
   "planet_rate": 0.03974358974358974,
   "probability_note": "calibrated on out-of-fold training scores; the chance this star hosts a planet if a fraction planet_rate of stars like it do",
   "primary_signal": {
     "period": 2.34720040872935,
     "epoch": 0.7400000000000001,
     "duration": 0.112,
-    "depth": 0.008999825998559183,
-    "depth_snr": 1058.7064145989539,
-    "sde": 9.860571437878285
+    "depth": 0.00900401373190338,
+    "depth_snr": 1059.1975798498493,
+    "sde": 9.844910142734982
   },
   "candidates": [
     {
@@ -21,244 +21,244 @@
       "period": 2.34720040872935,
       "epoch": 0.7400000000000001,
       "duration": 0.112,
-      "depth": 0.008999825998559183,
-      "depth_snr": 1058.7064145989539,
-      "sde": 9.860571437878285,
+      "depth": 0.00900401373190338,
+      "depth_snr": 1059.1975798498493,
+      "sde": 9.844910142734982,
       "n_cadences_searched": 1232
     }
   ],
   "features": {
-    "bls_sde": 9.860571437878285,
-    "bls_depth_snr": 1058.7064145989539,
-    "bls_depth_over_scatter": 84.1714445545701,
-    "delta_loglike": 1205605.26928829,
-    "power_contrast": 1.8639640695944193,
-    "log_depth": -2.045765887071352,
+    "bls_sde": 9.844910142734982,
+    "bls_depth_snr": 1059.1975798498493,
+    "bls_depth_over_scatter": 85.57799868314403,
+    "delta_loglike": 1206741.8971193014,
+    "power_contrast": 1.8643852341216605,
+    "log_depth": -2.045563851334188,
     "bls_duration": 0.112,
     "duration_over_period": 0.04771641977543404,
     "log_duration_ratio": 0.04565278349927327,
     "log_period": 0.3705501721250109,
     "n_transits": 11.0,
     "min_points_per_transit": 5.0,
-    "odd_even_sigma": 0.24169561261655048,
-    "secondary_sigma": -2.2219695465785048,
-    "half_period_depth_ratio": 0.501251581691552,
+    "odd_even_sigma": 0.24011165528228398,
+    "secondary_sigma": -1.3434753425376527,
+    "half_period_depth_ratio": 0.502506205501836,
     "flat_bottom_fraction": 0.8999999999999999,
-    "harmonic_delta_loglike": -499926.6497086879,
-    "harmonic_amp_over_depth": 0.09859855159977887,
-    "red_noise_beta": 4.754439042211023,
-    "log_scatter": -3.9709306676949776,
-    "max_single_event_fraction": 0.09470888676423536,
-    "flux_skew": -4.2693721357827545,
+    "harmonic_delta_loglike": -500337.3859616073,
+    "harmonic_amp_over_depth": 0.09864186898077291,
+    "red_noise_beta": 4.7948615816399425,
+    "log_scatter": -3.9779259772419753,
+    "max_single_event_fraction": 0.09468622168410112,
+    "flux_skew": -4.269360837923967,
     "clipped_fraction": 0.0008110300081103001
   },
-  "log_odds": 2.787509422789155,
-  "base_log_odds": -4.319721512985229,
+  "log_odds": 2.7540614094595837,
+  "base_log_odds": -4.485722263330984,
   "top_reasons": [
     {
       "feature": "power_contrast",
-      "value": 1.8639640695944193,
-      "training_median": 1.057253804941284,
-      "shap": 1.4664349722680878,
-      "odds_factor": 4.333757602491904
+      "value": 1.8643852341216605,
+      "training_median": 1.057325837780274,
+      "shap": 1.4573179793987987,
+      "odds_factor": 4.294426329234468
     },
     {
       "feature": "flux_skew",
-      "value": -4.2693721357827545,
-      "training_median": -0.03793505386798031,
-      "shap": 1.2037505506234703,
-      "odds_factor": 3.3325925699801955
+      "value": -4.269360837923967,
+      "training_median": -0.03799755350298734,
+      "shap": 1.1422191025169466,
+      "odds_factor": 3.1337146891872374
     },
     {
       "feature": "secondary_sigma",
-      "value": -2.2219695465785048,
-      "training_median": 0.00944593985845055,
-      "shap": 0.8790127338462941,
-      "odds_factor": 2.40852068129581
+      "value": -1.3434753425376527,
+      "training_median": 0.0,
+      "shap": 0.9170966887324056,
+      "odds_factor": 2.5020157043218765
+    },
+    {
+      "feature": "harmonic_delta_loglike",
+      "value": -500337.3859616073,
+      "training_median": -27.757128684695886,
+      "shap": 0.6573889943693438,
+      "odds_factor": 1.9297471700652238
     },
     {
       "feature": "max_single_event_fraction",
-      "value": 0.09470888676423536,
-      "training_median": 0.37968613917037164,
-      "shap": 0.7261271787262729,
-      "odds_factor": 2.067059733084148
-    },
-    {
-      "feature": "log_duration_ratio",
-      "value": 0.04565278349927327,
-      "training_median": 0.029874003725954147,
-      "shap": 0.6526455612579137,
-      "odds_factor": 1.9206152189641819
+      "value": 0.09468622168410112,
+      "training_median": 0.3795534590813556,
+      "shap": 0.613785520425659,
+      "odds_factor": 1.847411592931906
     }
   ],
   "contributions": [
     {
       "feature": "power_contrast",
-      "value": 1.8639640695944193,
-      "training_median": 1.057253804941284,
-      "shap": 1.4664349722680878,
-      "odds_factor": 4.333757602491904
+      "value": 1.8643852341216605,
+      "training_median": 1.057325837780274,
+      "shap": 1.4573179793987987,
+      "odds_factor": 4.294426329234468
     },
     {
       "feature": "flux_skew",
-      "value": -4.2693721357827545,
-      "training_median": -0.03793505386798031,
-      "shap": 1.2037505506234703,
-      "odds_factor": 3.3325925699801955
+      "value": -4.269360837923967,
+      "training_median": -0.03799755350298734,
+      "shap": 1.1422191025169466,
+      "odds_factor": 3.1337146891872374
     },
     {
       "feature": "secondary_sigma",
-      "value": -2.2219695465785048,
-      "training_median": 0.00944593985845055,
-      "shap": 0.8790127338462941,
-      "odds_factor": 2.40852068129581
+      "value": -1.3434753425376527,
+      "training_median": 0.0,
+      "shap": 0.9170966887324056,
+      "odds_factor": 2.5020157043218765
+    },
+    {
+      "feature": "harmonic_delta_loglike",
+      "value": -500337.3859616073,
+      "training_median": -27.757128684695886,
+      "shap": 0.6573889943693438,
+      "odds_factor": 1.9297471700652238
     },
     {
       "feature": "max_single_event_fraction",
-      "value": 0.09470888676423536,
-      "training_median": 0.37968613917037164,
-      "shap": 0.7261271787262729,
-      "odds_factor": 2.067059733084148
+      "value": 0.09468622168410112,
+      "training_median": 0.3795534590813556,
+      "shap": 0.613785520425659,
+      "odds_factor": 1.847411592931906
     },
     {
       "feature": "log_duration_ratio",
       "value": 0.04565278349927327,
       "training_median": 0.029874003725954147,
-      "shap": 0.6526455612579137,
-      "odds_factor": 1.9206152189641819
-    },
-    {
-      "feature": "log_depth",
-      "value": -2.045765887071352,
-      "training_median": -3.2218388274471046,
-      "shap": 0.505498735427467,
-      "odds_factor": 1.6578121239537937
-    },
-    {
-      "feature": "harmonic_delta_loglike",
-      "value": -499926.6497086879,
-      "training_median": -27.718807773586036,
-      "shap": 0.4441797685844216,
-      "odds_factor": 1.5592107575398153
+      "shap": 0.5661778863512146,
+      "odds_factor": 1.7615214332733473
     },
     {
       "feature": "bls_sde",
-      "value": 9.860571437878285,
-      "training_median": 3.503390333611434,
-      "shap": 0.44015038090574216,
-      "odds_factor": 1.5529407335868723
+      "value": 9.844910142734982,
+      "training_median": 3.5037168156549647,
+      "shap": 0.43068667924167836,
+      "odds_factor": 1.5383134888920635
+    },
+    {
+      "feature": "log_depth",
+      "value": -2.045563851334188,
+      "training_median": -3.2218388274471046,
+      "shap": 0.41991973687303513,
+      "odds_factor": 1.5218394031272955
     },
     {
       "feature": "odd_even_sigma",
-      "value": 0.24169561261655048,
-      "training_median": 0.6659374339968759,
-      "shap": 0.23862479850106783,
-      "odds_factor": 1.2695021281134735
-    },
-    {
-      "feature": "delta_loglike",
-      "value": 1205605.26928829,
-      "training_median": 1015.498626908666,
-      "shap": -0.22475601475747187,
-      "odds_factor": 0.7987110687019623
+      "value": 0.24011165528228398,
+      "training_median": 0.6670887462954469,
+      "shap": 0.410399367126701,
+      "odds_factor": 1.5074196787824288
     },
     {
       "feature": "log_period",
       "value": 0.3705501721250109,
-      "training_median": 0.7534371521546022,
-      "shap": 0.1927169558635258,
-      "odds_factor": 1.212539542736036
+      "training_median": 0.7523585972812794,
+      "shap": 0.265204565386418,
+      "odds_factor": 1.303697639913794
     },
     {
-      "feature": "half_period_depth_ratio",
-      "value": 0.501251581691552,
-      "training_median": 0.49093166809325384,
-      "shap": 0.168244718543381,
-      "odds_factor": 1.1832261325963305
+      "feature": "delta_loglike",
+      "value": 1206741.8971193014,
+      "training_median": 1015.7261025438174,
+      "shap": -0.1680259698282647,
+      "odds_factor": 0.8453318812758134
     },
     {
       "feature": "duration_over_period",
       "value": 0.04771641977543404,
-      "training_median": 0.023345548327456146,
-      "shap": 0.11810121451520317,
-      "odds_factor": 1.125358008168467
-    },
-    {
-      "feature": "bls_depth_over_scatter",
-      "value": 84.1714445545701,
-      "training_median": 1.28259301408926,
-      "shap": 0.09653773566753876,
-      "odds_factor": 1.101351140580137
-    },
-    {
-      "feature": "harmonic_amp_over_depth",
-      "value": 0.09859855159977887,
-      "training_median": 0.017702782637238346,
-      "shap": 0.05419858179563392,
-      "odds_factor": 1.0556942229953925
-    },
-    {
-      "feature": "red_noise_beta",
-      "value": 4.754439042211023,
-      "training_median": 1.307213752418937,
-      "shap": 0.03927911786781099,
-      "odds_factor": 1.040060742676923
-    },
-    {
-      "feature": "bls_depth_snr",
-      "value": 1058.7064145989539,
-      "training_median": 8.637953080491663,
-      "shap": -0.03439820281760404,
-      "odds_factor": 0.9661866897632126
-    },
-    {
-      "feature": "clipped_fraction",
-      "value": 0.0008110300081103001,
-      "training_median": 0.0,
-      "shap": 0.028431930263783073,
-      "odds_factor": 1.028839975585163
-    },
-    {
-      "feature": "n_transits",
-      "value": 11.0,
-      "training_median": 5.0,
-      "shap": 0.02792191608579056,
-      "odds_factor": 1.0283153863960621
+      "training_median": 0.023463880386692074,
+      "shap": 0.13327306289635957,
+      "odds_factor": 1.1425619470126722
     },
     {
       "feature": "bls_duration",
       "value": 0.112,
       "training_median": 0.16,
-      "shap": 0.027876598236218547,
-      "odds_factor": 1.0282687864099824
+      "shap": 0.10684679117502371,
+      "odds_factor": 1.1127637561911756
+    },
+    {
+      "feature": "bls_depth_over_scatter",
+      "value": 85.57799868314403,
+      "training_median": 1.28259301408926,
+      "shap": 0.10496982520802556,
+      "odds_factor": 1.1106770953997498
+    },
+    {
+      "feature": "half_period_depth_ratio",
+      "value": 0.502506205501836,
+      "training_median": 0.4914085257188307,
+      "shap": 0.061423578656416296,
+      "odds_factor": 1.063349230846703
+    },
+    {
+      "feature": "harmonic_amp_over_depth",
+      "value": 0.09864186898077291,
+      "training_median": 0.017752813145093083,
+      "shap": 0.056151815496296095,
+      "odds_factor": 1.0577582556421927
+    },
+    {
+      "feature": "clipped_fraction",
+      "value": 0.0008110300081103001,
+      "training_median": 0.0,
+      "shap": 0.04855690579476374,
+      "odds_factor": 1.049755107269349
     },
     {
       "feature": "flat_bottom_fraction",
       "value": 0.8999999999999999,
       "training_median": 0.95,
-      "shap": 0.022238866636372777,
-      "odds_factor": 1.0224879935703297
+      "shap": 0.02278686449019731,
+      "odds_factor": 1.0230484683518302
     },
     {
       "feature": "log_scatter",
-      "value": -3.9709306676949776,
+      "value": -3.9779259772419753,
       "training_median": -3.363653005014345,
-      "shap": 0.022007413377626194,
-      "odds_factor": 1.022251362777729
+      "shap": 0.020606193096417397,
+      "odds_factor": 1.0208199665206468
     },
     {
       "feature": "min_points_per_transit",
       "value": 5.0,
       "training_median": 5.0,
-      "shap": 0.012405424355831062,
-      "odds_factor": 1.0124826908096962
+      "shap": -0.0139303672143881,
+      "odds_factor": 0.9861662113724673
+    },
+    {
+      "feature": "bls_depth_snr",
+      "value": 1059.1975798498493,
+      "training_median": 8.645244498969332,
+      "shap": -0.012991725381812196,
+      "odds_factor": 0.9870923027984166
+    },
+    {
+      "feature": "red_noise_beta",
+      "value": 4.7948615816399425,
+      "training_median": 1.307213752418937,
+      "shap": -0.003830789077729222,
+      "odds_factor": 0.9961765390342795
+    },
+    {
+      "feature": "n_transits",
+      "value": 11.0,
+      "training_median": 5.0,
+      "shap": 0.0037509670570574183,
+      "odds_factor": 1.0037580107381072
     }
   ],
   "contribution_method": "SHAP values (exact path-dependent TreeSHAP) in calibrated log-odds; base_log_odds plus the sum over every feature equals log_odds",
   "n_cadences": 1232,
   "baseline_days": 27.375,
   "model": {
-    "threshold_rule": "max recall subject to Wilson 1-sigma lower bound on CV precision >= 0.50 (bound 0.501 at 77 candidates)",
+    "threshold_rule": "max recall subject to Wilson 1-sigma lower bound on CV precision >= 0.50 (bound 0.500 at 81 candidates)",
     "sklearn": "1.9.1",
     "n_train": 1560,
     "n_train_positive": 62,
