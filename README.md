@@ -1161,6 +1161,54 @@ about what a false positive looks like than the synthetic and injected signals
 the TESS models were trained on. 23 of the 746 hosts have no TOI with a
 complete ephemeris and are left out.
 
+### Kepler first, then TESS: fine-tuning on TOI labels
+
+The transfer test and the model trained on TOI dispositions (above) each beat
+the synthetic-trained models from a different side. `python -m
+transitml.tess_finetune` asks whether they add up. It folds the labelled TOIs
+of sectors 1 to 13 (892 TOIs on 823 stars, 516 of them planets) into the same
+views, trains on them, and scores the same 723 hosts of sectors 14 to 26. No
+star is in both sets, and every model choice was fixed before the test
+sectors were scored.
+
+| Average precision on 723 TOI hosts (chance 0.506) | All hosts | TESS search found the period (540) |
+| --- | --- | --- |
+| Boosting on views, Kepler TCEs + TESS TOIs | **0.817** | **0.850** |
+| Boosting on views, TESS TOIs only | 0.812 | 0.835 |
+| Kepler CNN fine-tuned on TESS TOIs | 0.799 | 0.821 |
+| Boosting on TOI labels, with pixel features | 0.789 | 0.824 |
+| Kepler boosting on views, unchanged | 0.767 | 0.805 |
+| Kepler CNN, unchanged | 0.761 | 0.798 |
+| CNN on TESS TOIs only | 0.757 | 0.776 |
+| Boosting on TOI labels, light-curve features | 0.749 | 0.795 |
+| TESS model trained on synthetic curves | 0.615 | 0.645 |
+
+What the paired bootstraps say:
+
+* **Fine-tuning helps the CNN.** Fine-tuned minus unchanged is +0.028 to
+  +0.049. Starting from the Kepler weights beats the same network trained on
+  TESS alone by +0.009 to +0.076, so 34,000 Kepler labels are worth something
+  when there are only 900 TESS ones.
+* **For boosting, Kepler adds nothing measurable once TESS labels are in.**
+  Adding the Kepler TCEs (weighted so TESS counts as much in total) changes
+  AP by +0.005 (-0.016 to +0.026). The fine-tuned CNN does not beat boosting
+  on the TESS views either (0.799 against 0.812).
+* **The views account for most of the gain over the earlier TOI-trained
+  model.** Boosting on the views of the same TOIs beats boosting on the
+  pipeline's features by +0.021 to +0.106. Part of that is the catalogue
+  ephemeris the views are given, which the pipeline has to find with BLS.
+  But the gap holds on the 540 hosts where BLS found the period (0.835
+  against 0.795), so the views themselves carry information the summary
+  features drop.
+* The fine-tuned CNN and the pixel-feature model are level (+0.011, -0.031 to
+  +0.059). The views use no pixel data, so the two could still be combined.
+
+At a calibrated probability of 0.5, the fine-tuned CNN keeps 74.9% of planet
+hosts and rejects 70.0% of false positives. The caveat from training on TOI
+dispositions applies here too. The labels carry the follow-up programme's
+selection, so these models rank TOIs that look like the resolved ones. Full
+numbers are in `results/tess_finetune/report.txt`.
+
 ### Transit Least Squares, and BLS on a GPU
 
 **TLS as the search.** `python run_pipeline.py --search tls` replaces BLS
@@ -2083,6 +2131,7 @@ transit-detection/
 │   ├── kepler_dr25.py          # python -m transitml.kepler_dr25: training set + model
 │   ├── cnn.py                  # python -m transitml.cnn: CNN on the views (needs torch)
 │   ├── tess_transfer.py        # the DR25 models scored on the TESS TOI benchmark
+│   ├── tess_finetune.py        # the DR25 models fine-tuned on TOI labels, sectors 1-13 to 14-26
 │   ├── vet.py                  # python -m transitml.vet: one star, one page
 │   ├── single_benchmark.py     # injection-recovery for lone transits
 │   ├── fit.py                  # batman transit model sampled with emcee
@@ -2116,6 +2165,7 @@ transit-detection/
 │   ├── test_kepler_dr25.py     # DR25 labels, FITS, views and CLI, offline
 │   ├── test_cnn.py             # the CNN on synthetic views (skips without torch)
 │   ├── test_tess_transfer.py   # the transfer scorer, offline
+│   ├── test_tess_finetune.py   # fine-tuning and its comparison, offline
 │   ├── test_tpf.py             # pixel files: npz round trip, stubbed download
 │   ├── test_synthetic_tpf.py   # synthetic pixels put the light where it belongs
 │   ├── test_centroid.py        # blends flagged, on-target not; bad input survives
