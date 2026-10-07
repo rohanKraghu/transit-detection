@@ -318,9 +318,10 @@ def download_tpfs(
 ) -> list[TargetPixelData]:
     """Every matching target pixel file for one star from MAST; ``[]`` if none or on failure.
 
-    Untested against the real archive here (no network); the conversion is
-    tested with a stand-in object.  A download error is a warning, not an
-    exception, as in :class:`~transitml.data.mast.MASTLightCurveSource`.
+    Checked against the real archive on TOI benchmark hosts, where it returns
+    the same pixels as the TESS-SPOC files fetched directly; the tests use a
+    stand-in object.  A download error is a warning, not an exception, as in
+    :class:`~transitml.data.mast.MASTLightCurveSource`.
     """
     lk = _import_lightkurve()
     try:
