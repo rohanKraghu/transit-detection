@@ -1671,8 +1671,8 @@ on. Sizes are rough: S is a few hours, M a day or two, L longer.
 
 - Odd/even and secondary-eclipse significances divided by the red-noise β.
 - Operating threshold chosen on a Wilson lower bound of CV precision.
-- Injection-recovery on real TESS photometry (sector 14: AP 0.44 on the
-  held-out split, about 0.56 in cross-validation).
+- Injection-recovery on real TESS photometry (sector 14: AP 0.46 on the
+  held-out split, about 0.55 in cross-validation).
 - `python -m transitml.vet`: one star in, a one-page vetting report out.
 - Iterative multi-planet search for the vetting report.
 - Multi-sector stitching (`--stitch`, `stitch_light_curves`).
@@ -1680,7 +1680,7 @@ on. Sizes are rough: S is a few hours, M a day or two, L longer.
   a difference-image offset and centroid motion, reported beside the score.
   Checked on synthetic pixels only so far.
 - Benchmark against real TOI dispositions (`--benchmark-tois`; 746 hosts in
-  sectors 14 to 26, AP 0.62 against a chance level of 0.50).
+  sectors 14 to 26, AP 0.61 against a chance level of 0.50).
 - Binary tests that hold up on bright real stars: odd/even and secondary
   significances also scaled by the event-to-event depth scatter, and a second
   detrend with the strongest signal masked. Confirmed planets above TOI SNR
@@ -1689,8 +1689,8 @@ on. Sizes are rough: S is a few hours, M a day or two, L longer.
   measured on paired controls: a cost of 0.06 to 0.14 in average precision.
 - Single and duo transit search in `vet`, with its own injection-recovery
   benchmark (`python -m transitml.single_benchmark`).
-- Transit Least Squares as a search option (`--search tls`; AP 0.77 against
-  BLS 0.80) and an array BLS that can run on a GPU.
+- Transit Least Squares as a search option (`--search tls`; AP 0.75 against
+  BLS 0.74, so BLS stays the default) and an array BLS that can run on a GPU.
 - Calibrated probabilities (Platt scaling) and exact per-star SHAP reasons
   in `vet`.
 - `python -m transitml.batch`: a whole sector through `vet`, with a cache
@@ -1702,13 +1702,16 @@ on. Sizes are rough: S is a few hours, M a day or two, L longer.
 - Transit fits for candidates (`vet --fit`, `batch --fit`): a batman
   transit model sampled with emcee, with interval coverage measured by injection
   (`python -m transitml.fit_coverage`).
+- Hot Jupiters' own occultations: synthetic planets now carry one, and the
+  secondary test forgives only what the hottest plausible planet could make
+  around that star (TIC temperature and density). 90 of 94 confirmed planets
+  above TOI SNR 100 are kept, up from 86.
 
 **Planned**
 
 | Item | What it adds | Size |
 | --- | --- | --- |
 | CNN on the DR25 folded views, in progress | A model that learns transit shape, now that there are enough labels | L |
-| Per-star occultation allowance, in review | Stop rejecting hot Jupiters on their own secondary eclipse, using each host's temperature and density from the TOI table | M |
 
 ## References
 
