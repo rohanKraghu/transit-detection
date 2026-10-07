@@ -20,7 +20,7 @@ whose coverage is measured by injection.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python run_pipeline.py            # ~3 min on 4 cores
-pytest                            # ~5 min, 464 tests
+pytest                            # ~5 min, 472 tests
 ```
 
 It writes `results/metrics.json`, `results/report.txt`, the trained model
@@ -620,6 +620,123 @@ The same flags work after the synthetic run (drop `--inject-into` and
 results/toi_sectors_01_13` runs the replication. A fresh table comes from
 `https://exofop.ipac.caltech.edu/tess/download_toi.php?output=csv`; it
 carries the comments too, so `--benchmark-comments` can point at it.
+
+### Training on TOI dispositions
+
+Every model above learns from labels known by construction, so the benchmark
+asks it to recognise real planets and real false positives it has only seen
+simulated. The TOI table holds real labels too, and `--train-sectors` trains
+the same classifier on them: the labelled TOI hosts of one set of sectors,
+searched and featurised exactly as the benchmark's are, with the same 23
+features and hyperparameters. The benchmark then scores it, unchanged, on the
+hosts of other sectors, after removing every star it was trained on (code in
+`transitml/toi_training.py`). TESS's first year (sectors 1 to 13, the
+southern ecliptic hemisphere) and its second (14 to 26, the northern) share no
+star, so each trains a model for the other: 845 hosts with curves in the first
+(458 planets, 387 false positives) and the 746 of the benchmark above in the
+second.
+
+Two things change with the labels. At about half planets, the threshold rule
+above (a floor of 0.5 on the lower bound of cross-validated precision) is met
+by keeping every star or nearly: all 845 training hosts of sectors 1 to 13,
+and with those of 14 to 26 it rejects 6 to 8% of the false positives. So a
+model trained on TOIs keeps a star when its calibrated probability of being a
+planet, at the training set's mix, is at least one half
+(`probability_threshold` in `transitml/model.py`), again set by
+cross-validation on the training hosts. And `--pixel-features` gives the
+classifier the centroid test as three more features: how many sigma and how
+many pixels the dip sits from the target, and the difference-image SNR, left
+missing where the test could not place the dip, which the trees treat as
+information rather than imputing.
+
+**Result on sectors 14 to 26** (746 hosts, chance AP 0.50; reports in
+[`results/toi_trained/`](results/toi_trained/)):
+
+| Model trained on | Inputs | AP | AP with the centroid veto | Planets kept | False positives rejected | Top 20 |
+|---|---|---|---|---|---|---|
+| Synthetic light curves | light curve | 0.61 [0.59, 0.64] | 0.68 [0.65, 0.71] | 0.57 | 0.58 | 0.65 |
+| TOI hosts, sectors 1 to 13 | light curve | **0.74** [0.72, 0.77] | 0.76 [0.74, 0.78] | 0.69 | 0.66 | 0.85 |
+| TOI hosts, sectors 1 to 13 | light curve and centroid test | **0.78** [0.76, 0.81] | 0.78 [0.76, 0.81] | 0.75 | 0.67 | 1.00 |
+| Baseline: rank by BLS SNR | | 0.60 [0.57, 0.63] | | | | 0.65 |
+
+Trained on sectors 14 to 26 and scored on the 845 hosts of 1 to 13 instead
+(chance AP 0.54; reports in
+[`results/toi_trained/sectors_14_26/`](results/toi_trained/sectors_14_26/)):
+
+| Model trained on | Inputs | AP | AP with the centroid veto | Planets kept | False positives rejected | Top 20 |
+|---|---|---|---|---|---|---|
+| Synthetic light curves | light curve | 0.72 [0.70, 0.74] | 0.77 [0.75, 0.79] | 0.69 | 0.57 | 0.90 |
+| TOI hosts, sectors 14 to 26 | light curve | **0.77** [0.74, 0.79] | 0.78 [0.76, 0.81] | 0.73 | 0.64 | 0.85 |
+| TOI hosts, sectors 14 to 26 | light curve and centroid test | **0.81** [0.80, 0.83] | 0.81 [0.80, 0.83] | 0.80 | 0.65 | 1.00 |
+| Baseline: rank by BLS SNR | | 0.66 [0.63, 0.68] | | | | 0.55 |
+
+The veto's half-pixel floor was chosen on these 845 stars, so its column in
+the second table is not independent of them.
+
+![TOI-trained model on the TOI benchmark](figures/toi_trained/05_toi_benchmark.png)
+
+**Real labels do what none of the fixes could.** Trained on the other
+hemisphere's dispositions, the same classifier on the same light-curve
+features raises average precision on these 746 stars from 0.61 to 0.74, well
+outside each other's intervals and further than the centroid veto took the
+synthetic-trained model (0.68). It keeps more planets and rejects more false
+positives at once, and 17 of its top 20 are planets. With the centroid test as
+features it reaches 0.78, and the veto then adds nothing (+0.001): the model
+has learned what the veto does, and does it better, since the light-curve
+model with the veto reaches 0.76. The other direction agrees, 0.72 to 0.77 to
+0.81.
+
+**The gain is in the shallow signals.** Below 1000 ppm the synthetic-trained
+model kept 28% of the planets and 23% of the false positives, so it did not
+separate them at all; trained on TOIs it keeps 47% and 18%, and with pixels
+55% and 14%. Between 1000 and 3000 ppm, where it kept more false positives
+than planets (51% against 45%), it now keeps 63% against 34%. Above 6000 ppm
+little changes: the synthetic-trained model and both TOI-trained ones keep 82
+to 91% of those planets and 46 to 62% of those false positives. Shuffling one
+feature at a time across the 746 stars says what the light-curve model leans
+on: depth first (it loses 0.07 of average precision without it), then the
+secondary test, the period and the scatter (0.02 to 0.03 each). With pixels
+the centroid offset ties depth, at 0.05 each.
+
+**Its probabilities carry over.** On the other hemisphere the stars the
+light-curve model gives a calibrated P(planet) above 0.8 are 87% planets, and
+those below 0.2 are 13%; its Brier score is 0.205, against 0.251 for the
+training planet rate alone. The run saves it as
+`results/toi_trained/model.joblib`, so `python -m transitml.vet ... --model
+results/toi_trained/model.joblib` scores a TOI the way the first table does.
+The model with pixel features is not saved, since `vet` computes light-curve
+features only.
+
+**What these labels carry.** A resolved TOI is not a random TOI. A planet is
+confirmed sooner when it is deep and its star bright, and a false positive is
+caught sooner when its source can be resolved, so a model trained on resolved
+TOIs learns the follow-up programme's selection along with the astrophysics,
+and both halves of this test share that selection, the same pipelines and the
+same observers. What these numbers measure is how well the model ranks TOIs
+like the resolved ones. Two thirds of the TOI hosts in the table are still
+open (5151 of 7826), and the TOIs still open are fainter than the resolved
+ones (median TESS magnitude 12.3, against 11.0 for confirmed planets and 10.7
+for false positives) and deeper (median depth 5400 ppm, against 4700 and
+2800). Depth is the feature this model leans on most, so on them it may do
+worse, and nothing here can measure that. The pixel features carry a version
+of the same caveat: some false positives were retired because a pipeline's own
+centroid test placed them off target.
+
+To reproduce:
+
+```bash
+python run_pipeline.py --train-sectors 1-13 --benchmark-centroids \
+    --benchmark-tois data/toi_benchmark/exofop_toi_2026-10-06.csv --benchmark-sectors 14-26
+python run_pipeline.py --train-sectors 1-13 --pixel-features \
+    --benchmark-tois data/toi_benchmark/exofop_toi_2026-10-06.csv --benchmark-sectors 14-26
+```
+
+The two runs share one cache in `results/toi_trained/`, which holds the curves
+of both sets of hosts (about 1600) and their target pixel files (about 1.7 GB);
+`--train-cache` and `--benchmark-cache` can point at caches an earlier run
+filled instead, as these results did (`results/toi_sectors_01_13/` and
+`results/real_injection/`). Swapping the two sector ranges, with
+`--results-dir results/toi_trained/sectors_14_26`, runs the other direction.
 
 ---
 
@@ -1709,20 +1826,26 @@ Three further gaps:
   data is a background eclipsing binary diluted by a bright foreground star
   inside the same pixel. It looks exactly like a shallow planet transit and is
   separated by *centroid motion*: the flux-weighted centroid shifts during the
-  event, which takes pixel-level data to see. The classifier and the headline
-  numbers still see light curves only. `vet` can run a difference-image
+  event, which takes pixel-level data to see. The headline classifier still
+  sees light curves only. `vet` can run a difference-image
   centroid test from target pixel files beside the score (see "Centroid test"
   above). On real TOIs it flags 30% of the false positives that follow-up
   placed on another star and 1.6% of confirmed planets, and as a veto it
   raises the TOI benchmark's average precision from 0.61 to 0.68; the rest of
   the blends are too faint in the difference image or too close to the
-  target for one sector of pixels.
+  target for one sector of pixels. A model trained on TOI dispositions with
+  the centroid test as three more features reaches 0.78 there (see "Training
+  on TOI dispositions").
 - **Labels.** Ground truth is known by construction here. On real data it has to
   come from a catalogue that inherits the selection function of the pipelines
   being benchmarked against, or from injection-recovery, which only measures
   completeness and not the false-positive rate. The TOI benchmark above does
-  the first, and shows the model separates real planets from real TOI false
-  positives only slightly better than a signal-to-noise ranking.
+  the first, and shows the synthetic-trained model separates real planets from
+  real TOI false positives only slightly better than a signal-to-noise
+  ranking. Trained on the dispositions of other sectors, the same classifier
+  does clearly better (0.74 against 0.60 for that ranking), but those labels
+  carry the follow-up programme's selection, so it is a ranker of TOIs like
+  the resolved ones.
 - **Sample size.** 96 positives in total and 34 in the test set. The bootstrap
   interval on average precision is [0.671, 0.819], roughly ±0.074, so the
   move from 0.80 to 0.74 between the last two versions of this README is
@@ -1777,6 +1900,7 @@ transit-detection/
 │   ├── treeshap.py             # exact SHAP values from the fitted trees
 │   ├── evaluate.py             # PR curves, AP, confusion matrix, failure analysis
 │   ├── benchmark.py            # the trained model scored on real TOI dispositions
+│   ├── toi_training.py         # the same classifier trained on TOI dispositions
 │   ├── views.py                # global, local, odd, even, secondary folded views
 │   ├── kepler_dr25.py          # python -m transitml.kepler_dr25: training set + model
 │   ├── cnn.py                  # python -m transitml.cnn: CNN on the views (needs torch)
@@ -1787,7 +1911,7 @@ transit-detection/
 │   ├── batch.py                # python -m transitml.batch: a sector, cached and ranked
 │   ├── dashboard.py            # the batch's self-contained HTML dashboard
 │   └── plots.py                # figures (matplotlib Agg, no display)
-├── tests/                      # 464 tests, ~5 min
+├── tests/                      # 472 tests, ~5 min
 │   ├── test_generator.py       # imbalance is exact; injected physics is consistent
 │   ├── test_preprocess.py      # depth preservation; why the median was rejected
 │   ├── test_features.py        # recovery vs SNR; the vetting statistics fire
@@ -1804,6 +1928,7 @@ transit-detection/
 │   ├── test_toi.py             # TOI parsing, per-star labels, sector choice
 │   ├── test_benchmark.py       # the real-label benchmark, offline, from a cache
 │   ├── test_benchmark_centroids.py  # the centroid veto on synthetic pixel scenes
+│   ├── test_toi_training.py    # training on TOI labels, its threshold and pixel features
 │   ├── test_stars.py           # host-star parameters and the occultation allowance
 │   ├── test_files.py           # CSV and npz input
 │   ├── test_model_io.py        # saved model reloads with threshold, calibration, features
