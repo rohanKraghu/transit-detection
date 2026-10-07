@@ -939,7 +939,7 @@ subset for this; in DR25 that column is empty for every row. And this model
 sees binned pixels of shape through a tree ensemble, so it is the baseline a
 CNN on the same views has to beat, not the CNN itself.
 
-### A CNN on the same views: a tie
+### A CNN on the same views: a tie at 9,000, ahead at 34,000
 
 `python -m transitml.cnn` trains a two-column network in the AstroNet mould on
 those views: four convolution blocks over the global view, two over the local
@@ -975,9 +975,40 @@ So the sample-size argument was right in both directions. With 9,000 labels a
 CNN is no longer starved, and it does match a strong model. But once the
 light curve is folded and binned at the right ephemeris, most of the shape
 information is already in the bins, and boosting reads it as well as the
-convolutions do. The CNN's case would rest on the full 34,032 TCEs, or on
-views the boosting cannot use as directly (centroid images, for instance).
-Full numbers are in `results/kepler_dr25/cnn/report.txt`.
+convolutions do. Full numbers are in `results/kepler_dr25/cnn/report.txt`.
+
+**On all 34,032 TCEs the CNN pulls ahead.** The same two commands with `--all`
+(17,230 stars, about 95 minutes to download and fold, then about 80 minutes
+to train both models on four cores) give a test split at the catalogue's own
+class mix: 10,243 TCEs on held-out stars, 1,217 of them planet candidates.
+
+```bash
+python -m transitml.kepler_dr25 --all --no-train \
+    --results-dir results/kepler_dr25/full --cache-dir results/kepler_dr25/curves
+python -m transitml.cnn --training-set results/kepler_dr25/full/training_set.npz \
+    --results-dir results/kepler_dr25/full_cnn
+```
+
+| Average precision (chance 0.119) | |
+| --- | --- |
+| CNN, 3 networks averaged | **0.910** |
+| Gradient boosting on the same views | 0.893 |
+| Kepler MES alone | 0.194 |
+
+This time the gap is real: the paired bootstrap puts CNN minus boosting
+between +0.009 and +0.026, and the CNN is ahead in every resample. Where it
+gains is the false positives. At the 90% recall operating point it rejects
+82.4% of AFPs against 75.4% and 99.2% of NTPs against 98.6%, while keeping
+87.3% of planet candidates against 89.6%, for a precision of 82.6% against
+76.3% at this class mix. The two samples' average precisions cannot be
+compared with each other (their chance levels are 0.338 and 0.119), but the
+gap between the models can: on 9,075 TCEs it was inside the noise, and with
+almost four times the training data it opened to +0.017. That is the
+sample-size argument above playing out, the shape model being the one that
+keeps learning as labels are added. Full numbers are in
+`results/kepler_dr25/full_cnn/report.txt`.
+
+![Full-catalogue precision-recall](figures/kepler_dr25/04_full_catalogue_precision_recall.png)
 
 ### Transit Least Squares, and BLS on a GPU
 
