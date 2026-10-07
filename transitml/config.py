@@ -60,6 +60,71 @@ class NoiseConfig:
 
 
 @dataclass(frozen=True)
+class SystematicsConfig:
+    """Spacecraft systematics shared by every star in a sector.
+
+    Off by default, so the headline run is unchanged.  When ``enabled``, every
+    curve from one :class:`~transitml.data.synthetic.SyntheticTESSSource` is
+    treated as one sector seen by ``n_cameras`` cameras, and three systematics
+    are added on top of the per-star noise, each with the *same time
+    structure* in every star on a camera and a per-star coupling:
+
+    * **Scattered light** from the Earth and Moon.  TESS downlinks at perigee,
+      once per 13.7-day orbit, so the sector's gaps sit at perigee.  The
+      background rises towards each perigee and falls away after it, with
+      Earthshine modulated at the Earth's 1-day rotation.  Imperfect background
+      subtraction leaves a residual of either sign in each star.
+    * **Pointing jitter** common to a camera, plus **momentum dumps** at fixed,
+      spacecraft-wide intervals: the dump cadence itself is flagged and
+      dropped, as in SPOC data, and the pointing then settles over an hour or
+      two, which costs every star some flux at the same times.
+    * **Focus drift**: the cameras' focus changes with thermal state after each
+      perigee, which changes how much light falls outside a star's aperture.
+
+    Amplitudes are given in units of each star's own white-noise scatter.  They
+    are assumptions chosen to be visible but not dominant, not a calibration
+    against TESS data.
+    """
+
+    enabled: bool = False
+    #: Multiplies every coupling.  0 keeps the sector's shared gap and dropped
+    #: dump cadences but adds no signal, the paired control for an ablation.
+    scale: float = 1.0
+    #: Which of the four components to add.
+    components: tuple[str, ...] = ("scattered_light", "jitter", "momentum_dumps", "focus")
+    n_cameras: int = 4
+    #: TESS's orbital period; one sector is two orbits.
+    orbit_days: float = 13.7
+    # -- scattered light --
+    #: Peak residual at perigee in camera 1, in white-noise sigmas (log-uniform).
+    scattered_light_sigma_range: tuple[float, float] = (1.0, 20.0)
+    #: Relative scattered light per camera; camera 1 points nearest the ecliptic.
+    camera_scattered_light: tuple[float, ...] = (1.0, 0.6, 0.35, 0.2)
+    #: E-folding time of the rise into perigee, in days.
+    scattered_light_rise_days_range: tuple[float, float] = (0.8, 2.5)
+    #: E-folding time of the decay after perigee, in days.
+    scattered_light_decay_days_range: tuple[float, float] = (0.15, 0.6)
+    #: Fractional modulation of the Earthshine at the 1-day rotation period.
+    earthshine_modulation_range: tuple[float, float] = (0.0, 0.5)
+    # -- pointing --
+    #: RMS of a star's response to its camera's jitter, in white-noise sigmas.
+    jitter_sigma_range: tuple[float, float] = (0.3, 1.5)
+    #: Power-law index of the common jitter series.
+    jitter_alpha: float = 1.0
+    #: Spacing of momentum dumps, drawn once per sector, in days.
+    momentum_dump_interval_days_range: tuple[float, float] = (2.5, 5.0)
+    #: Flux lost just after a dump, in white-noise sigmas (log-uniform).
+    momentum_dump_sigma_range: tuple[float, float] = (1.0, 8.0)
+    #: E-folding time of the settling after a dump, in days.
+    momentum_dump_settle_days: float = 0.06
+    # -- focus --
+    #: Flux lost at the start of an orbit to defocus, in white-noise sigmas.
+    focus_sigma_range: tuple[float, float] = (0.5, 5.0)
+    #: E-folding time of the thermal settling of focus, in days.
+    focus_settle_days_range: tuple[float, float] = (0.5, 3.0)
+
+
+@dataclass(frozen=True)
 class StarConfig:
     """Host-star population and its out-of-transit variability."""
 
@@ -183,13 +248,17 @@ class PreprocessConfig:
 
 @dataclass(frozen=True)
 class BLSConfig:
-    """Box Least Squares search grid."""
+    """The periodic transit search: its grid and which algorithm runs it."""
 
     min_period_days: float = 0.5
     #: Capped so at least two transits fit inside the baseline.
     max_period_fraction_of_baseline: float = 0.5
     n_periods: int = 2000
     durations_days: tuple[float, ...] = (0.04, 0.07, 0.11, 0.16, 0.24)
+    #: ``"bls"`` (box least squares) or ``"tls"`` (Transit Least Squares, which
+    #: uses its own period and duration grids between the same period limits).
+    #: Part of the saved model, so ``vet`` searches the way training did.
+    search: str = "bls"
 
 
 @dataclass(frozen=True)
@@ -211,6 +280,48 @@ class MultiPlanetConfig:
     mask_half_width_durations: float = 1.5
     #: Stop when fewer cadences than this survive the masking.
     min_cadences: int = 200
+
+
+@dataclass(frozen=True)
+class SingleEventConfig:
+    """Search for transits that happen once or twice (``transitml.single``).
+
+    The BLS grid stops at half the baseline, so a planet with one transit in
+    the window is excluded by construction.  This search looks for individual
+    box-shaped dips instead.  Like the multi-planet search, only the vetting
+    tool uses it; the classifier and its headline numbers are unchanged.
+    """
+
+    #: Trial event durations in days.  The longest stays below the detrender's
+    #: knot spacing: a longer dip is partly absorbed by the trend before any
+    #: search sees it.
+    durations_days: tuple[float, ...] = (0.06, 0.1, 0.15, 0.22, 0.33, 0.45)
+    #: An event is reported at or above this SNR, measured against the light
+    #: curve's own binned scatter at the trial duration (so red noise counts).
+    min_snr: float = 7.5
+    #: Fraction of a box's expected cadences that must be present.
+    min_coverage: float = 0.6
+    #: Most events reported per light curve.
+    max_events: int = 4
+    #: A dip is set aside as an instrumental ramp, not reported, when a sharp
+    #: step with an exponential recovery fits it better than any box by this
+    #: much chi-squared (in units of the binned noise variance).  On the
+    #: benchmark this cuts the stars with a false alarm from 16% to 2.3% and
+    #: loses 8 of the 309 planets found without it.
+    ramp_delta_chi2: float = 4.0
+    #: Two events pair into a duo when their depths agree to this many sigma
+    #: plus ``duo_depth_fraction`` of their mean depth...
+    duo_depth_sigma: float = 3.0
+    duo_depth_fraction: float = 0.2
+    #: ...and their durations to within this factor.
+    duo_duration_ratio: float = 1.6
+    #: Periods ``gap / n`` are tried for n up to this.
+    duo_max_harmonic: int = 30
+    #: A predicted transit on observed data rules a period out when the dip
+    #: measured there is shallower than this fraction of the event's depth.
+    duo_veto_fraction: float = 0.5
+    #: Stellar density (g/cm^3) used for the period-from-duration estimate.
+    stellar_density_cgs: float = 1.41
 
 
 @dataclass(frozen=True)
@@ -239,6 +350,7 @@ class Config:
     seed: int = SEED
     survey: SurveyConfig = field(default_factory=SurveyConfig)
     noise: NoiseConfig = field(default_factory=NoiseConfig)
+    systematics: SystematicsConfig = field(default_factory=SystematicsConfig)
     star: StarConfig = field(default_factory=StarConfig)
     planet: PlanetConfig = field(default_factory=PlanetConfig)
     eb: EclipsingBinaryConfig = field(default_factory=EclipsingBinaryConfig)
@@ -246,6 +358,7 @@ class Config:
     preprocess: PreprocessConfig = field(default_factory=PreprocessConfig)
     bls: BLSConfig = field(default_factory=BLSConfig)
     multi_planet: MultiPlanetConfig = field(default_factory=MultiPlanetConfig)
+    single_event: SingleEventConfig = field(default_factory=SingleEventConfig)
     evaluation: EvalConfig = field(default_factory=EvalConfig)
 
     def to_dict(self) -> dict[str, Any]:

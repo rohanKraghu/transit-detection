@@ -18,6 +18,14 @@ TOI host, injects the same planet and binary population as the synthetic run,
 and writes everything to ``results/real_injection/`` and
 ``figures/real_injection/`` so the synthetic headline is never overwritten.
 
+Structured spacecraft systematics in the synthetic sector (scattered light on
+the 13.7-day orbit, camera-wide pointing jitter and momentum dumps, focus
+drift)::
+
+    python run_pipeline.py --systematics
+
+writes to ``results/systematics/`` and ``figures/systematics/``.
+
 Benchmark against real labels (either mode; needs ``lightkurve`` the first
 time)::
 
@@ -32,6 +40,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import platform
 import sys
 import time
@@ -53,11 +62,12 @@ from transitml.data.injection import (
     tic_number,
 )
 from transitml.data.loader import Dataset, build_dataset
-from transitml.data.synthetic import SyntheticTESSSource
+from transitml.data.synthetic import SYSTEMATIC_COMPONENTS, SyntheticTESSSource
 from transitml.data.toi import parse_sector_spec, read_toi_table, select_benchmark_targets
 from transitml.evaluate import evaluate, format_report
+from transitml.features import BLS_ENGINE_ENV, bls_engine
 from transitml.model import TrainedModel, make_split, save_model, train
-from transitml.plots import plot_all
+from transitml.plots import plot_all, plot_sector_systematics
 
 ROOT = Path(__file__).resolve().parent
 
@@ -90,6 +100,39 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--no-figures", action="store_true", help="Skip plotting (useful in CI)."
+    )
+    parser.add_argument(
+        "--systematics",
+        action="store_true",
+        help="Add structured spacecraft systematics shared across the sector "
+        "(synthetic data only); writes to results/systematics/.",
+    )
+    parser.add_argument(
+        "--systematics-scale",
+        type=float,
+        default=1.0,
+        help="With --systematics: multiply every coupling (0 adds the sector's "
+        "gap and dropped cadences but no signal).",
+    )
+    parser.add_argument(
+        "--systematics-components",
+        default=",".join(SYSTEMATIC_COMPONENTS),
+        help="With --systematics: comma-separated components to add.",
+    )
+    search = parser.add_argument_group("periodic search")
+    search.add_argument(
+        "--search",
+        choices=("bls", "tls"),
+        default="bls",
+        help="Box Least Squares, or Transit Least Squares (needs transitleastsquares; "
+        "writes to results/tls/).",
+    )
+    search.add_argument(
+        "--bls-engine",
+        choices=("astropy", "cpu", "gpu"),
+        default=None,
+        help="Who computes the BLS periodogram; all give the same result. gpu needs CuPy. "
+        f"None keeps ${BLS_ENGINE_ENV} or astropy.",
     )
     real = parser.add_argument_group(
         "injection-recovery on real photometry",
@@ -147,6 +190,23 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="npz of downloaded TOI-host curves; None means toi_curves.npz in the results dir.",
     )
     args = parser.parse_args(argv)
+    default_results = args.results_dir == ROOT / "results"
+    default_figures = args.figures_dir == ROOT / "figures"
+    components = tuple(c.strip() for c in args.systematics_components.split(",") if c.strip())
+    unknown = set(components) - set(SYSTEMATIC_COMPONENTS)
+    if unknown:
+        parser.error(
+            f"unknown --systematics-components {sorted(unknown)}; "
+            f"choose from {', '.join(SYSTEMATIC_COMPONENTS)}"
+        )
+    args.systematics_components = components
+    if args.systematics:
+        if args.inject_into is not None:
+            parser.error("--systematics is for synthetic data; real light curves have their own")
+        if args.results_dir == ROOT / "results":
+            args.results_dir = ROOT / "results" / "systematics"
+        if args.figures_dir == ROOT / "figures":
+            args.figures_dir = ROOT / "figures" / "systematics"
     if args.inject_into is not None:
         if args.results_dir == ROOT / "results":
             args.results_dir = ROOT / "results" / "real_injection"
@@ -154,6 +214,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             args.figures_dir = ROOT / "figures" / "real_injection"
         if args.curve_cache is None:
             args.curve_cache = args.results_dir / "base_curves.npz"
+    if args.search == "tls":
+        # Beside the BLS run of the same data: results/tls/, results/systematics/tls/, ...
+        if default_results:
+            args.results_dir = args.results_dir / "tls"
+        if default_figures:
+            args.figures_dir = args.figures_dir / "tls"
     if args.benchmark_tois is not None and args.benchmark_cache is None:
         args.benchmark_cache = args.results_dir / "toi_curves.npz"
     return args
@@ -165,6 +231,18 @@ def apply_overrides(config: Config, args: argparse.Namespace) -> Config:
         config = replace(config, seed=args.seed)
     if args.n_curves is not None:
         config = replace(config, dataset=replace(config.dataset, n_curves=args.n_curves))
+    if args.systematics:
+        config = replace(
+            config,
+            systematics=replace(
+                config.systematics,
+                enabled=True,
+                scale=args.systematics_scale,
+                components=args.systematics_components,
+            ),
+        )
+    if args.search != config.bls.search:
+        config = replace(config, bls=replace(config.bls, search=args.search))
     return config
 
 
@@ -181,6 +259,7 @@ def build_source(config: Config, args: argparse.Namespace) -> LightCurveSource:
             star=config.star,
             planet=config.planet,
             eb=config.eb,
+            systematics=config.systematics,
         )
 
     cache = Path(args.curve_cache)
@@ -323,9 +402,16 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     config = apply_overrides(default_config(), args)
     np.random.seed(config.seed)
+    if args.bls_engine is not None:
+        # Set before any worker starts, so every process inherits it.
+        os.environ[BLS_ENGINE_ENV] = args.bls_engine
 
     started = time.time()
-    print(f"transit-detection | seed={config.seed} | python {platform.python_version()}")
+    print(
+        f"transit-detection | seed={config.seed} | python {platform.python_version()} | "
+        f"search {config.bls.search}"
+        + (f" ({bls_engine()} BLS engine)" if config.bls.search == "bls" else "")
+    )
     what = "real light curves (injected)" if args.inject_into else "light curves"
     source = build_source(config, args)
     print(
@@ -393,6 +479,13 @@ def main(argv: list[str] | None = None) -> int:
         paths = plot_all(
             dataset, split, trained, result, curves, config, Path(args.figures_dir)
         )
+        sector = getattr(source, "sector", None)
+        if sector is not None:
+            paths.append(
+                plot_sector_systematics(
+                    sector, Path(args.figures_dir) / "05_sector_systematics.png"
+                )
+            )
         payload["figures"] = [_display_path(p) for p in paths]
         print("figures: " + ", ".join(_display_path(p) for p in paths))
 
