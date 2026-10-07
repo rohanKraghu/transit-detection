@@ -43,6 +43,10 @@ results/real_injection/base_curves.npz
 # TOI table in data/toi_benchmark/ by one run.
 results/**/toi_curves.npz
 results/**/toi_curves.tried.json
+results/tess_finetune/train_curves.npz
+results/tess_finetune/train_curves.tried.json
+results/tess_finetune/finetuned_cnn_models.pt
+results/tess_finetune/*.log
 # Their target pixel files for the centroid test (about 1 MB a star).
 results/**/toi_tpfs/
 # The sector 1 to 13 replication of the TOI benchmark commits only its report;

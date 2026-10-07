@@ -184,12 +184,18 @@ def train_network(
     valid: NDArray[np.int_],
     config: CNNConfig,
     seed: int,
+    init_state: dict[str, Any] | None = None,
 ) -> tuple[Any, list[float]]:
-    """Fit one network; returns it at its best validation epoch, and the AP history."""
+    """Fit one network; returns it at its best validation epoch, and the AP history.
+
+    ``init_state`` starts from saved weights (fine-tuning) instead of a random draw.
+    """
     torch = _torch()
     torch.manual_seed(seed)
     rng = np.random.default_rng(seed)
     model = build_network(config, inputs["global"].shape[2], inputs["local"].shape[2])
+    if init_state is not None:
+        model.load_state_dict(init_state)
     optimiser = torch.optim.Adam(
         model.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay
     )
