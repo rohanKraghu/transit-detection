@@ -76,6 +76,13 @@ def _slim(row: dict[str, Any]) -> dict[str, Any]:
                           "density_ratio", "density_consistent")
                 if k in fit
             }
+        if row.get("centroid"):
+            out["centroid"] = {
+                k: row["centroid"][k]
+                for k in ("status", "message", "significant", "offset_distance_pixels",
+                          "offset_arcsec", "offset_sigma", "difference_snr")
+                if k in row["centroid"]
+            }
         out["signals"] = [
             {k: _round(v, 5) for k, v in sig.items() if k != "depth_snr"}
             for sig in row.get("signals", [])
@@ -410,6 +417,21 @@ function fitBlock(fit) {
   return box;
 }
 
+function centroidBlock(c) {
+  const box = el("div", {}, el("h2", {}, "Centroid test (target pixels)"));
+  if (c.status !== "ok") {
+    box.append(el("p", { class: "muted" }, "not placed: " + (c.message || c.status)));
+    return box;
+  }
+  box.append(el("div", { class: c.significant ? "warn" : "" }, c.significant
+    ? "the dip sits off the target: likely another star"
+    : "the dip sits on the target"));
+  box.append(el("div", {}, "offset " + fmt.num(c.offset_distance_pixels, 2) + " px (" +
+    fmt.num(c.offset_arcsec, 1) + "\"), " + fmt.num(c.offset_sigma, 1) + " sigma"));
+  box.append(el("div", { class: "muted" }, "difference image SNR " + fmt.num(c.difference_snr, 1)));
+  return box;
+}
+
 function detailRow(r, ncol) {
   const grid = el("div", { class: "detail-grid" });
   const reasons = el("div", {}, el("h2", {}, "Why (SHAP, log-odds)"));
@@ -447,6 +469,7 @@ function detailRow(r, ncol) {
   if (r.report) more.append(el("div", {}, el("a", { href: r.report }, "full vet report")));
   grid.append(more);
   if (r.fit) grid.append(fitBlock(r.fit));
+  if (r.centroid) grid.append(centroidBlock(r.centroid));
   return el("tr", { class: "detail" }, el("td", { colspan: ncol }, grid));
 }
 
