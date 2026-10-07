@@ -8,8 +8,10 @@ import pytest
 
 from transitml.data.toi import (
     TOI,
+    false_positive_reason,
     parse_sector_spec,
     parse_sectors,
+    read_toi_comments,
     read_toi_table,
     select_benchmark_targets,
     star_label,
@@ -134,3 +136,30 @@ def test_a_zero_period_is_unknown(tmp_path):
     path = tmp_path / "single.csv"
     path.write_text("TIC ID,TFOPWG Disposition,Period (days)\n1,CP,0\n2,CP,-1\n")
     assert all(math.isnan(t.period) for t in read_toi_table(path))
+
+
+@pytest.mark.parametrize(
+    ("comment", "reason"),
+    [
+        ("retired as TFOP FP/NEB", "off target"),
+        ("Could be on neighbor; TFOP FP/NEB", "off target"),
+        ("centroid offset to SW in QLP s71+s73", "off target"),
+        ("v-shaped; Centroids show source is TIC 95129100", "off target"),
+        ("TFOP FP/EB/SB2", "binary on target"),
+        ("TFOP FP(SEB1)", "binary on target"),
+        ("V-shaped; crowded field", "binary on target"),
+        ("likely eccentric EB; 1000ppm secondary;", "binary on target"),
+        ("found in faint-star QLP search", "not stated"),
+        ("", "not stated"),
+    ],
+)
+def test_false_positive_reason(comment, reason):
+    assert false_positive_reason(comment) == reason
+
+
+def test_read_toi_comments(tmp_path):
+    path = tmp_path / "toi_comments.csv"
+    path.write_text(
+        "# a header line\nTOI,Comments\n102.01,\"TFOP FP/NEB, offset to TIC 5\"\n102.02,\n"
+    )
+    assert read_toi_comments(path) == {"102.01": "TFOP FP/NEB, offset to TIC 5", "102.02": ""}
