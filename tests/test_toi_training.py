@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from scipy.special import expit, logit
+from sklearn.metrics import average_precision_score
 
 from transitml.benchmark import (
     CENTROID_FEATURE_NAMES,
@@ -38,6 +39,7 @@ from transitml.model import (
 )
 from transitml.toi_training import (
     format_training_report,
+    learning_curve,
     summarise_training,
     train_on_hosts,
 )
@@ -122,6 +124,49 @@ def test_the_survey_rule_keeps_every_star_at_the_catalogue_mix():
     assert "Scored, unchanged" not in report
     payload = json.loads(json.dumps(summary.to_dict(), default=str))
     assert payload["n_stars"] == 240 and "n_with_pixels" not in payload
+
+
+def test_a_learning_curve_trains_on_doubling_subsets_and_ends_at_the_model(monkeypatch):
+    from transitml import toi_training
+
+    train_set, test_set = _toy_hosts(450, 0.55, seed=1), _toy_hosts(300, 0.55, seed=2)
+    fitted: list[np.ndarray] = []
+
+    class Recorded:
+        def __init__(self, seed):
+            self.model = build_model(seed)
+
+        def fit(self, X, y):
+            fitted.append(y)
+            self.model.fit(X, y)
+            return self
+
+        def predict_proba(self, X):
+            return self.model.predict_proba(X)
+
+    monkeypatch.setattr(toi_training, "build_model", Recorded)
+    rows = learning_curve(
+        train_set, test_set, feature_names=FEATURE_NAMES, seed=0, repeats=4, start=50
+    )
+
+    assert [row["n_training"] for row in rows] == [50, 100, 200, 400, 450]
+    assert [row["n_draws"] for row in rows] == [4, 4, 4, 4, 1]
+    assert [len(y) for y in fitted] == [50] * 4 + [100] * 4 + [200] * 4 + [400] * 4 + [450]
+    # Every subset has the training set's planet rate, to the nearest star.
+    for y in fitted:
+        assert abs(y.sum() - len(y) * train_set.y.mean()) <= 0.5
+    assert rows[0]["sd"] > 0.0 and rows[-1]["sd"] == 0.0
+    assert rows[0]["average_precision"] < rows[-1]["average_precision"]
+
+    # The last row is the model itself: all the training stars, the run's seed.
+    model = build_model(0).fit(train_set.inputs(FEATURE_NAMES), train_set.y)
+    scores = model.predict_proba(test_set.inputs(FEATURE_NAMES))[:, 1]
+    assert rows[-1]["average_precision"] == pytest.approx(
+        average_precision_score(test_set.y, scores)
+    )
+    assert learning_curve(
+        train_set, test_set, feature_names=FEATURE_NAMES, seed=0, start=500
+    ) == rows[-1:]
 
 
 def test_centroid_features_blank_what_the_test_could_not_place():
@@ -264,8 +309,11 @@ def test_training_flags_and_their_defaults(tmp_path):
     assert pixels.train_cache == args.train_cache and pixels.train_tpfs == args.train_tpfs
     assert pixels.benchmark_centroids
 
+    assert not args.learning_curve
+    assert run_pipeline.parse_args([*base, "--learning-curve"]).learning_curve
     for bad in (
         ["--pixel-features"],
+        [*base[2:], "--learning-curve"],
         base[:4],
         [*base, "--inject-into", "targets.txt"],
         [*base, "--systematics"],
@@ -326,6 +374,7 @@ def test_run_pipeline_trains_on_one_sector_and_scores_another(small_config, tmp_
             "--results-dir", str(results),
             "--no-figures",
             "--n-jobs", "2",
+            "--learning-curve",
         ]
     )
     assert run_pipeline.run_toi_training(args, small_config, started=0.0) == 0
@@ -349,6 +398,12 @@ def test_run_pipeline_trains_on_one_sector_and_scores_another(small_config, tmp_
 
     calibration = metrics["toi_benchmark"]["calibration"]
     assert sum(row["n"] for row in calibration["reliability"]) == 25
+    # Fewer than 100 training stars: the curve is the model alone, scored as above.
+    (learning,) = metrics["toi_benchmark"]["learning_curve"]
+    assert learning["n_training"] == 59 and learning["n_draws"] == 1
+    assert learning["average_precision"] == pytest.approx(
+        metrics["toi_benchmark"]["average_precision"]
+    )
     assert calibration["planet_rate"] == pytest.approx(
         sum(s["disposition"] == "CP" for s in scored["stars"]) / 25
     )
@@ -359,6 +414,7 @@ def test_run_pipeline_trains_on_one_sector_and_scores_another(small_config, tmp_
     assert "of which 1 from a later sector than their first" in report
     assert "Scored, unchanged, on the TOI hosts of sectors 15" in report
     assert "calibrated P(planet): Brier score" in report
+    assert "Learning curve: trained on random subsets of the training stars" in report
 
     saved = load_model(results / "model.joblib")
     assert saved.provenance["source"] == "TOI hosts, sectors 13-14"
