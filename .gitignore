@@ -65,3 +65,6 @@ results/kepler_dr25/cnn/cnn_models.pt
 # Known-planet fits (python -m transitml.real_check planets): comparison.csv,
 # comparison.txt and each planet's vet JSON are committed, the figures are not.
 results/real_planets/reports/**/*.png
+# The full 34,032-TCE set and its CNN weights.
+results/kepler_dr25/full/training_set.npz
+results/kepler_dr25/full_cnn/cnn_models.pt
