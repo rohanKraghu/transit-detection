@@ -938,7 +938,7 @@ which the report will usually mark as not converged.
 The example is the first planet of the coverage study below, injected into
 a variable star and then detrended and searched as `vet` does. The truth
 is Rp/R* 0.0906, b 0.80, T14 3.75 h and a density of 0.57 g/cm³; all four
-are inside the 68% intervals, and the fitted density is 1.08 (+0.14 / -0.11)
+are inside the 68% intervals, and the fitted density is 1.08 (+0.14 / -0.12)
 times the star's.
 
 **The model.**
@@ -993,27 +993,29 @@ log-uniform, b uniform from 0 to 0.9) into stars from the training
 generator and fits each twice: in white noise at the star's level, which
 tests the fitter alone, and inside the variable star, detrended and
 searched exactly as `vet --fit` does, which tests the whole chain. A planet
-is scored only when the search finds its period. The run took 28 minutes on 4 cores.
+is scored only when the search finds its period. The run takes about half an
+hour on 4 cores.
 
 ![Fit coverage](figures/10_fit_coverage.png)
 
 | Parameter | Fitter alone, 68% | Fitter alone, 95% | Whole chain, 68% | Whole chain, 95% |
 |---|---:|---:|---:|---:|
-| Period | 0.63 | 0.97 | 0.60 | 0.93 |
-| t0 | 0.63 | 0.97 | 0.67 | 0.93 |
-| Rp/R* | 0.73 | 0.92 | 0.66 | 0.97 |
-| b | 0.67 | 0.87 | 0.67 | 0.95 |
+| Period | 0.63 | 0.97 | 0.62 | 0.97 |
+| t0 | 0.63 | 0.97 | 0.62 | 0.91 |
+| Rp/R* | 0.73 | 0.92 | 0.69 | 0.95 |
+| b | 0.67 | 0.87 | 0.67 | 0.91 |
 | Density | 0.65 | 0.85 | 0.72 | 0.95 |
-| T14 | 0.68 | 0.90 | 0.72 | 0.93 |
-| Depth | 0.68 | 0.90 | **0.50** | **0.86** |
-| Planets scored (converged) | 60 (54) | | 58 (56) | |
+| T14 | 0.68 | 0.90 | 0.69 | 0.95 |
+| Depth | 0.68 | 0.90 | **0.53** | 0.90 |
+| Planets scored (converged) | 60 (54) | | 58 (57) | |
 
 Each entry is the fraction of planets whose true value fell inside the
 interval. With 60 planets a calibrated 68% interval scatters by about 0.06
 and a 95% one by about 0.03.
 
-- **Rp/R\*, T14, period and t0 are calibrated** in both experiments, to
-  within that scatter. Rp/R\* is the number to read for a candidate's size.
+- **Rp/R\*, T14 and period are calibrated** in both experiments, to within
+  that scatter, and so is t0 apart from a whole-chain 95% of 0.91. Rp/R\* is
+  the number to read for a candidate's size.
 - **b and density, fitter alone: the 95% intervals are a little narrow**,
   0.87 and 0.85. One sector often barely constrains b, and so the density,
   which leaves their intervals leaning on the prior; a credible interval is
@@ -1021,22 +1023,23 @@ and a 95% one by about 0.03.
   these planets are not (b uniform up to 0.9, a single limb-darkening law).
   Two of the eight b misses are planets with b near 0, which a central
   interval of a parameter bounded at 0 cannot contain. In the whole chain,
-  where the red-noise factor widens every interval, both reach 0.95.
-- **Depth, whole chain: the intervals are too narrow**, 0.50 and 0.86. Of
-  the eight planets outside the 95% interval, five are off by 1% to 5%,
-  mostly on stars with strong red noise (β of 1.3 or more), where detrending
-  leaves a small distortion under the transit. The other three came out
-  28% to 52% too shallow because the detrender had already removed part of
-  the transit before the fit saw it: measured on the detrended curve, 31%
-  to 81% of the depth at mid-transit was gone. In two of them, deep planets
-  on 1.2 and 1.6 day orbits, the detrender's rotation term was fitted at
-  the planet's period: one star needs no rotation term at all without the
-  planet, and the other rotates within about 1% of the planet's period. A fit
-  cannot recover depth that is gone. Detrending again with the candidate's
-  transits masked, before fitting, is the fix, and it is not done yet.
-  Rp/R\* is calibrated on the same planets because its interval is wider:
-  it trades off against b and the limb darkening.
-- **Faint transits can wander.** Six chains in white noise and two in the
+  where the red-noise factor widens every interval, density reaches 0.95 and
+  b 0.91.
+- **Depth, whole chain: the 68% intervals are too narrow**, 0.53, while
+  the 95% intervals hold 0.90 of the truths. Of the six planets outside the
+  95% interval, three are off by 2% to 5%, on stars with strong red noise (β
+  of 1.1 to 1.3), where detrending leaves a small distortion under the
+  transit. In the other three the detrended curve itself is off: measured at
+  mid-transit it holds 88%, 96% and 112% of the injected depth, and the fits
+  follow it, at 71%, 93% and 119%. Detrending still moves the depth by about
+  the width of its interval, which a fit of the detrended curve cannot
+  undo. Before the masked second detrend pass, two deep planets on 1.2 and
+  1.6 day orbits lost most of their depth to the rotation term, which
+  fitted at the planet's period (19% and 39% of the depth was left); the
+  masked pass leaves 99% and 93%, and both fits now cover. Rp/R\* is
+  calibrated on the same planets because its interval is wider: it trades
+  off against b and the limb darkening.
+- **Faint transits can wander.** Six chains in white noise and one in the
   whole chain stopped at the 30,000-step cap. Two of the six, on
   transits barely above the noise, drifted into grazing solutions (b above
   1, with Rp/R\* of 0.15 and 0.22 for planets of 0.042 and 0.045), and
@@ -1049,12 +1052,14 @@ and a 95% one by about 0.03.
 of a baseline per transit: 35 of 60 chains converged in each experiment,
 and the whole chain's depth coverage was 0.45 and 0.74. A straight line
 under each transit brought convergence to 56 and 54 and depth to 0.48 and
-0.81; the quadratic, now the default, gives 54 and 56 and 0.50 and 0.86, and
+0.81; the quadratic, now the default, gave 54 and 56 and 0.50 and 0.86, and
 lifts the whole chain's 95% coverage of Rp/R\*, b, density, T14 and period
 from 0.90 to 0.93 to between 0.93 and 0.97. It costs intervals about 5%
 wider on Rp/R\* and 11% wider on depth. `--baseline` on the coverage
 study, and `FitConfig.baseline`, switch between `offset`, `line` and
-`quadratic`.
+`quadratic`. All of those numbers were measured on a single, blind detrend;
+the masked second pass, which `vet` and the batch now run, then took the
+whole chain to 57 converged chains and depth coverage to 0.53 and 0.90.
 
 **Limits.**
 
