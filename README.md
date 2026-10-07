@@ -17,7 +17,7 @@ and a dashboard of ranked candidates.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python run_pipeline.py            # ~3 min on 4 cores
-pytest                            # ~6 min, 376 tests
+pytest                            # ~6 min, 394 tests
 ```
 
 It writes `results/metrics.json`, `results/report.txt`, the trained model
@@ -1390,7 +1390,7 @@ transit-detection/
 │   ├── batch.py                # python -m transitml.batch: a sector, cached and ranked
 │   ├── dashboard.py            # the batch's self-contained HTML dashboard
 │   └── plots.py                # figures (matplotlib Agg, no display)
-├── tests/                      # 376 tests, ~6 min
+├── tests/                      # 394 tests, ~6 min
 │   ├── test_generator.py       # imbalance is exact; injected physics is consistent
 │   ├── test_preprocess.py      # depth preservation; why the median was rejected
 │   ├── test_features.py        # recovery vs SNR; the vetting statistics fire
