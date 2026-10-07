@@ -1686,7 +1686,7 @@ on. Sizes are rough: S is a few hours, M a day or two, L longer.
   detrend with the strongest signal masked. Confirmed planets above TOI SNR
   100 reading as odd/even binaries fell from 36% to 6%.
 - Structured spacecraft systematics in the synthetic sector (`--systematics`),
-  measured on paired controls: a cost of 0.06 to 0.14 in average precision.
+  measured on paired controls: a cost of 0.05 to 0.13 in average precision.
 - Single and duo transit search in `vet`, with its own injection-recovery
   benchmark (`python -m transitml.single_benchmark`).
 - Transit Least Squares as a search option (`--search tls`; AP 0.75 against
