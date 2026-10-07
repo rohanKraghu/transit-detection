@@ -50,6 +50,10 @@ results/**/toi_tpfs/
 results/toi_sectors_01_13/*
 !results/toi_sectors_01_13/toi_benchmark.json
 !results/toi_sectors_01_13/toi_benchmark.txt
+# Models trained on TOI dispositions: their feature matrices and fitted
+# classifiers are rebuilt by one run each.
+results/toi_trained/**/dataset.npz
+results/toi_trained/**/model.joblib
 # Batch mode: the per-star result cache and downloaded sector curves are
 # rebuilt by one run; candidates.csv, summary.json and dashboard.html of the
 # demo sector are committed.

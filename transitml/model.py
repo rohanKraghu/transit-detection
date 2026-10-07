@@ -24,6 +24,7 @@ detail that a handful of scalars throws away.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
@@ -284,6 +285,9 @@ class TrainedModel(_Scorer):
     achieved_cv_precision: float
     achieved_cv_recall: float
     calibration: PlattScaling
+    #: The columns the classifier reads, in order: the light-curve features,
+    #: plus the centroid test's for a model trained with pixel features.
+    feature_names: tuple[str, ...] = FEATURE_NAMES
 
 
 def wilson_lower_bound(
@@ -382,6 +386,39 @@ def select_threshold(
     return threshold, rule, float(precision[best]), float(recall[best])
 
 
+def probability_threshold(
+    y: NDArray[np.int_],
+    raw: NDArray[np.float64],
+    calibration: PlattScaling,
+    probability: float,
+) -> tuple[float, str, float, float]:
+    """The operating point where the calibrated ``P(planet)`` reaches ``probability``.
+
+    The rule for a training set whose planet rate is far above a survey's,
+    such as TOI hosts, about half of which are planets.  There the precision
+    floor of :func:`select_threshold` is met by keeping every star or nearly,
+    so it rejects next to nothing; keeping a star when it is at least
+    ``probability`` likely a planet, at the training set's own mix, is the
+    plain alternative.
+
+    ``raw`` are the out-of-fold log-odds ``calibration`` was fitted to.  The
+    threshold is returned on the classifier's score, like
+    :func:`select_threshold`'s, with the out-of-fold precision and recall there.
+    """
+    if not 0.0 < probability < 1.0:
+        raise ValueError(f"probability must lie in (0, 1), got {probability}")
+    cut = (float(logit(probability)) - calibration.intercept) / calibration.slope
+    keep = np.asarray(raw, dtype=float) >= cut
+    planets = np.asarray(y) == 1
+    precision = float((keep & planets).sum() / keep.sum()) if keep.any() else float("nan")
+    recall = float((keep & planets).sum() / planets.sum()) if planets.any() else float("nan")
+    rule = (
+        f"calibrated P(planet) >= {probability:.2f} at the training planet rate "
+        f"({calibration.train_positive_rate:.1%})"
+    )
+    return float(expit(cut)), rule, precision, recall
+
+
 def train(
     split: Split,
     *,
@@ -389,17 +426,33 @@ def train(
     seed: int,
     target_precision: float,
     precision_lcb_z: float = EvalConfig.precision_lcb_z,
+    operating_probability: float | None = None,
+    feature_names: Sequence[str] = FEATURE_NAMES,
 ) -> TrainedModel:
     """Cross-validate on train, choose the threshold, then refit on all of train.
 
     The probability calibration is fitted to the same out-of-fold scores as
-    the threshold.  The test set is not read anywhere in this function.
+    the threshold.  The threshold is the precision rule of
+    :func:`select_threshold`, or with ``operating_probability`` the point
+    where the calibrated probability reaches it (:func:`probability_threshold`).
+    ``feature_names`` names the columns of ``split.X_train``.  The test set is
+    not read anywhere in this function.
     """
+    if split.X_train.shape[1] != len(feature_names):
+        raise ValueError(
+            f"{split.X_train.shape[1]} feature columns for {len(feature_names)} feature names"
+        )
     oof_raw = cross_val_raw_scores(split.X_train, split.y_train, n_folds=n_folds, seed=seed)
     oof = expit(oof_raw)
-    threshold, rule, precision, recall = select_threshold(
-        split.y_train, oof, target_precision, precision_lcb_z
-    )
+    calibration = fit_platt(oof_raw, split.y_train)
+    if operating_probability is None:
+        threshold, rule, precision, recall = select_threshold(
+            split.y_train, oof, target_precision, precision_lcb_z
+        )
+    else:
+        threshold, rule, precision, recall = probability_threshold(
+            split.y_train, oof_raw, calibration, operating_probability
+        )
     estimator = build_model(seed)
     estimator.fit(split.X_train, split.y_train)
     return TrainedModel(
@@ -409,7 +462,8 @@ def train(
         threshold_rule=rule,
         achieved_cv_precision=precision,
         achieved_cv_recall=recall,
-        calibration=fit_platt(oof_raw, split.y_train),
+        calibration=calibration,
+        feature_names=tuple(feature_names),
     )
 
 
@@ -464,10 +518,17 @@ def save_model(
 ) -> Path:
     """Write the fitted classifier, its threshold and feature order with joblib.
 
-    joblib files are pickles: load only ones you wrote yourself.
+    joblib files are pickles: load only ones you wrote yourself.  Only a
+    model of the light-curve features can be saved, since that is all ``vet``
+    computes.
     """
     import sklearn
 
+    if tuple(trained.feature_names) != FEATURE_NAMES:
+        raise ValueError(
+            "only a model of the light-curve features can be saved for vet; this one also "
+            f"reads {[n for n in trained.feature_names if n not in FEATURE_NAMES]}"
+        )
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {

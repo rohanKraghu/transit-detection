@@ -242,7 +242,9 @@ def test_run_pipeline_benchmark_reads_a_cache_offline(
     )
     (tmp_path / "results").mkdir()
     source = SyntheticTESSSource(n_curves=1, positive_rate=0.0, eclipsing_binary_rate=0.0, seed=1)
-    payload = run_pipeline.run_toi_benchmark(args, small_config, trained, source)
+    payload = run_pipeline.run_toi_benchmark(
+        args, small_config, trained, run_pipeline.training_tic_ids(source)
+    )
 
     assert payload["n_stars"] == len(targets)
     assert payload["selection"]["unlabelled"] == 1
