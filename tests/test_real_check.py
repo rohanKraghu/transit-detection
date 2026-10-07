@@ -113,3 +113,27 @@ def test_the_sector_command_writes_beside_the_candidates(tmp_path, capsys):
     assert real_check.main(["sector", str(candidates), "--tois", str(tois), "--sector", "14"]) == 0
     assert (tmp_path / "toi_ranking.json").exists() and (tmp_path / "toi_ranking.txt").exists()
     assert "Sector 14: 2 stars ranked" in capsys.readouterr().out
+
+
+def test_the_centroid_veto_moves_off_target_stars_down(tmp_path):
+    tois = tmp_path / "toi.csv"
+    _write_csv(tois, ["TIC ID", "TOI", "TFOPWG Disposition", "Period (days)", "Sectors"], [
+        [1, "1.01", "CP", 3.0, "14"],
+        [2, "2.01", "FP", 5.0, "14"],
+        [3, "3.01", "FP", 7.0, "14"],
+    ])
+    candidates = tmp_path / "candidates.csv"
+    _write_csv(candidates, ["target_id", "score", "flagged", "period_days", "centroid_status",
+                            "centroid_offset"], [
+        ["TIC 2", 0.9, "True", 5.0, "ok", "True"],  # a blend, ranked first by score
+        ["TIC 1", 0.8, "True", 3.0, "ok", "False"],
+        ["TIC 3", 0.7, "True", 7.0, "no pixel file", "False"],
+        ["TIC 4", 0.1, "False", 1.0, "", ""],
+    ])
+    summary = sector_ranking(candidates, tois, 14)
+    centroid = summary["centroid"]
+    assert centroid["groups"]["false positive"] == {"tested": 2, "placed": 1, "off_target": 1}
+    assert centroid["groups"]["planet"] == {"tested": 1, "placed": 1, "off_target": 0}
+    ap = centroid["average_precision"]["planet vs false positive"]
+    assert ap["without"] == pytest.approx(0.5) and ap["with_veto"] == pytest.approx(1.0)
+    assert "with it" in real_check.sector_text(summary)

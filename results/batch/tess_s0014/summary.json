@@ -1,6 +1,6 @@
 {
   "format_version": 1,
-  "source": "targets.txt, TESS sector 14",
+  "source": "targets_s0014.txt, TESS sector 14",
   "n_stars": 1452,
   "n_vetted": 1452,
   "n_errors": 0,
@@ -25,9 +25,9 @@
     "max_signals": 3,
     "min_sde": 5.5
   },
-  "computed": 1452,
-  "from_cache": 0,
-  "runtime_seconds": 375.0,
+  "computed": 0,
+  "from_cache": 1452,
+  "runtime_seconds": 61.5,
   "reports": [
     "reports/vet_TIC_149918151.png",
     "reports/vet_TIC_155873992.png",
@@ -44,14 +44,46 @@
     "requested": 10,
     "fitted": 10,
     "errors": 0,
-    "computed": 10,
-    "from_cache": 0,
+    "computed": 0,
+    "from_cache": 10,
     "converged": 10,
     "density_inconsistent": [],
     "settings": {
       "max_steps": 30000,
       "n_walkers": 32,
       "exposure_minutes": null
+    }
+  },
+  "centroids": {
+    "requested": 200,
+    "tested": 192,
+    "with_pixels": 192,
+    "status": {
+      "ok": 155,
+      "weak_difference_image": 37
+    },
+    "offset": [
+      "TIC 15247229",
+      "TIC 277014266",
+      "TIC 293954617",
+      "TIC 186000935",
+      "TIC 357719182",
+      "TIC 233681149",
+      "TIC 311805258",
+      "TIC 258801269",
+      "TIC 399956873",
+      "TIC 274762761",
+      "TIC 320323992",
+      "TIC 237185205",
+      "TIC 137345196",
+      "TIC 232968813",
+      "TIC 21755546",
+      "TIC 30329585",
+      "TIC 185405474"
+    ],
+    "pixels": {
+      "author": "TESS-SPOC",
+      "exposure_time": 1800
     }
   }
 }

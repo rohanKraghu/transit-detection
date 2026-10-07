@@ -333,3 +333,44 @@ def test_cli_wants_exactly_one_source(model_path):
         batch.main(["--synthetic", "3", "--targets", "t.txt", "--model", str(model_path)])
     with pytest.raises(SystemExit):
         batch.main(["--model", str(model_path)])
+
+
+def test_the_centroid_test_runs_on_the_best_candidates_from_cached_pixels(tmp_path):
+    """Offline: the pixel files are already in the cache, so nothing is downloaded."""
+    from transitml.batch import PixelSource, _centroid_candidates, write_candidates_csv
+    from transitml.benchmark import tpf_cache_path
+    from transitml.data.synthetic_tpf import blend_scenario
+    from transitml.data.tpf import save_tpf
+
+    cache = tmp_path / "tpfs"
+    rows = []
+    for i, kind in enumerate(["on_target", "blend", "blend", "on_target"]):
+        tpf, truth = blend_scenario(kind, seed=300 + i)
+        target = f"TIC {900 + i}"
+        if i < 3:  # the fourth star has no pixel file
+            save_tpf(tpf, tpf_cache_path(cache, target, 14))
+        rows.append({
+            "id": target, "target_id": target, "sector": 14, "status": "ok", "flagged": True,
+            "period_days": truth["period"], "epoch": truth["epoch"],
+            "duration_hours": 24.0 * truth["duration"],
+        })
+    rows.append({**rows[0], "id": "TIC 999", "target_id": "TIC 999", "flagged": False})
+    (cache / "tried.json").write_text(json.dumps(["TIC 903:14"]))
+
+    summary = _centroid_candidates(
+        rows, tmp_path, 10, PixelSource(cache_dir=cache), n_jobs=1, progress=False
+    )
+    assert summary["tested"] == 4 and summary["with_pixels"] == 3
+    assert summary["offset"] == ["TIC 901", "TIC 902"]
+    assert rows[0]["centroid"]["status"] == "ok" and not rows[0]["centroid"]["significant"]
+    assert rows[3]["centroid"] == {"status": "no pixel file", "significant": False}
+    assert "centroid" not in rows[4]  # not flagged, not tested
+    assert _centroid_candidates(rows, tmp_path, 0, PixelSource(), 1, False) is None
+
+    for row in rows:
+        row.update(rank=1, p_planet=0.5, score=0.5)
+    path = write_candidates_csv(rows, tmp_path / "candidates.csv")
+    with open(path, newline="") as handle:
+        written = list(csv.DictReader(handle))
+    assert [r["centroid_offset"] for r in written] == ["False", "True", "True", "False", ""]
+    assert written[3]["centroid_status"] == "no pixel file"
