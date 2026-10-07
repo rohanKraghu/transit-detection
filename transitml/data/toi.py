@@ -205,11 +205,12 @@ def read_toi_table(path: str | Path) -> list[TOI]:
 
 
 #: Why a false positive was retired, read from the free-text ExoFOP comment.
-#: The signal is on another star (a nearby or background eclipsing binary, or
-#: a centroid offset) ...
+#: The signal is on another star (a nearby or background eclipsing binary, a
+#: nearby planet candidate, a centroid offset, or a source named elsewhere) ...
 _OFF_TARGET = re.compile(
-    r"\bNEB\b|\bBEB\b|nearby eclipsing|centroid offset|centroids? show|offset to|"
-    r"offset towards|on (a )?neighbo|blend",
+    r"\bNEB\b|\bBEB\b|\bNPC\b|nearby eclipsing|nearby planet candidate|off.?target|"
+    r"centroid offset|centroids? show|offset to|offset towards|(on|from) (a )?neighbo|"
+    r"(correct|actual|true) source|centered on TIC|blend",
     re.IGNORECASE,
 )
 #: ... or it is a binary at the target (spectroscopic or photometric evidence).
@@ -226,8 +227,9 @@ def false_positive_reason(comment: str) -> str:
     """Where a false positive's signal comes from, by keywords in its ExoFOP comment.
 
     ``"off target"`` when the comment puts it on another star (``NEB``,
-    ``BEB``, a centroid offset, "on neighbor"); otherwise ``"binary on
-    target"`` when it names a binary or binary evidence (``SEB1``, ``SB2``,
+    ``BEB``, ``NPC``, a centroid offset, "off target", "on neighbor", "the
+    correct source is TIC ..."); otherwise ``"binary on target"`` when it
+    names a binary or binary evidence (``SEB1``, ``SB2``,
     ``EB``, V-shaped, a secondary, odd/even, too large); otherwise ``"not
     stated"``.  The comments are written by hand for observers, not for
     parsing, so this is a coarse sort.
