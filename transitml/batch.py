@@ -294,15 +294,19 @@ def _fit_candidates(
     config: FitConfig,
     n_jobs: int,
     progress: bool,
+    force: bool = False,
 ) -> dict[str, Any] | None:
-    """Fit the ``n_fits`` best-ranked flagged stars, reusing cached fits; sets ``row["fit"]``."""
+    """Fit the ``n_fits`` best-ranked flagged stars, reusing cached fits; sets ``row["fit"]``.
+
+    ``force`` refits every one of them, as it re-vets every star.
+    """
     if n_fits <= 0:
         return None
     targets = [r for r in rows if r["status"] == "ok" and r["flagged"]][:n_fits]
     by_key = dict(zip(keys, curves))
     cache = ResultCache(out_dir / "cache" / "fits.jsonl")
     wanted = {r["key"]: fit_key(r["key"], config) for r in targets}
-    todo = [r for r in targets if wanted[r["key"]] not in cache]
+    todo = [r for r in targets if force or wanted[r["key"]] not in cache]
     if progress and targets:
         print(f"  fitting {len(targets)} candidates: {len(targets) - len(todo)} from the cache, "
               f"{len(todo)} to fit")
@@ -479,7 +483,8 @@ def run_batch(
         rows.append(row)
     rows = rank_rows(rows, model, planet_rate)
     fits = _fit_candidates(
-        rows, curves, keys, model, out_dir, n_fits, fit_config or FitConfig(), n_jobs, progress
+        rows, curves, keys, model, out_dir, n_fits, fit_config or FitConfig(), n_jobs, progress,
+        force,
     )
 
     report_paths = _write_reports(rows, curves, keys, model, multi, out_dir, n_reports)
@@ -849,7 +854,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--reports", type=int, default=10, help="Full vet reports for this many top candidates."
     )
-    parser.add_argument("--force", action="store_true", help="Ignore cached results.")
+    parser.add_argument("--force", action="store_true", help="Ignore cached results and fits.")
     parser.add_argument(
         "--fit", type=int, default=0, metavar="N",
         help="Fit a transit model (batman + emcee) to the N best-ranked flagged stars.",

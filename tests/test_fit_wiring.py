@@ -117,6 +117,17 @@ def test_batch_fits_are_cached_and_reach_the_csv_and_dashboard(fitted_batch):
     assert '"fit":{"status":"ok"' in page and "Transit fit (batman + emcee)" in page
 
 
+def test_force_refits_as_well(fitted_batch, model_path, planet):
+    first, _ = fitted_batch
+    curves = synthetic_sector(6, seed=7) + [planet]
+    result = run_batch(curves, model_path, first.out_dir, source="t", n_jobs=1, n_reports=0,
+                       progress=False, n_fits=1, fit_config=QUICK, force=True)
+    assert result.summary["fits"]["computed"] == 1 and result.summary["fits"]["from_cache"] == 0
+    refit = next(r for r in result.rows if "fit" in r)["fit"]
+    cached = next(r for r in first.rows if "fit" in r)["fit"]
+    assert refit["parameters"] == cached["parameters"]  # seeded, so the same fit
+
+
 def test_a_new_fit_setting_refits(fitted_batch, model_path, planet):
     first, _ = fitted_batch
     curves = synthetic_sector(6, seed=7) + [planet]
