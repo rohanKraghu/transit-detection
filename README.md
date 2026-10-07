@@ -15,7 +15,7 @@ detrends, searches and scores one target and writes a one-page report.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python run_pipeline.py            # ~3 min on 4 cores
-pytest                            # ~4 min, 283 tests
+pytest                            # ~4 min, 295 tests
 ```
 
 It writes `results/metrics.json`, `results/report.txt`, the trained model
@@ -163,6 +163,104 @@ classification problem rather than a signal-detection problem. It is why
 odd/even and secondary-eclipse tests exist in real vetting pipelines, and it is
 why those two features turn out to be the model's second and third most
 important.
+
+### Structured systematics in the synthetic sector
+
+The noise above is drawn star by star, so nothing in it is shared between
+targets. Real TESS systematics come from the spacecraft: every star on a
+camera sees the same scattered light, pointing jitter and focus changes, and
+every star in the sector sees the same momentum dumps. `--systematics` adds
+that layer, drawn once per sector from the seed:
+
+```
++ scattered light   rises into each perigee, 13.7 d apart (the mid-sector gap is one),
+                    with a 1-day Earthshine modulation; camera levels 1.0, 0.6, 0.35, 0.2
++ pointing jitter   1/f noise, one series per camera
++ momentum dumps    spacecraft-wide, every 2.5 to 5 d: the cadence is lost and the
+                    flux settles back over about 1.5 hours
++ focus settling    after each perigee as the thermal state recovers, per camera
+```
+
+![Sector systematics](figures/systematics/05_sector_systematics.png)
+
+Each star gets a camera and its own coupling to each component, in units of
+its white-noise scatter (scattered light 1 to 20, dumps 1 to 8, focus 0.5 to
+5, jitter 0.3 to 1.5), so stars on one camera share the shape at different
+strengths, as they do after real background subtraction. Scattered light and
+jitter can take either sign; dumps and defocus only lose flux. The stars,
+planets and binaries are the same draws as without it.
+
+```bash
+python run_pipeline.py --systematics                           # results/systematics/
+python run_pipeline.py --systematics --systematics-scale 0     # the paired control
+python run_pipeline.py --systematics --systematics-components momentum_dumps
+```
+
+A scale of 0 keeps the sector's gap and the cadences lost at dumps but adds
+no signal, so it is the control for the same stars with and without the
+systematics. Turning components off leaves the others exactly as they were.
+On the default seed (2400 curves, 96 planets, 34 held out), adding one
+component at a time:
+
+| Added to the control | Held-out AP | Planets whose period the search finds (of 96) | Variable stars peaking at the dump period |
+| --- | --- | --- | --- |
+| nothing (control) | 0.747 [0.669, 0.833] | 86 | 3% |
+| scattered light | 0.748 | 87 | |
+| pointing jitter | 0.764 | 82 | |
+| momentum dumps | 0.742 | 78 | 53% |
+| focus settling | 0.775 | 85 | |
+| all four | 0.669 [0.590, 0.759] | 76 | 44% |
+
+Full report in
+[`results/systematics/report.txt`](results/systematics/report.txt).
+
+**The search pays first, and the components compound.** Momentum dumps
+are a periodic, hour-long loss of flux at the same times in every star,
+which is a transit as far as a per-star box search can tell. With all four
+components, 44% of the variable stars put their strongest BLS peak at the
+dump interval or a multiple of it (from 3%), and 365 of the 382 with a
+significant peak (SDE above 7) are there. The planets lose too: the search
+finds 76 of 96 periods instead of 86, 13 planets have their peak at the
+dump period instead of 3, and above a transit SNR of 12 it finds 75 of 80
+instead of 79. The classifier loses 0.08 in average precision, mostly on
+the false-positive side: at the threshold it flags 63 stars with 24 planets
+among them, against 56 with 26. Of the 322 held-out variable stars whose
+peak sits at the dump period it flags 17 (5%), against 14 of the other 431
+(3%). Their dips are real but shallow (a median depth of 1.9 times the
+scatter, against 5.6 for planets), so the model still calls most of them
+noise. No component costs the classifier much on its own (the dumps alone
+0.005, and jitter and focus even help, by margins well inside the
+interval); the 0.08 comes from all four together.
+
+**It is not learning the sector's dump period.** A model trained on one
+sector could simply learn that the dump interval means "not a planet". To
+test that, the same population was drawn into two more sectors (seeds 43 and
+44, each with its own dump interval, gap and camera series), each with its
+own paired control, and the sector 42 model was also scored on them:
+
+| Sector (dump interval) | AP, control → with systematics | Search finds (of 96) | Variable stars at the dump period | Sector 42 model, with systematics |
+| --- | --- | --- | --- | --- |
+| 42 (2.58 d) | 0.747 → 0.669 | 86 → 76 | 3% → 44% | |
+| 43 (4.33 d) | 0.678 → 0.622 | 75 → 71 | 4% → 32% | 0.626 |
+| 44 (2.52 d) | 0.695 → 0.556 | 82 → 66 | 2% → 43% | 0.526 |
+
+Scored on a sector it never saw, the sector 42 model does about as well as
+that sector's own model: 0.626 against 0.622 on sector 43, and 0.526
+against 0.556 on 44. Without systematics it edges out both sectors' own
+models (0.646 against 0.630, and 0.766 against 0.731), so sector 44 may
+carry a small transfer cost, but it is well inside one run's interval.
+What does vary is how much a sector suffers: the paired drop is 0.08 in
+sector 42, 0.06 in 43 and 0.14 in 44, where the search also loses the most
+planets. Sectors 42 and 44 dump at nearly the same interval, so the
+interval alone does not set the cost.
+
+Every comparison here is paired for a reason. The control differs from the
+same seed's run without `--systematics` by 0.04 to 0.06 in average
+precision, only because the shared gap and the dropped dump cadences change
+every star's sampling, and the default model scores 0.63 to 0.80 across
+these three seeds, a spread wider than the bootstrap interval of a single
+run. One synthetic sector is not the number to expect, with or without
+systematics.
 
 ### Designed for real data to drop in
 
@@ -883,15 +981,21 @@ reported number while corrupting the test rows does.
 
 **What it does not establish.** The noise model is the weak point, and it is
 weak in the direction that flatters the result. Real TESS systematics are
-*structured* — scattered light from the Earth and Moon on a 13.7-day orbital
+*structured*: scattered light from the Earth and Moon on a 13.7-day orbital
 cycle, focus changes with spacecraft thermal state, pointing jitter correlated
 across a whole camera, background contamination from neighbouring stars in a
-21-arcsecond pixel — and none of that is a stationary 1/f process. My red noise
-is generated as a power law with random phases, so it has no features the
-detrending can fail on in a correlated way across targets, and a robust spline
-handles it more easily than it would handle real data. I would expect average
-precision to drop substantially on real photometry, and the drop to come mostly
-from the false-positive side.
+21-arcsecond pixel. None of that is a stationary 1/f process. My default red
+noise is generated as a power law with random phases, star by star, so it has
+no features the detrending can fail on in a correlated way across targets, and
+a robust spline handles it more easily than it would handle real data.
+`--systematics` adds the shared, spacecraft-driven part (see "Structured
+systematics in the synthetic sector" above); on paired controls it costs 0.06
+to 0.14 in average precision and 4 to 16 of the 96 planets' periods in the
+search, mostly through momentum dumps. Its shapes are simple parametric forms
+rather than measurements from real sectors, and it still leaves out
+contamination from neighbours. I would expect average precision to drop
+substantially on real photometry, and the drop to come mostly from the
+false-positive side.
 
 Three further gaps:
 
@@ -939,7 +1043,7 @@ transit-detection/
 │   ├── physics.py              # Kepler's third law, transit durations
 │   ├── data/
 │   │   ├── base.py             # LightCurve + LightCurveSource interface, stitching
-│   │   ├── synthetic.py        # the generator
+│   │   ├── synthetic.py        # the generator, and sector-wide systematics
 │   │   ├── mast.py             # real TESS/Kepler via lightkurve (same interface)
 │   │   ├── injection.py        # synthetic eclipses injected into real curves
 │   │   ├── toi.py              # TOI table -> per-star CP/KP vs FP/FA labels
@@ -959,7 +1063,7 @@ transit-detection/
 │   ├── kepler_dr25.py          # python -m transitml.kepler_dr25: training set + model
 │   ├── vet.py                  # python -m transitml.vet: one star, one page
 │   └── plots.py                # figures (matplotlib Agg, no display)
-├── tests/                      # 283 tests, ~4 min
+├── tests/                      # 295 tests, ~4 min
 │   ├── test_generator.py       # imbalance is exact; injected physics is consistent
 │   ├── test_preprocess.py      # depth preservation; why the median was rejected
 │   ├── test_features.py        # recovery vs SNR; the vetting statistics fire
@@ -967,6 +1071,7 @@ transit-detection/
 │   ├── test_stitch.py          # sectors joined; marginal pair becomes a detection
 │   ├── test_evaluation.py      # no test-set leakage into threshold or metrics
 │   ├── test_injection.py       # injection is exact, leaves noise alone, runs offline
+│   ├── test_systematics.py     # sector systematics are shared, seeded and switchable
 │   ├── test_toi.py             # TOI parsing, per-star labels, sector choice
 │   ├── test_benchmark.py       # the real-label benchmark, offline, from a cache
 │   ├── test_files.py           # CSV and npz input
@@ -983,7 +1088,8 @@ transit-detection/
 ```
 
 `python run_pipeline.py --help` exposes `--seed`, `--n-curves`, `--n-jobs`,
-`--no-figures` and the output directories. Runtime scales linearly in
+`--no-figures`, `--systematics` (with `--systematics-scale` and
+`--systematics-components`) and the output directories. Runtime scales linearly in
 `--n-curves`; the BLS search is the bottleneck and is parallel across curves.
 
 ## Roadmap
