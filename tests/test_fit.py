@@ -22,6 +22,7 @@ from transitml.fit import (
     log_density_jacobian,
     q_to_u,
     quick_config,
+    stellar_priors_from_meta,
     time_averaging_beta,
     u_to_q,
 )
@@ -179,6 +180,24 @@ def test_the_exposure_follows_where_the_curve_came_from():
     assert default_exposure_minutes({"kind": "planet"}) == 0.0
     assert default_exposure_minutes({}) is None
     assert default_exposure_minutes({"kind": "noise", "exposure_minutes": 2.0}) == 2.0
+
+
+def test_a_survey_curve_gets_the_catalogue_density():
+    """A MAST download carries the TIC's log g and radius, not a density."""
+    from transitml.fit import CATALOGUE_DENSITY_FRACTION
+    from transitml.physics import RHO_SUN_CGS, density_from_gravity
+
+    assert stellar_priors_from_meta({"rho_star_cgs": 1.4, "r_star_rsun": 1.0}) == ((1.4, pytest.approx(0.14)), 1.0)
+    (rho, sd), radius = stellar_priors_from_meta({"logg_cgs": 4.44, "r_star_rsun": 1.0, "teff_k": 5800})
+    assert rho == pytest.approx(density_from_gravity(4.44, 1.0))
+    assert rho == pytest.approx(RHO_SUN_CGS, rel=0.02)
+    assert sd == pytest.approx(CATALOGUE_DENSITY_FRACTION * rho)
+    assert radius == 1.0
+    (rho, _), _ = stellar_priors_from_meta({"m_star_msun": 0.5, "r_star_rsun": 0.5, "logg_cgs": 4.0})
+    assert rho == pytest.approx(4 * RHO_SUN_CGS)  # the mass wins over log g
+    # Nothing to go on, or only a temperature: no check, rather than a main-sequence guess.
+    assert stellar_priors_from_meta({"teff_k": 5800, "logg_cgs": None}) == (None, None)
+    assert stellar_priors_from_meta({"logg_cgs": 4.4, "r_star_rsun": float("nan")}) == (None, None)
 
 
 def test_the_model_integrates_over_the_exposure():
