@@ -26,6 +26,23 @@ def test_saved_model_round_trips(tiny_model_config, tiny_trained, tmp_path):
     np.testing.assert_array_equal(loaded.score(split.X_test), trained.score(split.X_test))
     np.testing.assert_array_equal(loaded.train_medians, feature_medians(split.X_train))
     assert loaded.provenance["n_train"] == len(split.y_train)
+    assert loaded.calibration == trained.calibration
+    np.testing.assert_array_equal(loaded.probability(split.X_test), trained.probability(split.X_test))
+    np.testing.assert_array_equal(loaded.explain(split.X_test), trained.explain(split.X_test))
+
+
+def test_a_model_from_an_older_format_is_refused(tiny_model_config, tiny_trained, tmp_path):
+    split, trained = tiny_trained
+    path = save_model(
+        trained, split, tmp_path / "model.joblib",
+        preprocess=tiny_model_config.preprocess, bls=tiny_model_config.bls,
+    )
+    payload = joblib.load(path)
+    payload["format_version"] = 1
+    del payload["calibration"]
+    joblib.dump(payload, path)
+    with pytest.raises(ValueError, match="model format 1.*retrain"):
+        load_model(path)
 
 
 def test_a_model_with_a_different_feature_set_is_refused(tiny_model_config, tiny_trained, tmp_path):

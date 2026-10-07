@@ -95,6 +95,7 @@ def test_figures_are_written_without_a_display(small_config, small_dataset, tmp_
         small_dataset, split, model, result,
         sample_light_curves(small_config, picks), small_config, tmp_path,
     )
-    assert len(paths) == 4
+    assert len(paths) == 6
+    assert [Path(p).name[:2] for p in paths] == ["01", "02", "03", "04", "06", "07"]
     for path in paths:
         assert Path(path).exists() and Path(path).stat().st_size > 10_000

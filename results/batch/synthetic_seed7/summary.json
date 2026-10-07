@@ -1,0 +1,64 @@
+{
+  "format_version": 1,
+  "source": "2000 synthetic stars, seed 7",
+  "n_stars": 2000,
+  "n_vetted": 2000,
+  "n_errors": 0,
+  "errors": [],
+  "n_flagged": 116,
+  "expected_planets_flagged": 50.916,
+  "expected_planets_all": 79.978,
+  "threshold": 0.20511228952516056,
+  "threshold_probability": 0.11753897862432515,
+  "planet_rate": 0.03974358974358974,
+  "training_planet_rate": 0.03974358974358974,
+  "model": {
+    "path": "results/model.joblib",
+    "fingerprint": "7783cb7ba4c7d338b3a4",
+    "sklearn": "1.9.1",
+    "n_train": 1560,
+    "n_train_positive": 62,
+    "seed": 42,
+    "source": "SyntheticTESSSource"
+  },
+  "settings": {
+    "max_signals": 3,
+    "min_sde": 5.5
+  },
+  "computed": 2000,
+  "from_cache": 0,
+  "runtime_seconds": 311.4,
+  "reports": [
+    "reports/vet_SYN_000792.png",
+    "reports/vet_SYN_001437.png",
+    "reports/vet_SYN_000961.png"
+  ],
+  "truth": {
+    "n_planets": 80,
+    "planet_rate": 0.04,
+    "flagged_planets": 49,
+    "precision": 0.4224137931034483,
+    "recall": 0.6125,
+    "average_precision": 0.6194497684766009,
+    "precision_at_20": 1.0,
+    "false_positives_by_kind": {
+      "eclipsing_binary": 21,
+      "noise": 46
+    },
+    "expected_planets_all": 79.97817757400001
+  },
+  "fits": {
+    "requested": 10,
+    "fitted": 10,
+    "errors": 0,
+    "computed": 10,
+    "from_cache": 0,
+    "converged": 10,
+    "density_inconsistent": [],
+    "settings": {
+      "max_steps": 30000,
+      "n_walkers": 32,
+      "exposure_minutes": null
+    }
+  }
+}

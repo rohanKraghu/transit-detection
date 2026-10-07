@@ -1,13 +1,15 @@
 """Figures written to disk with the Agg backend (no display required).
 
-Four figures, each answering one question:
+Six figures, each answering one question:
 
 ``light_curves``     What does the detrending actually do, and to what?
 ``pr_curve``         Does the model beat the baselines where it matters?
 ``diagnostics``      Where does it fail, and what is it adding over BLS SNR?
 ``feature_importance``  Which vetting statistics are carrying the decision?
+``calibration``      When the model says 30%, are 30% of those stars planets?
+``shap_summary``     Which way does each feature push a star, and how far?
 
-With ``--systematics`` a fifth, ``sector_systematics``, shows the shared
+With ``--systematics`` a seventh, ``sector_systematics``, shows the shared
 spacecraft signals every star in the sector is built from.
 """
 
@@ -501,6 +503,8 @@ def plot_all(
             dataset, split, trained, result, figure_dir / "03_diagnostics.png"
         ),
         plot_feature_importance(result, figure_dir / "04_feature_importance.png"),
+        plot_calibration(split, trained, result, figure_dir / "06_calibration.png"),
+        plot_shap_summary(split, trained, figure_dir / "07_shap_summary.png"),
     ]
 
 
@@ -550,6 +554,186 @@ def plot_sector_systematics(sector: SectorSystematics, path: Path) -> Path:
 
 
 # --------------------------------------------------------------------------
+def _wilson_interval(
+    successes: NDArray[np.float64], trials: NDArray[np.float64], z: float = 1.0
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Two-sided Wilson score interval on a binomial rate (``z = 1`` gives 68%)."""
+    n = np.asarray(trials, dtype=float)
+    p = np.asarray(successes, dtype=float) / n
+    centre = (p + z * z / (2 * n)) / (1 + z * z / n)
+    half = z * np.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / (1 + z * z / n)
+    return centre - half, centre + half
+
+
+def plot_calibration(
+    split: Split, trained: TrainedModel, result: EvaluationResult, path: Path
+) -> Path:
+    """Reliability diagram and the held-out probabilities by class.
+
+    Left: in each probability bin, the mean predicted probability against the
+    fraction of those stars that are planets, with 68% Wilson intervals; on
+    the diagonal is calibrated.  Both axes are square-root scaled so the
+    crowded low end, where almost every star sits, stays readable.  Right:
+    the calibrated probabilities of planets and of everything else, with the
+    operating threshold marked.
+    """
+    _style()
+    fig, (ax_rel, ax_hist) = plt.subplots(1, 2, figsize=(12.5, 5.0))
+    sqrt_scale = (
+        "function",
+        {"functions": (lambda v: np.sqrt(np.clip(v, 0.0, None)), np.square)},
+    )
+    ticks = [0, 0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0]
+
+    ax_rel.plot([0, 1], [0, 1], lw=1.0, ls="--", color=NEUTRAL, label="perfectly calibrated")
+    tables = result.calibration["reliability"]
+    for key, colour, label, marker in (
+        ("uncalibrated", SERIES[1], "score read as a probability", "s"),
+        ("calibrated", SERIES[0], "calibrated (Platt)", "o"),
+    ):
+        rows = [r for r in tables[key] if r["n"] > 0]
+        predicted = np.array([r["mean_predicted"] for r in rows])
+        observed = np.array([r["observed_rate"] for r in rows])
+        low, high = _wilson_interval(
+            np.array([r["n_planets"] for r in rows]), np.array([r["n"] for r in rows])
+        )
+        low, high = np.clip(low, 0.0, 1.0), np.clip(high, 0.0, 1.0)
+        ax_rel.errorbar(
+            predicted,
+            observed,
+            yerr=[np.clip(observed - low, 0, None), np.clip(high - observed, 0, None)],
+            fmt=marker + "-",
+            ms=5.5,
+            lw=1.2,
+            color=colour,
+            ecolor=colour,
+            elinewidth=1.0,
+            capsize=2.5,
+            mec=SURFACE,
+            mew=0.6,
+            label=label,
+        )
+    ax_rel.set_xscale(sqrt_scale[0], **sqrt_scale[1])
+    ax_rel.set_yscale(sqrt_scale[0], **sqrt_scale[1])
+    for axis in (ax_rel.xaxis, ax_rel.yaxis):
+        axis.set_ticks(ticks, [f"{t:g}" for t in ticks])
+    ax_rel.set_xlim(0, 1)
+    ax_rel.set_ylim(0, 1)
+    ax_rel.set_xlabel("mean predicted P(planet) in the bin (square-root scale)")
+    ax_rel.set_ylabel("fraction that are planets (68% Wilson interval)")
+    ax_rel.set_title("Reliability on the held-out set", loc="left")
+    ax_rel.legend(loc="upper left")
+
+    probability = trained.probability(split.X_test)
+    floor = 1e-4
+    bins = np.geomspace(floor, 1.0, 33)
+    for label_value, colour, label in (
+        (0, SERIES[2], "not a planet"),
+        (1, SERIES[0], "planet"),
+    ):
+        values = np.clip(probability[split.y_test == label_value], floor, 1.0)
+        ax_hist.hist(
+            values,
+            bins=bins,
+            histtype="stepfilled" if label_value == 0 else "step",
+            lw=1.6,
+            alpha=0.55 if label_value == 0 else 1.0,
+            color=colour,
+            label=f"{label} ({values.size})",
+        )
+    threshold = trained.threshold_probability
+    ax_hist.axvline(threshold, lw=1.4, ls="--", color=NEUTRAL)
+    ax_hist.text(
+        threshold * 1.08,
+        0.97,
+        f"operating threshold\nP = {threshold:.3f}",
+        transform=ax_hist.get_xaxis_transform(),
+        ha="left",
+        va="top",
+        color=INK_SOFT,
+        fontsize=8.5,
+    )
+    ax_hist.set_xscale("log")
+    ax_hist.set_yscale("log")
+    ax_hist.set_xlabel(f"calibrated P(planet) (values below {floor:g} drawn at {floor:g})")
+    ax_hist.set_ylabel("held-out stars")
+    ax_hist.set_title("Calibrated probabilities by true class", loc="left")
+    ax_hist.legend(loc="upper left")
+    fig.tight_layout()
+    return _save(fig, path)
+
+
+def plot_shap_summary(
+    split: Split, trained: TrainedModel, path: Path, top_n: int = 10
+) -> Path:
+    """SHAP beeswarm: every held-out star's SHAP value for the most influential features.
+
+    One row per feature, ordered by mean absolute SHAP value; each dot is a
+    star, placed at how far that feature moved its calibrated log-odds and
+    coloured by where its value of the feature ranks in the held-out set.
+    Missing values (an odd/even test with too few transits, say) are hollow.
+    """
+    from .features import FEATURE_NAMES  # local import keeps the module import light
+
+    _style()
+    values = trained.explain(split.X_test)
+    X = split.X_test
+    order = np.argsort(-np.abs(values).mean(axis=0))[:top_n][::-1]
+    cmap = _two_hue_map("feature_value", SERIES[2], "#c9c7c0", SERIES[1])
+    rng = np.random.default_rng(0)
+
+    fig, ax = plt.subplots(figsize=(9.0, 0.5 * len(order) + 1.9))
+    for row, j in enumerate(order):
+        shap_j = values[:, j]
+        x_j = X[:, j]
+        finite = np.isfinite(x_j)
+        rank = np.full(x_j.size, np.nan)
+        if finite.sum() > 1:
+            ranks = np.argsort(np.argsort(x_j[finite], kind="stable"), kind="stable")
+            rank[finite] = ranks / (finite.sum() - 1)
+        # Jitter grows with local density, so crowded values spread into a swarm.
+        density, edges = np.histogram(shap_j, bins=60)
+        local = density[np.clip(np.searchsorted(edges, shap_j, side="right") - 1, 0, 59)]
+        jitter = rng.uniform(-1, 1, shap_j.size) * 0.38 * np.sqrt(local / max(local.max(), 1))
+        ax.scatter(
+            shap_j[finite],
+            row + jitter[finite],
+            c=rank[finite],
+            cmap=cmap,
+            vmin=0,
+            vmax=1,
+            s=9,
+            linewidths=0,
+            alpha=0.85,
+            zorder=2,
+        )
+        if (~finite).any():
+            ax.scatter(
+                shap_j[~finite],
+                row + jitter[~finite],
+                s=10,
+                facecolors="none",
+                edgecolors=NEUTRAL,
+                linewidths=0.7,
+                zorder=2,
+            )
+    ax.axvline(0.0, lw=0.9, color=NEUTRAL, zorder=1)
+    ax.set_yticks(np.arange(len(order)), [FEATURE_NAMES[j] for j in order])
+    ax.grid(axis="y", visible=False)
+    ax.set_xlabel("SHAP value: change in calibrated log-odds of being a planet")
+    ax.set_title(
+        "Which way each feature pushes a star (SHAP, held-out set)", loc="left"
+    )
+    mappable = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(0, 1))
+    bar = fig.colorbar(mappable, ax=ax, fraction=0.035, pad=0.02, ticks=[0, 1])
+    bar.ax.set_yticklabels(["low", "high"])
+    bar.set_label("feature value (rank in the held-out set); hollow = missing")
+    bar.outline.set_visible(False)
+    fig.tight_layout()
+    return _save(fig, path)
+
+
+# --------------------------------------------------------------------------
 # Single-star vetting report (``python -m transitml.vet``)
 # --------------------------------------------------------------------------
 def _fold_hours(
@@ -583,7 +767,7 @@ def plot_vetting_report(lc: LightCurve, flat, result, path: Path) -> Path:
     trend; the detrended flux with every candidate's transits marked; the fold
     on the primary signal; odd against even transits; the phase-0.5 window
     where a secondary eclipse would sit; the key features with the score,
-    threshold and verdict; and the approximate per-feature score changes.
+    threshold, calibrated probability and verdict; and the largest SHAP values.
     """
     _style()
     period = float(result.primary["period"])
@@ -644,13 +828,24 @@ def plot_vetting_report(lc: LightCurve, flat, result, path: Path) -> Path:
             color=colour,
             label=f"signal {cand.rank}: P = {cand.period:.3f} d, SDE {cand.sde:.1f}",
         )
+    singles = getattr(result, "single_events", None)
+    events = singles.events if singles is not None else ()
+    if events:
+        ax_flat.plot(
+            [e.time for e in events],
+            np.full(len(events), low + 0.06 * (high - low)),
+            "^",
+            ms=7,
+            color=SERIES[3 % len(SERIES)],
+            label=f"single events ({len(events)}, best SNR {max(e.snr for e in events):.1f})",
+        )
     ax_flat.set_ylabel("flux - 1 (ppt)")
     ax_flat.set_xlabel("time (days)")
     ax_flat.set_title(
         "Detrended, with every significant signal from the iterative search", loc="left"
     )
-    if result.candidates:
-        ax_flat.legend(loc="lower right", ncols=min(len(result.candidates), 3))
+    if result.candidates or events:
+        ax_flat.legend(loc="lower right", ncols=min(len(result.candidates) + bool(events), 3))
     else:
         ax_flat.set_title(
             "no signal above the significance threshold",
@@ -731,7 +926,11 @@ def plot_vetting_report(lc: LightCurve, flat, result, path: Path) -> Path:
 
     ax_table = fig.add_subplot(grid[3, 0])
     ax_table.axis("off")
-    rows = [("score", f"{result.score:.3f}"), ("threshold", f"{result.threshold:.3f}")]
+    rows = [
+        ("score", f"{result.score:.3f}"),
+        ("threshold", f"{result.threshold:.3f}"),
+        (f"P(planet) at a {result.planet_rate:.1%} rate", f"{result.probability:.3f}"),
+    ]
     rows += [_format_feature(name, result.features[name]) for name in KEY_FEATURES]
     table = ax_table.table(
         cellText=rows,
@@ -746,11 +945,11 @@ def plot_vetting_report(lc: LightCurve, flat, result, path: Path) -> Path:
         cell.set_edgecolor(GRID)
     ax_table.set_title("Key features (primary signal)", loc="left")
 
-    # -- row 4b: approximate reasons -----------------------------------------
+    # -- row 4b: SHAP reasons -------------------------------------------------
     ax_why = fig.add_subplot(grid[3, 1:])
     reasons = result.reasons[::-1]
     if reasons:
-        deltas = np.array([float(r["delta_score"]) for r in reasons])
+        deltas = np.array([float(r["shap"]) for r in reasons])
         labels = [
             f"{r['feature']} = {float(r['value']):.3g} (median {float(r['training_median']):.3g})"
             for r in reasons
@@ -766,7 +965,7 @@ def plot_vetting_report(lc: LightCurve, flat, result, path: Path) -> Path:
             ax_why.text(
                 0.0,
                 y + 0.45,
-                f"{label}: {d:+.3f}",
+                f"{label}: {d:+.2f}",
                 va="bottom",
                 ha="left",
                 fontsize=8.5,
@@ -778,10 +977,8 @@ def plot_vetting_report(lc: LightCurve, flat, result, path: Path) -> Path:
         ax_why.axvline(0.0, lw=0.9, color=NEUTRAL)
         ax_why.grid(axis="y", visible=False)
         ax_why.margins(x=0.15)
-    ax_why.set_xlabel(
-        "score change vs. this feature at its training median (approximate)"
-    )
-    ax_why.set_title("Top reasons: features that moved the score most", loc="left")
+    ax_why.set_xlabel("SHAP value: change in calibrated log-odds (+1 multiplies the odds by e)")
+    ax_why.set_title("Top reasons (SHAP): features that moved the log-odds most", loc="left")
 
     if centroid is not None:
         _plot_centroid_row(fig, grid, 4, result, centroid)
@@ -789,7 +986,7 @@ def plot_vetting_report(lc: LightCurve, flat, result, path: Path) -> Path:
     verdict_colour = SERIES[0] if result.above_threshold else SERIES[1]
     fig.suptitle(
         f"{result.target_id}: score {result.score:.3f} vs threshold {result.threshold:.3f}, "
-        f"{result.verdict}",
+        f"{result.verdict}; P(planet) {result.probability:.3f}",
         x=0.01,
         ha="left",
         fontsize=12.5,
@@ -799,8 +996,10 @@ def plot_vetting_report(lc: LightCurve, flat, result, path: Path) -> Path:
     fig.text(
         0.01,
         0.01,
-        "Reasons are approximate: each bar replaces one feature by its training-split "
-        "median and leaves the rest; bars are not additive. Only the primary signal is scored.",
+        f"Reasons are exact SHAP values: base log-odds {result.base_log_odds:+.2f} plus all "
+        f"{len(result.contributions)} features' values gives this star's "
+        f"{result.log_odds:+.2f}; the {len(result.reasons)} largest are shown. "
+        "Only the primary signal is scored.",
         fontsize=8,
         color=INK_SOFT,
     )
@@ -986,3 +1185,156 @@ def _plot_centroid_row(fig, grid, row: int, result, centroid) -> None:
             fontweight="bold",
             color=SERIES[1],
         )
+
+
+# --------------------------------------------------------------------------
+# Planet parameter fit
+# --------------------------------------------------------------------------
+#: Quantities shown in the fit's corner plot, with axis labels.
+_FIT_CORNER: tuple[tuple[str, str], ...] = (
+    ("k", "Rp/R*"),
+    ("b", "b"),
+    ("log10_rho_star", "log10 density"),
+    ("t14_hours", "T14 (h)"),
+)
+
+
+def _interval_text(summary: dict[str, float], digits: int) -> str:
+    m, lo, hi = summary["median"], summary["lower"], summary["upper"]
+    return f"{m:.{digits}f} (+{hi - m:.{digits}f} / -{m - lo:.{digits}f})"
+
+
+def plot_fit(fit, path: Path, n_draws: int = 150) -> Path:
+    """The transit fit for one star: data, model and posterior on one page.
+
+    ``fit`` is a :class:`~transitml.fit.FitResult`.  Left: the fitted cadences
+    folded on the posterior median ephemeris, binned, with the posterior
+    median model and its 68% band from ``n_draws`` draws, and the residuals.
+    Right: the joint posterior of the radius ratio, impact parameter,
+    stellar density and duration.
+    """
+    from .fit import PARAMETERS, TransitModel, _derived
+
+    _style()
+    data = fit.data
+    samples = fit.samples
+    period = fit.value("period")
+    t0 = fit.value("t0")
+    hours = ((data["time"] - t0 + 0.5 * period) % period - 0.5 * period) * 24.0
+    order = np.argsort(hours)
+    # Each window's fitted baseline is taken out, as the likelihood does.
+    corrected = data["flux"] - data["baseline"]
+    ppm = (corrected - 1.0) * 1e6
+    t14_h = fit.value("t14_hours")
+    span = max(float(np.max(np.abs(hours))), 1.5 * t14_h)
+    grid_h = np.linspace(-span, span, 400)
+
+    rng = np.random.default_rng(0)
+    draws = samples[rng.choice(len(samples), size=min(n_draws, len(samples)), replace=False)]
+    model = TransitModel(grid_h / 24.0, fit.exposure_minutes / 1440.0, 3.0 / 1440.0)
+    curves = np.array([
+        (model.flux(np.r_[0.0, theta[1:7], 1.0]) - 1.0) * 1e6 for theta in draws
+    ])
+    median_curve = np.median(curves, axis=0)
+    band_lo, band_hi = np.percentile(curves, [16.0, 84.0], axis=0)
+    data_model = TransitModel(data["time"], fit.exposure_minutes / 1440.0, 3.0 / 1440.0)
+    best = np.array([fit.map_parameters[name] for name in PARAMETERS])
+    resid_ppm = (corrected - data_model.flux(best)) * 1e6
+    bin_h = max(t14_h / 8.0, 0.25)
+
+    fig = plt.figure(figsize=(13.5, 7.4))
+    outer = fig.add_gridspec(1, 2, width_ratios=(1.25, 1.0), wspace=0.18)
+    left = outer[0].subgridspec(2, 1, height_ratios=(2.3, 1.0), hspace=0.08)
+    ax_fold = fig.add_subplot(left[0])
+    ax_res = fig.add_subplot(left[1], sharex=ax_fold)
+
+    ax_fold.plot(hours, ppm, ".", ms=2.6, color=NEUTRAL, alpha=0.55,
+                 label="detrended flux, less each transit's baseline")
+    centres, means = _bin_means(hours[order], ppm[order], bin_h)
+    ax_fold.plot(centres, means, "o", ms=4.2, color=INK, label=f"binned ({bin_h * 60:.0f} min)")
+    ax_fold.fill_between(grid_h, band_lo, band_hi, color=SERIES[0], alpha=0.25, lw=0,
+                         label="68% of posterior models")
+    ax_fold.plot(grid_h, median_curve, "-", lw=1.8, color=SERIES[0], label="posterior median model")
+    ax_fold.set_ylabel("flux - 1 (ppm)")
+    lo, hi = _robust_limits(ppm, pad=0.1)
+    ax_fold.set_ylim(min(lo, float(median_curve.min()) * 1.25), hi)
+    ax_fold.legend(loc="lower left", ncol=2)
+    ax_fold.set_title("Folded on the fitted ephemeris", loc="left")
+    ax_fold.tick_params(labelbottom=False)
+
+    ax_res.plot(hours, resid_ppm, ".", ms=2.6, color=NEUTRAL, alpha=0.55)
+    rc, rm = _bin_means(hours[order], resid_ppm[order], bin_h)
+    ax_res.plot(rc, rm, "o", ms=4.2, color=INK)
+    ax_res.axhline(0.0, color=SERIES[0], lw=1.2)
+    ax_res.set_ylim(*_robust_limits(resid_ppm, pad=0.1))
+    ax_res.set_ylabel("residual (ppm)")
+    ax_res.set_xlabel("hours from mid-transit")
+    ax_res.set_xlim(-span, span)
+
+    # Corner plot of the geometry.
+    derived = _derived(samples)
+    names = [name for name, _ in _FIT_CORNER]
+    labels = [label for _, label in _FIT_CORNER]
+    n = len(names)
+    corner = outer[1].subgridspec(n, n, hspace=0.08, wspace=0.08)
+    limits = {
+        name: tuple(np.percentile(derived[name], [0.5, 99.5])) for name in names
+    }
+    for i in range(n):
+        for j in range(i + 1):
+            ax = fig.add_subplot(corner[i, j])
+            x = derived[names[j]]
+            if i == j:
+                ax.hist(x, bins=40, range=limits[names[j]], color=SERIES[0], alpha=0.75)
+                lo68, hi68 = np.percentile(x, [16.0, 84.0])
+                for v in (lo68, np.median(x), hi68):
+                    ax.axvline(v, color=INK, lw=0.9, ls="-" if v == np.median(x) else ":")
+                ax.set_yticks([])
+                ax.grid(False)
+            else:
+                y = derived[names[i]]
+                ax.hist2d(x, y, bins=36, range=(limits[names[j]], limits[names[i]]),
+                          cmap=_two_hue_map("fitdensity", SURFACE, "#9cc1ee", SERIES[0]),
+                          rasterized=True)
+                ax.grid(False)
+            ax.set_xlim(*limits[names[j]])
+            if i < n - 1:
+                ax.tick_params(labelbottom=False)
+            else:
+                ax.set_xlabel(labels[j], fontsize=8.5)
+                ax.tick_params(axis="x", labelsize=7.5, rotation=40)
+            if j > 0 or i == 0:
+                ax.tick_params(labelleft=False)
+            else:
+                ax.set_ylabel(labels[i], fontsize=8.5)
+                ax.tick_params(axis="y", labelsize=7.5)
+
+    p = fit.parameters
+    lines = [
+        f"P = {_interval_text(p['period'], 5)} d    Rp/R* = {_interval_text(p['k'], 4)}"
+        f"    b = {_interval_text(p['b'], 2)}",
+        f"T14 = {_interval_text(p['t14_hours'], 2)} h    depth = "
+        f"{_interval_text(p['depth_ppm'], 0)} ppm    density = {_interval_text(p['rho_star'], 2)} g/cm3",
+    ]
+    if "rp_earth" in p:
+        lines[0] += f"    Rp = {_interval_text(p['rp_earth'], 2)} Earth radii"
+    check = fit.density_check
+    if check is not None:
+        ratio = check["ratio"]
+        lines.append(
+            f"fitted / stellar density = {_interval_text(ratio, 2)}: "
+            + ("consistent with the star" if check["consistent"] else "INCONSISTENT with the star")
+        )
+    sampler = fit.sampler
+    lines.append(
+        f"{sampler['n_walkers']} walkers x {sampler['n_steps']} steps, autocorrelation time "
+        f"{sampler['autocorr_time_max']:.0f}, noise {fit.noise['sigma_ppm']:.0f} ppm x beta "
+        f"{fit.noise['beta']:.2f}" + ("" if fit.converged else "  (NOT CONVERGED)")
+    )
+    fig.suptitle(f"{fit.target_id}: batman transit fit, emcee posterior", x=0.06, ha="left",
+                 y=1.06, fontsize=13, fontweight="bold")
+    fig.text(0.06, 1.035, "\n".join(lines), ha="left", va="top", fontsize=9.5, color=INK_SOFT)
+    if fit.warnings:
+        fig.text(0.06, -0.02, "Warnings: " + "; ".join(fit.warnings), ha="left", va="top",
+                 fontsize=9, color=SERIES[1])
+    return _save(fig, path)

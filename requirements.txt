@@ -8,6 +8,10 @@
 # to pull real TESS/Kepler photometry from MAST.  The offline demo does not use
 # it, and it drags in a large dependency tree.  Install it separately when you
 # want to point the pipeline at real data:  pip install lightkurve
+#
+# Also optional: transitleastsquares (2.0 or later) for
+# `run_pipeline.py --search tls`, and CuPy for the GPU BLS engine
+# (`--bls-engine gpu`).  Neither is needed for the default run.
 numpy==2.4.6
 scipy==1.17.1
 scikit-learn==1.9.1
@@ -15,4 +19,9 @@ astropy==8.0.1
 pandas==3.0.6
 matplotlib==3.11.2
 joblib==1.6.0
+# Transit fits (transitml/fit.py: vet --fit, batch --fit); imported only when a fit runs.
+batman-package==2.5.3
+# batman imports distutils, which Python 3.12 removed; setuptools provides it.
+setuptools==84.0.0
+emcee==3.1.6
 pytest==9.1.1

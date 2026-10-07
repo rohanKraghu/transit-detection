@@ -23,11 +23,13 @@ htmlcov/
 # the feature matrix is a build artefact and is not.
 results/dataset.npz
 results/real_injection/dataset.npz
+results/tls/dataset.npz
 results/systematics/dataset.npz
 # The fitted classifier is a pickle tied to the scikit-learn version that
 # wrote it; run_pipeline.py rebuilds it in two minutes.
 results/model.joblib
 results/real_injection/model.joblib
+results/tls/model.joblib
 results/systematics/model.joblib
 # Single-star reports from python -m transitml.vet.
 results/vet/
@@ -43,6 +45,11 @@ results/**/toi_curves.npz
 results/**/toi_curves.tried.json
 # Their target pixel files for the centroid test (about 1 MB a star).
 results/**/toi_tpfs/
+# Batch mode: the per-star result cache and downloaded sector curves are
+# rebuilt by one run; candidates.csv, summary.json and dashboard.html of the
+# demo sector are committed.
+results/batch/**/cache/
+results/batch/**/curves/
 # Kepler DR25: per-star light curves (about 0.5 MB each) and the folded views.
 # data/kepler_dr25/dr25_tce_labels.csv lists every TCE, so one run rebuilds both.
 results/kepler_dr25/curves/
