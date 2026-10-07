@@ -36,6 +36,15 @@ is known (CP/KP planets, FP/FA false positives) and writes
 ``toi_benchmark.json`` and ``toi_benchmark.txt`` beside the metrics.  With
 ``--benchmark-centroids`` it also downloads each host's target pixel file and
 scores the model again with the centroid test as a veto.
+
+Training on real labels instead::
+
+    python run_pipeline.py --train-sectors 1-13 \
+        --benchmark-tois exofop_toi.csv --benchmark-sectors 14-26
+
+trains on the labelled TOI hosts of sectors 1 to 13 and benchmarks the model on
+those of sectors 14 to 26, none of them trained on; ``--pixel-features`` also
+gives it the centroid test.  Writes to ``results/toi_trained/``.
 """
 
 from __future__ import annotations
@@ -46,7 +55,7 @@ import os
 import platform
 import sys
 import time
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -65,9 +74,14 @@ from transitml.data.injection import (
 )
 from transitml.data.loader import Dataset, build_dataset
 from transitml.data.synthetic import SYSTEMATIC_COMPONENTS, SyntheticTESSSource
-from transitml.data.toi import parse_sector_spec, read_toi_table, select_benchmark_targets
+from transitml.data.toi import (
+    BenchmarkTarget,
+    parse_sector_spec,
+    read_toi_table,
+    select_benchmark_targets,
+)
 from transitml.evaluate import evaluate, format_report
-from transitml.features import BLS_ENGINE_ENV, bls_engine
+from transitml.features import BLS_ENGINE_ENV, FEATURE_NAMES, bls_engine
 from transitml.model import TrainedModel, make_split, save_model, train
 from transitml.plots import plot_all, plot_sector_systematics
 
@@ -218,6 +232,37 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="CSV of ExoFOP comments (TOI, Comments) used to sort the false positives by "
         "why they were retired; None means toi_comments.csv beside the TOI table.",
     )
+    labels = parser.add_argument_group(
+        "training on real labels",
+        "Train on the labelled TOI hosts of some sectors instead of on synthetic or injected "
+        "curves, then benchmark the model on the hosts of others.",
+    )
+    labels.add_argument(
+        "--train-sectors",
+        default=None,
+        help="Sectors whose labelled TOI hosts (from --benchmark-tois) to train on, e.g. "
+        "1-13; writes to results/toi_trained/.",
+    )
+    labels.add_argument(
+        "--train-cache",
+        type=Path,
+        default=None,
+        help="npz of the training hosts' curves; None means toi_curves.npz in the results "
+        "dir, shared with the benchmark's (curves are kept by star and sector).",
+    )
+    labels.add_argument(
+        "--train-tpfs",
+        type=Path,
+        default=None,
+        help="Directory of their target pixel files; None means toi_tpfs/ beside --train-cache.",
+    )
+    labels.add_argument(
+        "--pixel-features",
+        action="store_true",
+        help="With --train-sectors: also give the model the centroid test's offset, its "
+        "significance and the difference-image SNR (downloads each host's target pixel "
+        "file; implies --benchmark-centroids; writes to results/toi_trained/pixels/).",
+    )
     args = parser.parse_args(argv)
     default_results = args.results_dir == ROOT / "results"
     default_figures = args.figures_dir == ROOT / "figures"
@@ -243,6 +288,37 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             args.figures_dir = ROOT / "figures" / "real_injection"
         if args.curve_cache is None:
             args.curve_cache = args.results_dir / "base_curves.npz"
+    if args.train_sectors is not None:
+        if args.benchmark_tois is None or args.benchmark_sectors is None:
+            parser.error(
+                "--train-sectors reads the TOI table from --benchmark-tois and scores the "
+                "model on --benchmark-sectors; give both"
+            )
+        if args.inject_into is not None or args.systematics:
+            parser.error(
+                "--train-sectors trains on TOI hosts; drop --inject-into and --systematics"
+            )
+        if default_results:
+            args.results_dir = ROOT / "results" / "toi_trained"
+        if default_figures:
+            args.figures_dir = ROOT / "figures" / "toi_trained"
+        # One cache for both sets of hosts, set before --pixel-features moves the
+        # results: curves and pixel files are kept by star and sector, so a run
+        # with pixel features reuses what the run without them downloaded.
+        if args.train_cache is None:
+            args.train_cache = args.results_dir / "toi_curves.npz"
+        if args.benchmark_cache is None:
+            args.benchmark_cache = args.results_dir / "toi_curves.npz"
+        if args.train_tpfs is None:
+            args.train_tpfs = Path(args.train_cache).parent / "toi_tpfs"
+        if args.pixel_features:
+            args.benchmark_centroids = True
+            if default_results:
+                args.results_dir = args.results_dir / "pixels"
+            if default_figures:
+                args.figures_dir = args.figures_dir / "pixels"
+    elif args.pixel_features:
+        parser.error("--pixel-features needs --train-sectors: only TOI hosts come with pixels")
     if args.search == "tls":
         # Beside the BLS run of the same data: results/tls/, results/systematics/tls/, ...
         if default_results:
@@ -350,37 +426,60 @@ def training_tic_ids(source: LightCurveSource) -> set[int]:
     return {n for lc in source.base_curves if (n := tic_number(lc.target_id)) is not None}
 
 
-def run_toi_benchmark(
+@dataclass
+class TOIHosts:
+    """The labelled TOI hosts of some sectors: their curves searched, their pixels tested."""
+
+    sectors: list[int]
+    targets: list[BenchmarkTarget]
+    selection: dict[str, int]
+    dataset: Dataset
+    n_without_curve: int
+    #: One centroid test per dataset row, when asked for; the dataset then
+    #: carries them as features too.
+    centroids: list[dict[str, Any] | None] | None = None
+
+
+def load_toi_hosts(
     args: argparse.Namespace,
     config: Config,
-    trained: TrainedModel,
-    source: LightCurveSource,
-) -> dict[str, Any]:
-    """Score ``trained`` on labelled TOI hosts; write the report, JSON and figure."""
+    spec: str,
+    *,
+    cache: Path,
+    tpfs: Path,
+    centroids: bool,
+    exclude_tics: set[int] | None = None,
+) -> TOIHosts:
+    """Select, fetch (or read from the caches) and search the labelled TOI hosts of ``spec``.
+
+    ``exclude_tics`` names the stars a model was trained on, which a benchmark
+    must not score; ``None`` for the training set itself.
+    """
     from transitml.benchmark import (
-        benchmark,
         build_benchmark_dataset,
         centroid_tests,
-        format_benchmark_report,
         load_or_fetch_curves,
         load_or_fetch_tpfs,
-        plot_benchmark,
+        with_centroid_features,
         with_tic_stars,
     )
-    from transitml.data.toi import read_toi_comments
 
-    spec = args.benchmark_sectors or str(args.sector if args.sector is not None else 14)
     sectors = parse_sector_spec(spec)
     targets, selection = select_benchmark_targets(
-        read_toi_table(args.benchmark_tois), sectors, exclude_tics=training_tic_ids(source)
+        read_toi_table(args.benchmark_tois), sectors, exclude_tics=exclude_tics or set()
     )
     print(
-        f"\nTOI benchmark: {selection['positives']} CP/KP and {selection['negatives']} FP/FA "
-        f"hosts in sectors {spec} ({selection['in_training_set']} dropped as training stars)"
+        f"\n{'TOI benchmark' if exclude_tics is not None else 'Training set'}: "
+        f"{selection['positives']} CP/KP and {selection['negatives']} FP/FA hosts in sectors {spec}"
+        + (
+            f" ({selection['in_training_set']} dropped as training stars)"
+            if exclude_tics is not None
+            else ""
+        )
     )
     curves = load_or_fetch_curves(
         targets,
-        args.benchmark_cache,
+        cache,
         author=args.author,
         exposure_time=args.exposure_time,
         n_workers=args.download_workers,
@@ -394,34 +493,72 @@ def run_toi_benchmark(
     dataset = build_benchmark_dataset(
         curves, preprocess=config.preprocess, bls=config.bls, n_jobs=args.n_jobs
     )
-    centroids = None
-    if args.benchmark_centroids:
+    tests = None
+    if centroids:
         scored = {lc.target_id for lc in curves}
         paths = load_or_fetch_tpfs(
             [t for t in targets if t.target_id in scored],
-            args.benchmark_tpfs,
+            tpfs,
             author=args.author,
             exposure_time=args.exposure_time,
             n_workers=args.download_workers,
         )
         print(f"  {len(paths)} have a target pixel file; running the centroid test ...")
-        centroids = centroid_tests(dataset, paths, n_jobs=args.n_jobs)
+        tests = centroid_tests(dataset, paths, n_jobs=args.n_jobs)
+        dataset = with_centroid_features(dataset, tests)
+    return TOIHosts(
+        sectors=sectors,
+        targets=targets,
+        selection=selection,
+        dataset=dataset,
+        n_without_curve=len(targets) - len(curves),
+        centroids=tests,
+    )
+
+
+def run_toi_benchmark(
+    args: argparse.Namespace,
+    config: Config,
+    trained: TrainedModel,
+    exclude_tics: set[int],
+    *,
+    importance_repeats: int = 0,
+) -> dict[str, Any]:
+    """Score ``trained`` on labelled TOI hosts; write the report, JSON and figure.
+
+    ``exclude_tics`` are the stars it was trained on, which are not scored.
+    """
+    from transitml.benchmark import benchmark, format_benchmark_report, plot_benchmark
+    from transitml.data.toi import read_toi_comments
+
+    spec = args.benchmark_sectors or str(args.sector if args.sector is not None else 14)
+    hosts = load_toi_hosts(
+        args,
+        config,
+        spec,
+        cache=args.benchmark_cache,
+        tpfs=args.benchmark_tpfs,
+        # A model with pixel features cannot be scored without them.
+        centroids=args.benchmark_centroids or tuple(trained.feature_names) != FEATURE_NAMES,
+        exclude_tics=exclude_tics,
+    )
     comments = (
         read_toi_comments(args.benchmark_comments)
         if Path(args.benchmark_comments).exists()
         else None
     )
     result = benchmark(
-        dataset,
-        targets,
+        hosts.dataset,
+        hosts.targets,
         trained,
-        sectors=sectors,
-        selection=selection,
-        n_without_curve=len(targets) - len(curves),
+        sectors=hosts.sectors,
+        selection=hosts.selection,
+        n_without_curve=hosts.n_without_curve,
         top_k=config.evaluation.top_k,
         seed=config.seed,
-        centroids=centroids,
+        centroids=hosts.centroids,
         comments=comments,
+        importance_repeats=importance_repeats,
     )
     report = format_benchmark_report(result)
     print()
@@ -436,6 +573,115 @@ def run_toi_benchmark(
     (results_dir / "toi_benchmark.json").write_text(json.dumps(payload, indent=2, default=str))
     (results_dir / "toi_benchmark.txt").write_text(report + "\n")
     return payload
+
+
+def benchmark_headline(bench: dict[str, Any]) -> dict[str, Any]:
+    """The few TOI benchmark numbers ``metrics.json`` repeats."""
+    return {k: bench[k] for k in ("n_stars", "n_planets", "chance_average_precision")} | {
+        "average_precision": bench["model"]["average_precision"],
+        "planet_recall": bench["operating_point"]["planet_recall"],
+        "false_positive_rejection": bench["operating_point"]["false_positive_rejection"],
+    }
+
+
+def run_toi_training(args: argparse.Namespace, config: Config, started: float) -> int:
+    """Train on the TOI hosts of ``--train-sectors``, then benchmark on ``--benchmark-sectors``."""
+    from transitml.benchmark import CENTROID_FEATURE_NAMES
+    from transitml.toi_training import (
+        format_training_report,
+        scored_calibration,
+        summarise_training,
+        train_on_hosts,
+    )
+
+    hosts = load_toi_hosts(
+        args,
+        config,
+        args.train_sectors,
+        cache=args.train_cache,
+        tpfs=args.train_tpfs,
+        centroids=args.pixel_features,
+    )
+    names = FEATURE_NAMES + (CENTROID_FEATURE_NAMES if args.pixel_features else ())
+    evaluation = config.evaluation
+    trained, split = train_on_hosts(
+        hosts.dataset,
+        feature_names=names,
+        n_folds=config.dataset.n_cv_folds,
+        seed=config.seed,
+        target_precision=evaluation.target_precision,
+        precision_lcb_z=evaluation.precision_lcb_z,
+    )
+    print(f"trained; operating threshold {trained.threshold:.4f} ({trained.threshold_rule})")
+    summary = summarise_training(
+        hosts.dataset,
+        split,
+        trained,
+        sectors=hosts.sectors,
+        selection=hosts.selection,
+        n_without_curve=hosts.n_without_curve,
+        n_folds=config.dataset.n_cv_folds,
+        target_precision=evaluation.target_precision,
+        precision_lcb_z=evaluation.precision_lcb_z,
+        seed=config.seed,
+        centroids=hosts.centroids,
+    )
+    print()
+    print(format_training_report(summary))
+
+    results_dir = Path(args.results_dir)
+    results_dir.mkdir(parents=True, exist_ok=True)
+    source = f"TOI hosts, sectors {args.train_sectors}"
+    payload: dict[str, Any] = {
+        "config": config.to_dict(),
+        "runtime_seconds": None,
+        "dataset": {
+            "source": source,
+            "n_curves": len(hosts.dataset),
+            "n_planets": int(hosts.dataset.y.sum()),
+            "positive_rate": hosts.dataset.positive_rate,
+            "n_train": len(split.y_train),
+            "n_test": 0,
+        },
+        "training": summary.to_dict(),
+        "environment": {
+            "python": platform.python_version(),
+            "numpy": np.__version__,
+        },
+    }
+    bench = run_toi_benchmark(
+        args,
+        config,
+        trained,
+        {t.tic for t in hosts.targets},
+        importance_repeats=10,
+    )
+    calibration = scored_calibration(bench["stars"], trained.calibration)
+    payload["toi_benchmark"] = benchmark_headline(bench) | {"calibration": calibration}
+    report = format_training_report(summary, bench, calibration)
+
+    hosts.dataset.save(results_dir / "dataset.npz")
+    written = [results_dir / "metrics.json", results_dir / "report.txt"]
+    if args.pixel_features:
+        # vet computes the light-curve features only, so this model is not saved.
+        payload["model"] = None
+    else:
+        model_path = save_model(
+            trained,
+            split,
+            results_dir / "model.joblib",
+            preprocess=config.preprocess,
+            bls=config.bls,
+            provenance={"seed": config.seed, "source": source},
+        )
+        payload["model"] = _display_path(model_path)
+        written.append(model_path)
+    payload["runtime_seconds"] = round(time.time() - started, 1)
+    (results_dir / "metrics.json").write_text(json.dumps(payload, indent=2, default=str))
+    (results_dir / "report.txt").write_text(report + "\n")
+    print(f"\nwrote {', '.join(_display_path(p) for p in written)}")
+    print(f"total runtime: {payload['runtime_seconds']}s")
+    return 0
 
 
 def pick_example_indices(dataset: Dataset, config: Config) -> list[int]:
@@ -475,6 +721,9 @@ def main(argv: list[str] | None = None) -> int:
         f"search {config.bls.search}"
         + (f" ({bls_engine()} BLS engine)" if config.bls.search == "bls" else "")
     )
+    if args.train_sectors is not None:
+        return run_toi_training(args, config, started)
+
     what = "real light curves (injected)" if args.inject_into else "light curves"
     source = build_source(config, args)
     print(
@@ -553,14 +802,8 @@ def main(argv: list[str] | None = None) -> int:
         print("figures: " + ", ".join(_display_path(p) for p in paths))
 
     if args.benchmark_tois is not None:
-        bench = run_toi_benchmark(args, config, trained, source)
-        payload["toi_benchmark"] = {
-            k: bench[k] for k in ("n_stars", "n_planets", "chance_average_precision")
-        } | {
-            "average_precision": bench["model"]["average_precision"],
-            "planet_recall": bench["operating_point"]["planet_recall"],
-            "false_positive_rejection": bench["operating_point"]["false_positive_rejection"],
-        }
+        bench = run_toi_benchmark(args, config, trained, training_tic_ids(source))
+        payload["toi_benchmark"] = benchmark_headline(bench)
 
     dataset.save(results_dir / "dataset.npz")
     model_path = save_model(

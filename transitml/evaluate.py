@@ -21,6 +21,7 @@ numbers are always reported together.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -521,12 +522,14 @@ def _permutation_importance(
     *,
     seed: int,
     n_repeats: int = 10,
+    feature_names: Sequence[str] = FEATURE_NAMES,
 ) -> list[dict[str, Any]]:
     """Permutation importance measured in average precision, not accuracy.
 
     Scored with ``average_precision`` for the same reason the headline metric
     is: permuting a feature barely moves accuracy at a 4% positive rate, so an
     accuracy-scored importance plot would be flat and meaningless.
+    ``feature_names`` names the columns of ``X_test``.
     """
     result = permutation_importance(
         trained.estimator,
@@ -544,7 +547,7 @@ def _permutation_importance(
             "std": float(sd),
         }
         for name, mean, sd in zip(
-            FEATURE_NAMES, result.importances_mean, result.importances_std
+            feature_names, result.importances_mean, result.importances_std
         )
     ]
     rows.sort(key=lambda r: -r["importance"])
