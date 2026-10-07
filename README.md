@@ -1572,7 +1572,7 @@ whose noise is easier than reality. Injection-recovery into genuine TESS
 photometry, which keeps the systematics real while keeping the labels
 trustworthy, has now been run on sector 14 (see "Injection-recovery on real
 photometry" above), and it confirmed the prediction: average precision fell
-from 0.80 to 0.44 on the held-out split (about 0.56 in cross-validation over
+from 0.75 to 0.46 on the held-out split (about 0.55 in cross-validation over
 all 2800 curves), with most false positives coming from real stars that had
 nothing injected.
 
