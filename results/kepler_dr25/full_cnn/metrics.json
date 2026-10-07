@@ -1,0 +1,39 @@
+{
+  "n_train": 20242,
+  "n_valid": 3547,
+  "n_test": 10243,
+  "test_class_counts": {
+    "PC": 1217,
+    "AFP": 918,
+    "NTP": 8108
+  },
+  "cnn_average_precision": 0.9103533749514562,
+  "gbm_average_precision": 0.893097948485173,
+  "mes_average_precision": 0.1935368933305151,
+  "chance_average_precision": 0.11881284779849653,
+  "ensemble_average_precision": 0.9098647413765869,
+  "difference_ci": [
+    0.009069500088355251,
+    0.02627973494561148
+  ],
+  "difference_share_positive": 0.9995,
+  "cnn_threshold": 0.4513487418492635,
+  "cnn_pass_rates": {
+    "PC": 0.8726376335250616,
+    "AFP": 0.17647058823529413,
+    "NTP": 0.007646768623581648
+  },
+  "gbm_pass_rates": {
+    "PC": 0.8964667214461791,
+    "AFP": 0.24618736383442266,
+    "NTP": 0.014060187469166256
+  },
+  "cnn_catalogue_precision": 0.8262845776730641,
+  "gbm_catalogue_precision": 0.762892625745794,
+  "epochs": [
+    12,
+    30,
+    16
+  ],
+  "target_recall": 0.9
+}

@@ -1,0 +1,23 @@
+Kepler DR25: CNN on the views against gradient boosting
+========================================================
+
+Split by star: 20,242 train, 3,547 validation, 10,243 test (1217 PC, 918 AFP, 8108 NTP).
+Networks averaged: 3 (epochs run: 12, 30, 16).
+
+Average precision on the test stars
+  CNN                         0.910
+  gradient boosting on views  0.893
+  rank average of the two     0.910
+  Kepler MES alone            0.194
+  chance (PC fraction)        0.119
+  CNN minus boosting: 95% paired bootstrap +0.009 to +0.026; CNN ahead in 100% of resamples
+
+At thresholds frozen for 90% PC recall (CNN on validation stars,
+boosting on out-of-fold training scores)
+                       CNN   boosting
+  PC kept             87.3%      89.6%
+  AFP rejected        82.4%      75.4%
+  NTP rejected        99.2%      98.6%
+  precision at the catalogue's class mix: CNN 82.6%, boosting 76.3%
+
+Labels are the DR25 Robovetter's calls; see transitml.data.kepler.
