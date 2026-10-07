@@ -217,12 +217,12 @@ component at a time:
 
 | Added to the control | Held-out AP | Planets whose period the search finds (of 96) | Variable stars peaking at the dump period |
 | --- | --- | --- | --- |
-| nothing (control) | 0.747 [0.669, 0.833] | 86 | 3% |
-| scattered light | 0.748 | 87 | |
-| pointing jitter | 0.764 | 82 | |
-| momentum dumps | 0.742 | 78 | 53% |
+| nothing (control) | 0.742 [0.666, 0.824] | 86 | 3% |
+| scattered light | 0.727 | 87 | |
+| pointing jitter | 0.756 | 82 | |
+| momentum dumps | 0.762 | 78 | 53% |
 | focus settling | 0.775 | 85 | |
-| all four | 0.669 [0.590, 0.759] | 76 | 44% |
+| all four | 0.680 [0.603, 0.765] | 76 | 44% |
 
 Full report in
 [`results/systematics/report.txt`](results/systematics/report.txt).
@@ -235,15 +235,15 @@ dump interval or a multiple of it (from 3%), and 365 of the 382 with a
 significant peak (SDE above 7) are there. The planets lose too: the search
 finds 76 of 96 periods instead of 86, 13 planets have their peak at the
 dump period instead of 3, and above a transit SNR of 12 it finds 75 of 80
-instead of 79. The classifier loses 0.08 in average precision, mostly on
-the false-positive side: at the threshold it flags 63 stars with 24 planets
-among them, against 56 with 26. Of the 322 held-out variable stars whose
-peak sits at the dump period it flags 17 (5%), against 14 of the other 431
-(3%). Their dips are real but shallow (a median depth of 1.9 times the
+instead of 79. The classifier loses 0.06 in average precision, mostly on
+the false-positive side: at the threshold it flags 62 stars with 24 planets
+among them, against 54 with 26. Of the 317 held-out variable stars whose
+peak sits at the dump period it flags 17 (5%), against 16 of the other 436
+(4%). Their dips are real but shallow (a median depth of 1.9 times the
 scatter, against 5.6 for planets), so the model still calls most of them
-noise. No component costs the classifier much on its own (the dumps alone
-0.005, and jitter and focus even help, by margins well inside the
-interval); the 0.08 comes from all four together.
+noise. No component costs the classifier much on its own (scattered light
+alone 0.015, and jitter, the dumps and focus even help, by margins well
+inside the interval); the 0.06 comes from all four together.
 
 **It is not learning the sector's dump period.** A model trained on one
 sector could simply learn that the dump interval means "not a planet". To
@@ -253,27 +253,27 @@ own paired control, and the sector 42 model was also scored on them:
 
 | Sector (dump interval) | AP, control → with systematics | Search finds (of 96) | Variable stars at the dump period | Sector 42 model, with systematics |
 | --- | --- | --- | --- | --- |
-| 42 (2.58 d) | 0.747 → 0.669 | 86 → 76 | 3% → 44% | |
-| 43 (4.33 d) | 0.678 → 0.622 | 75 → 71 | 4% → 32% | 0.626 |
-| 44 (2.52 d) | 0.695 → 0.556 | 82 → 66 | 2% → 43% | 0.526 |
+| 42 (2.58 d) | 0.742 → 0.680 | 86 → 76 | 3% → 44% | |
+| 43 (4.33 d) | 0.662 → 0.611 | 75 → 71 | 4% → 32% | 0.617 |
+| 44 (2.52 d) | 0.677 → 0.552 | 82 → 66 | 2% → 43% | 0.530 |
 
 Scored on a sector it never saw, the sector 42 model does about as well as
-that sector's own model: 0.626 against 0.622 on sector 43, and 0.526
-against 0.556 on 44. Without systematics it edges out both sectors' own
-models (0.646 against 0.630, and 0.766 against 0.731), so sector 44 may
-carry a small transfer cost, but it is well inside one run's interval.
-What does vary is how much a sector suffers: the paired drop is 0.08 in
-sector 42, 0.06 in 43 and 0.14 in 44, where the search also loses the most
-planets. Sectors 42 and 44 dump at nearly the same interval, so the
+that sector's own model: 0.617 against 0.611 on sector 43, and 0.530 against
+0.552 on 44. That is no worse than the same model transfers without
+systematics, where there is no dump period to learn: 0.570 against 0.632 on
+sector 43, and 0.754 against 0.747 on 44. Both gaps are inside one run's
+interval. What does vary is how much a sector suffers: the paired drop is
+0.06 in sector 42, 0.05 in 43 and 0.13 in 44, where the search also loses
+the most planets. Sectors 42 and 44 dump at nearly the same interval, so the
 interval alone does not set the cost.
 
 Every comparison here is paired for a reason. The control differs from the
-same seed's run without `--systematics` by 0.04 to 0.06 in average
-precision, only because the shared gap and the dropped dump cadences change
-every star's sampling, and the default model scores 0.63 to 0.80 across
-these three seeds, a spread wider than the bootstrap interval of a single
-run. One synthetic sector is not the number to expect, with or without
-systematics.
+same seed's run without `--systematics` by up to 0.07 in average precision
+(0.00, 0.03 and 0.07 on seeds 42, 43 and 44), only because the shared gap
+and the dropped dump cadences change every star's sampling, and the default
+model scores 0.63 to 0.75 across these three seeds, a spread about as wide
+as the bootstrap interval of a single run. One synthetic sector is not the
+number to expect, with or without systematics.
 
 ### Designed for real data to drop in
 
@@ -1534,8 +1534,8 @@ noise is generated as a power law with random phases, star by star, so it has
 no features the detrending can fail on in a correlated way across targets, and
 a robust spline handles it more easily than it would handle real data.
 `--systematics` adds the shared, spacecraft-driven part (see "Structured
-systematics in the synthetic sector" above); on paired controls it costs 0.06
-to 0.14 in average precision and 4 to 16 of the 96 planets' periods in the
+systematics in the synthetic sector" above); on paired controls it costs 0.05
+to 0.13 in average precision and 4 to 16 of the 96 planets' periods in the
 search, mostly through momentum dumps. Its shapes are simple parametric forms
 rather than measurements from real sectors, and it still leaves out
 contamination from neighbours. I would expect average precision to drop
