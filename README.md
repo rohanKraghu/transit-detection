@@ -20,7 +20,7 @@ whose coverage is measured by injection.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python run_pipeline.py            # ~3 min on 4 cores
-pytest                            # ~5 min, 472 tests
+pytest                            # ~5 min, 484 tests
 ```
 
 It writes `results/metrics.json`, `results/report.txt`, the trained model
@@ -2061,7 +2061,7 @@ transit-detection/
 │   ├── dashboard.py            # the batch's self-contained HTML dashboard
 │   ├── real_check.py           # known planets' fits and a real sector, against the archives
 │   └── plots.py                # figures (matplotlib Agg, no display)
-├── tests/                      # 476 tests, ~5 min
+├── tests/                      # 484 tests, ~5 min
 │   ├── test_generator.py       # imbalance is exact; injected physics is consistent
 │   ├── test_preprocess.py      # depth preservation; why the median was rejected
 │   ├── test_features.py        # recovery vs SNR; the vetting statistics fire
@@ -2160,6 +2160,21 @@ on. Sizes are rough: S is a few hours, M a day or two, L longer.
   TCEs the CNN scores AP 0.910 against 0.893 for boosting (paired bootstrap
   gain +0.009 to +0.026), so it pulls ahead at full scale after tying on
   9,075.
+- Training on real TOI labels (`run_pipeline.py --train-sectors`,
+  `--pixel-features`): trained on the TOI hosts of sectors 1 to 13, the same
+  classifier scores AP 0.74 on sectors 14 to 26, against 0.61 for the
+  synthetic-trained model, and 0.78 with the centroid test as three more
+  features (0.72, 0.77 and 0.81 the other way round).
+- A real-data check (`python -m transitml.real_check`): fifteen known TESS
+  planets fitted from SPOC curves, with 95% of radius ratio, impact
+  parameter, duration and density within three combined sigma of the
+  published values, and all of sector 14 (1,452 stars) through the batch,
+  where planet hosts score AP 0.47 against stars that are not TOIs (chance
+  0.12).
+- Kepler DR25 models on the TESS TOI benchmark (`python -m
+  transitml.tess_transfer`): unchanged, they score AP 0.767 (boosting) and
+  0.761 (CNN) on 723 TOI hosts, against 0.615 for the TESS synthetic-trained
+  model; the Kepler threshold does not transfer.
 
 **Next**
 
@@ -2168,7 +2183,7 @@ to next:
 
 | Item | Why | Size |
 | --- | --- | --- |
-| Training on real TOI labels, in progress | Both TOI models are trained on synthetic or injected signals; training on the dispositions of sectors 1 to 13 and testing on 14 to 26 checks what real labels add | M |
+| More TOI labels, in progress | Real labels lift the TOI benchmark from AP 0.61 to 0.74; a learning curve on the 845 training hosts, then the labelled hosts of later sectors, shows whether more of them keep helping | M |
 
 ## References
 
