@@ -20,7 +20,7 @@ whose coverage is measured by injection.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python run_pipeline.py            # ~3 min on 4 cores
-pytest                            # ~5 min, 472 tests
+pytest                            # ~5 min, 484 tests
 ```
 
 It writes `results/metrics.json`, `results/report.txt`, the trained model
@@ -1127,6 +1127,40 @@ keeps learning as labels are added. Full numbers are in
 
 ![Full-catalogue precision-recall](figures/kepler_dr25/04_full_catalogue_precision_recall.png)
 
+### Kepler labels on TESS: the transfer test
+
+Do 34,000 Kepler labels help vet TESS? `python -m transitml.tess_transfer`
+scores the TOI benchmark's hosts (the same sectors 14 to 26 stars as above)
+with the DR25 models, unchanged. Each host's one TESS-SPOC sector (30-minute
+cadence, close to Kepler's 29.4) is folded into the same five views at every
+TOI's catalogue ephemeris, and the star scores as its highest TOI, so which
+TOI is scored never depends on the label.
+
+| Average precision on 723 TOI hosts (366 planet hosts, chance 0.506) | All hosts | TESS search found the period (540) |
+| --- | --- | --- |
+| Kepler DR25 boosting on views | **0.767** | **0.805** |
+| Kepler DR25 CNN | 0.761 | 0.798 |
+| TESS model trained on synthetic curves | 0.615 | 0.645 |
+| TESS model trained on injections into real curves | 0.611 | 0.637 |
+
+The Kepler-trained models are well ahead: CNN minus the better TESS model is
++0.096 to +0.194 in a paired bootstrap. Two things make the comparison less
+than equal, and the second column addresses the first. The DR25 models are
+handed each TOI's catalogue period and epoch, while the TESS models find their
+own with BLS and miss it on a quarter of the hosts; on the 540 hosts where the
+search did find it, the gap is the same size. And the catalogue ephemeris
+comes from every sector TESS has, so it is sharper than one sector would give.
+
+What does not transfer is the threshold: the CNN's Kepler operating point
+(90% recall on Kepler PCs) keeps 68% of TESS planet hosts and rejects 69% of
+TESS false positives, so it would need to be set again on TESS labels. Full
+numbers are in `results/tess_transfer/report.txt`.
+
+This suggests that real labels, even from another telescope and graded by a robot, teach more
+about what a false positive looks like than the synthetic and injected signals
+the TESS models were trained on. 23 of the 746 hosts have no TOI with a
+complete ephemeris and are left out.
+
 ### Transit Least Squares, and BLS on a GPU
 
 **TLS as the search.** `python run_pipeline.py --search tls` replaces BLS
@@ -2048,6 +2082,7 @@ transit-detection/
 │   ├── views.py                # global, local, odd, even, secondary folded views
 │   ├── kepler_dr25.py          # python -m transitml.kepler_dr25: training set + model
 │   ├── cnn.py                  # python -m transitml.cnn: CNN on the views (needs torch)
+│   ├── tess_transfer.py        # the DR25 models scored on the TESS TOI benchmark
 │   ├── vet.py                  # python -m transitml.vet: one star, one page
 │   ├── single_benchmark.py     # injection-recovery for lone transits
 │   ├── fit.py                  # batman transit model sampled with emcee
@@ -2056,7 +2091,7 @@ transit-detection/
 │   ├── dashboard.py            # the batch's self-contained HTML dashboard
 │   ├── real_check.py           # known planets' fits and a real sector, against the archives
 │   └── plots.py                # figures (matplotlib Agg, no display)
-├── tests/                      # 478 tests, ~5 min
+├── tests/                      # 482 tests, ~5 min
 │   ├── test_generator.py       # imbalance is exact; injected physics is consistent
 │   ├── test_preprocess.py      # depth preservation; why the median was rejected
 │   ├── test_features.py        # recovery vs SNR; the vetting statistics fire
@@ -2080,6 +2115,7 @@ transit-detection/
 │   ├── test_vet.py             # vet end to end on CSV, npz and a stubbed TIC
 │   ├── test_kepler_dr25.py     # DR25 labels, FITS, views and CLI, offline
 │   ├── test_cnn.py             # the CNN on synthetic views (skips without torch)
+│   ├── test_tess_transfer.py   # the transfer scorer, offline
 │   ├── test_tpf.py             # pixel files: npz round trip, stubbed download
 │   ├── test_synthetic_tpf.py   # synthetic pixels put the light where it belongs
 │   ├── test_centroid.py        # blends flagged, on-target not; bad input survives
@@ -2154,6 +2190,21 @@ on. Sizes are rough: S is a few hours, M a day or two, L longer.
   TCEs the CNN scores AP 0.910 against 0.893 for boosting (paired bootstrap
   gain +0.009 to +0.026), so it pulls ahead at full scale after tying on
   9,075.
+- Training on real TOI labels (`run_pipeline.py --train-sectors`,
+  `--pixel-features`): trained on the TOI hosts of sectors 1 to 13, the same
+  classifier scores AP 0.74 on sectors 14 to 26, against 0.61 for the
+  synthetic-trained model, and 0.78 with the centroid test as three more
+  features (0.72, 0.77 and 0.81 the other way round).
+- A real-data check (`python -m transitml.real_check`): fifteen known TESS
+  planets fitted from SPOC curves, with 95% of radius ratio, impact
+  parameter, duration and density within three combined sigma of the
+  published values, and all of sector 14 (1,452 stars) through the batch,
+  where planet hosts score AP 0.47 against stars that are not TOIs (chance
+  0.12).
+- Kepler DR25 models on the TESS TOI benchmark (`python -m
+  transitml.tess_transfer`): unchanged, they score AP 0.767 (boosting) and
+  0.761 (CNN) on 723 TOI hosts, against 0.615 for the TESS synthetic-trained
+  model; the Kepler threshold does not transfer.
 
 **Next**
 
@@ -2162,7 +2213,7 @@ to next:
 
 | Item | Why | Size |
 | --- | --- | --- |
-| Training on real TOI labels, in progress | Both TOI models are trained on synthetic or injected signals; training on the dispositions of sectors 1 to 13 and testing on 14 to 26 checks what real labels add | M |
+| More TOI labels, in progress | Real labels lift the TOI benchmark from AP 0.61 to 0.74; a learning curve on the 845 training hosts, then the labelled hosts of later sectors, shows whether more of them keep helping | M |
 
 ## References
 
