@@ -14,3 +14,11 @@ top 10: planet 6, open TOI 3, false positive 1
 top 50: planet 23, open TOI 14, false positive 10, not a TOI 3
 top 100: planet 42, open TOI 29, false positive 23, not a TOI 6
 top 192: planet 53, not a TOI 53, open TOI 49, false positive 37
+
+centroid test (the batch's --centroids stars)
+planet            53 tested,   50 placed,    1 off target
+false positive    37 tested,   32 placed,   11 off target
+open TOI          49 tested,   45 placed,    0 off target
+not a TOI         53 tested,   28 placed,    5 off target
+average precision, planet vs false positive: 0.653 without the veto, 0.692 with it (chance 0.586)
+average precision, planet vs not a TOI: 0.473 without the veto, 0.473 with it (chance 0.115)

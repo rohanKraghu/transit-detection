@@ -289,6 +289,44 @@ def sector_ranking(
         }
     for n in (10, 50, 100, int(flagged.sum())):
         out["top"][str(n)] = dict(Counter(groups_arr[order[:n]].tolist()))
+    if stars and "centroid_status" in stars[0]:
+        out["centroid"] = _centroid_summary(stars, groups_arr, scores)
+    return out
+
+
+def _centroid_summary(
+    stars: Sequence[Mapping[str, str]], groups: np.ndarray, scores: np.ndarray
+) -> dict[str, Any]:
+    """The batch's centroid test by group, and the ranking with it as a veto.
+
+    The veto puts every star whose dip is off target below every star that
+    is not, keeping the score's order within each, as the TOI benchmark does.
+    """
+    tested = np.array([bool(s.get("centroid_status")) for s in stars])
+    placed = np.array([s.get("centroid_status") == "ok" for s in stars])
+    offset = np.array([s.get("centroid_offset") in ("True", "true", "1") for s in stars])
+    out: dict[str, Any] = {"groups": {}, "average_precision": {}}
+    for group in GROUPS:
+        mask = groups == group
+        if (mask & tested).any():
+            out["groups"][group] = {
+                "tested": int((mask & tested).sum()),
+                "placed": int((mask & placed).sum()),
+                "off_target": int((mask & offset).sum()),
+            }
+    vetoed = np.where(offset, scores - 1.0, scores)
+    for name, positive, negative in (
+        ("planet vs false positive", "planet", "false positive"),
+        ("planet vs not a TOI", "planet", "not a TOI"),
+    ):
+        keep = np.isin(groups, (positive, negative))
+        y = (groups[keep] == positive).astype(int)
+        if 0 < y.sum() < y.size:
+            out["average_precision"][name] = {
+                "without": fast_average_precision(y, scores[keep]),
+                "with_veto": fast_average_precision(y, vetoed[keep]),
+                "chance": float(y.mean()),
+            }
     return out
 
 
@@ -314,6 +352,19 @@ def sector_text(summary: Mapping[str, Any]) -> str:
     for n, counts in summary["top"].items():
         parts = ", ".join(f"{k} {v}" for k, v in sorted(counts.items(), key=lambda kv: -kv[1]))
         lines.append(f"top {n}: {parts}")
+    centroid = summary.get("centroid")
+    if centroid:
+        lines.append("\ncentroid test (the batch's --centroids stars)")
+        for group, g in centroid["groups"].items():
+            lines.append(
+                f"{group:<15} {g['tested']:>4} tested, {g['placed']:>4} placed, "
+                f"{g['off_target']:>4} off target"
+            )
+        for name, ap in centroid["average_precision"].items():
+            lines.append(
+                f"average precision, {name}: {ap['without']:.3f} without the veto, "
+                f"{ap['with_veto']:.3f} with it (chance {ap['chance']:.3f})"
+            )
     return "\n".join(lines) + "\n"
 
 

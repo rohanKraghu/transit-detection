@@ -74,5 +74,41 @@
       "false positive": 37,
       "not a TOI": 53
     }
+  },
+  "centroid": {
+    "groups": {
+      "planet": {
+        "tested": 53,
+        "placed": 50,
+        "off_target": 1
+      },
+      "false positive": {
+        "tested": 37,
+        "placed": 32,
+        "off_target": 11
+      },
+      "open TOI": {
+        "tested": 49,
+        "placed": 45,
+        "off_target": 0
+      },
+      "not a TOI": {
+        "tested": 53,
+        "placed": 28,
+        "off_target": 5
+      }
+    },
+    "average_precision": {
+      "planet vs false positive": {
+        "without": 0.6529879575704323,
+        "with_veto": 0.6924739856652309,
+        "chance": 0.5855855855855856
+      },
+      "planet vs not a TOI": {
+        "without": 0.4730701543389647,
+        "with_veto": 0.4732854463576331,
+        "chance": 0.11535048802129548
+      }
+    }
   }
 }
