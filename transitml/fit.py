@@ -53,7 +53,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from .physics import G_CGS, SECONDS_PER_DAY
+from .physics import G_CGS, RHO_SUN_CGS, SECONDS_PER_DAY, density_from_gravity
 from .preprocess import FlattenedLightCurve
 
 #: The sampled parameters, in order.
@@ -735,12 +735,41 @@ def fit_transit(
     )
 
 
+#: Fractional uncertainty of a catalogue density worked out from log g (or
+#: mass) and radius.  Against the published densities of 15 TESS hosts, the
+#: TIC's log g and radius came within 30% (HD 1397, a subgiant, 28% low).
+CATALOGUE_DENSITY_FRACTION = 0.3
+
+
 def stellar_priors_from_meta(meta: dict[str, Any]) -> tuple[tuple[float, float] | None, float | None]:
-    """Stellar density (with a 10% uncertainty) and radius when the light curve carries them."""
-    rho = meta.get("rho_star_cgs")
-    radius = meta.get("r_star_rsun")
-    density = (float(rho), 0.1 * float(rho)) if rho is not None and np.isfinite(rho) else None
-    return density, (float(radius) if radius is not None and np.isfinite(radius) else None)
+    """Stellar density (mean, sd) and radius when the light curve carries them.
+
+    A density the curve records as ``rho_star_cgs`` (synthetic and injected
+    curves) gets a 10% uncertainty.  A survey curve carries the catalogue's
+    log g (or mass) and radius instead, as a MAST download does from the TIC;
+    their density gets :data:`CATALOGUE_DENSITY_FRACTION`.  A temperature
+    alone gives no density here: a main-sequence guess would flag every
+    evolved star.
+    """
+
+    def number(key: str) -> float | None:
+        try:
+            value = float(meta.get(key))  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return None
+        return value if np.isfinite(value) and value > 0 else None
+
+    rho, radius = number("rho_star_cgs"), number("r_star_rsun")
+    density = (rho, 0.1 * rho) if rho is not None else None
+    if density is None and radius is not None:
+        mass, logg = number("m_star_msun"), number("logg_cgs")
+        if mass is not None:
+            rho = RHO_SUN_CGS * mass / radius**3
+        elif logg is not None:
+            rho = density_from_gravity(logg, radius)
+        if rho is not None:
+            density = (rho, CATALOGUE_DENSITY_FRACTION * rho)
+    return density, radius
 
 
 def default_exposure_minutes(meta: dict[str, Any]) -> float | None:

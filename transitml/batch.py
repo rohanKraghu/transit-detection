@@ -769,7 +769,7 @@ def fetch_sector_curves(
     ``cache_dir/chunk_NNNN.npz`` and the targets tried are added to
     ``cache_dir/tried.json``, so a download that dies part way resumes at the
     next untried target, and targets MAST has nothing for are not asked for
-    again.  Keyed by target and sector, so one cache can serve several sectors.
+    again.  A target whose download raised is asked for again next run.  Keyed by target and sector, so one cache can serve several sectors.
     """
     from .data.mast import MASTLightCurveSource
 
@@ -807,10 +807,17 @@ def fetch_sector_curves(
             n_chunks += 1
         for lc in fetched.values():
             have[key(lc.target_id)] = lc
-        tried |= {key(t) for t in batch}
+        # A target whose download raised (a timeout, a corrupt file) is not
+        # remembered as tried, so the next run asks for it again.
+        failed = set(getattr(source, "failed", ()))
+        tried |= {key(t) for t in batch if t not in failed}
         tried_path.write_text(json.dumps(sorted(tried)))
         if progress:
-            print(f"  downloaded {start + len(batch)}/{len(missing)} targets ({len(fetched)} found)")
+            note = f", {len(failed)} failed and left for the next run" if failed else ""
+            print(
+                f"  downloaded {start + len(batch)}/{len(missing)} targets "
+                f"({len(fetched)} found{note})"
+            )
     return [have[key(t)] for t in dict.fromkeys(targets) if key(t) in have]
 
 
