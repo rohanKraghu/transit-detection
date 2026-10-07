@@ -1,0 +1,445 @@
+{
+  "target_id": "TIC 410153553",
+  "score": 0.05359953037340953,
+  "threshold": 0.20511228952516056,
+  "above_threshold": false,
+  "verdict": "not a candidate (score below the operating threshold)",
+  "probability": 0.05182705210743792,
+  "planet_rate": 0.03974358974358974,
+  "probability_note": "calibrated on out-of-fold training scores; the chance this star hosts a planet if a fraction planet_rate of stars like it do",
+  "primary_signal": {
+    "period": 0.9257283896578006,
+    "epoch": 1325.735138379482,
+    "duration": 0.04,
+    "depth": 0.0022913253331908754,
+    "depth_snr": 18.280448660572876,
+    "sde": 13.141871313219026
+  },
+  "candidates": [
+    {
+      "rank": 1,
+      "period": 0.9257283896578006,
+      "epoch": 1325.735138379482,
+      "duration": 0.04,
+      "depth": 0.0022913253331908754,
+      "depth_snr": 18.280448660572876,
+      "sde": 13.141871313219026,
+      "n_cadences_searched": 18270
+    },
+    {
+      "rank": 2,
+      "period": 0.9257283896578006,
+      "epoch": 1326.199138379482,
+      "duration": 0.04,
+      "depth": 0.0020890118140513276,
+      "depth_snr": 17.079868694763483,
+      "sde": 13.770094768402886,
+      "n_cadences_searched": 15943
+    }
+  ],
+  "features": {
+    "bls_sde": 13.141871313219026,
+    "bls_depth_snr": 18.280448660572876,
+    "bls_depth_over_scatter": 0.6969566611211802,
+    "delta_loglike": 9123.859442972316,
+    "power_contrast": 1.278416299723787,
+    "log_depth": -2.6399132432512125,
+    "bls_duration": 0.04,
+    "duration_over_period": 0.04320921821873279,
+    "log_duration_ratio": -0.2701349380448655,
+    "log_period": -0.03351641739562892,
+    "n_transits": 28.0,
+    "min_points_per_transit": 5.0,
+    "odd_even_sigma": 1.3880462386702495,
+    "secondary_sigma": 14.053417451043824,
+    "half_period_depth_ratio": 0.9701990407600268,
+    "flat_bottom_fraction": 0.7499999999999999,
+    "harmonic_delta_loglike": -166.18039280331504,
+    "harmonic_amp_over_depth": 0.020969239591077188,
+    "red_noise_beta": 1.3486552546966346,
+    "log_scatter": -2.4831190164408854,
+    "max_single_event_fraction": 0.07848497645488127,
+    "flux_skew": -0.0194765142011345,
+    "clipped_fraction": 0.00027359781121751026
+  },
+  "log_odds": -2.9066246657005417,
+  "base_log_odds": -4.485722263330984,
+  "top_reasons": [
+    {
+      "feature": "log_depth",
+      "value": -2.6399132432512125,
+      "training_median": -3.2218388274471046,
+      "shap": 0.6642077084511979,
+      "odds_factor": 1.9429505280724322
+    },
+    {
+      "feature": "secondary_sigma",
+      "value": 14.053417451043824,
+      "training_median": 0.0,
+      "shap": -0.4907769115047606,
+      "odds_factor": 0.6121506225308209
+    },
+    {
+      "feature": "max_single_event_fraction",
+      "value": 0.07848497645488127,
+      "training_median": 0.3795534590813556,
+      "shap": 0.4860316362268322,
+      "odds_factor": 1.6258514312024057
+    },
+    {
+      "feature": "delta_loglike",
+      "value": 9123.859442972316,
+      "training_median": 1015.7261025438174,
+      "shap": -0.44737815425287647,
+      "odds_factor": 0.6393021077478158
+    },
+    {
+      "feature": "harmonic_delta_loglike",
+      "value": -166.18039280331504,
+      "training_median": -27.757128684695886,
+      "shap": 0.33120761331630805,
+      "odds_factor": 1.3926488947518894
+    }
+  ],
+  "contributions": [
+    {
+      "feature": "log_depth",
+      "value": -2.6399132432512125,
+      "training_median": -3.2218388274471046,
+      "shap": 0.6642077084511979,
+      "odds_factor": 1.9429505280724322
+    },
+    {
+      "feature": "secondary_sigma",
+      "value": 14.053417451043824,
+      "training_median": 0.0,
+      "shap": -0.4907769115047606,
+      "odds_factor": 0.6121506225308209
+    },
+    {
+      "feature": "max_single_event_fraction",
+      "value": 0.07848497645488127,
+      "training_median": 0.3795534590813556,
+      "shap": 0.4860316362268322,
+      "odds_factor": 1.6258514312024057
+    },
+    {
+      "feature": "delta_loglike",
+      "value": 9123.859442972316,
+      "training_median": 1015.7261025438174,
+      "shap": -0.44737815425287647,
+      "odds_factor": 0.6393021077478158
+    },
+    {
+      "feature": "harmonic_delta_loglike",
+      "value": -166.18039280331504,
+      "training_median": -27.757128684695886,
+      "shap": 0.33120761331630805,
+      "odds_factor": 1.3926488947518894
+    },
+    {
+      "feature": "log_period",
+      "value": -0.03351641739562892,
+      "training_median": 0.7523585972812794,
+      "shap": 0.29810770423435995,
+      "odds_factor": 1.3473068907224317
+    },
+    {
+      "feature": "flux_skew",
+      "value": -0.0194765142011345,
+      "training_median": -0.03799755350298734,
+      "shap": -0.23075612187776817,
+      "odds_factor": 0.7939330653321177
+    },
+    {
+      "feature": "bls_sde",
+      "value": 13.141871313219026,
+      "training_median": 3.5037168156549647,
+      "shap": 0.2186781655469495,
+      "odds_factor": 1.2444307115557458
+    },
+    {
+      "feature": "bls_depth_snr",
+      "value": 18.280448660572876,
+      "training_median": 8.645244498969332,
+      "shap": -0.17538619679207082,
+      "odds_factor": 0.8391328877542988
+    },
+    {
+      "feature": "duration_over_period",
+      "value": 0.04320921821873279,
+      "training_median": 0.023463880386692074,
+      "shap": 0.16525578557357637,
+      "odds_factor": 1.1796948290416622
+    },
+    {
+      "feature": "power_contrast",
+      "value": 1.278416299723787,
+      "training_median": 1.057325837780274,
+      "shap": 0.15568546665301464,
+      "odds_factor": 1.1684586260828105
+    },
+    {
+      "feature": "n_transits",
+      "value": 28.0,
+      "training_median": 5.0,
+      "shap": 0.13790177594450956,
+      "odds_factor": 1.1478627969976596
+    },
+    {
+      "feature": "red_noise_beta",
+      "value": 1.3486552546966346,
+      "training_median": 1.307213752418937,
+      "shap": 0.1252219452397739,
+      "odds_factor": 1.133399977883277
+    },
+    {
+      "feature": "log_duration_ratio",
+      "value": -0.2701349380448655,
+      "training_median": 0.029874003725954147,
+      "shap": 0.11122381622489926,
+      "odds_factor": 1.1176450259535442
+    },
+    {
+      "feature": "bls_depth_over_scatter",
+      "value": 0.6969566611211802,
+      "training_median": 1.28259301408926,
+      "shap": -0.1055478523642857,
+      "odds_factor": 0.8998314127559691
+    },
+    {
+      "feature": "half_period_depth_ratio",
+      "value": 0.9701990407600268,
+      "training_median": 0.4914085257188307,
+      "shap": 0.10249997055513264,
+      "odds_factor": 1.1079372692867382
+    },
+    {
+      "feature": "clipped_fraction",
+      "value": 0.00027359781121751026,
+      "training_median": 0.0,
+      "shap": 0.09937171844563655,
+      "odds_factor": 1.104476777654047
+    },
+    {
+      "feature": "harmonic_amp_over_depth",
+      "value": 0.020969239591077188,
+      "training_median": 0.017752813145093083,
+      "shap": 0.057890118754298295,
+      "odds_factor": 1.0595985593036759
+    },
+    {
+      "feature": "log_scatter",
+      "value": -2.4831190164408854,
+      "training_median": -3.363653005014345,
+      "shap": 0.054930857974047675,
+      "odds_factor": 1.056467565842296
+    },
+    {
+      "feature": "bls_duration",
+      "value": 0.04,
+      "training_median": 0.16,
+      "shap": 0.0520309305623479,
+      "odds_factor": 1.0534083245213317
+    },
+    {
+      "feature": "min_points_per_transit",
+      "value": 5.0,
+      "training_median": 5.0,
+      "shap": -0.01486491655912152,
+      "odds_factor": 0.9852450209018522
+    },
+    {
+      "feature": "odd_even_sigma",
+      "value": 1.3880462386702495,
+      "training_median": 0.6670887462954469,
+      "shap": -0.01172565334702163,
+      "odds_factor": 0.9883428242168028
+    },
+    {
+      "feature": "flat_bottom_fraction",
+      "value": 0.7499999999999999,
+      "training_median": 0.95,
+      "shap": -0.004711809374541393,
+      "odds_factor": 0.9952992737851715
+    }
+  ],
+  "contribution_method": "SHAP values (exact path-dependent TreeSHAP) in calibrated log-odds; base_log_odds plus the sum over every feature equals log_odds",
+  "n_cadences": 18270,
+  "baseline_days": 27.88022872474744,
+  "model": {
+    "threshold_rule": "max recall subject to Wilson 1-sigma lower bound on CV precision >= 0.50 (bound 0.500 at 81 candidates)",
+    "sklearn": "1.9.1",
+    "n_train": 1560,
+    "n_train_positive": 62,
+    "seed": 42,
+    "source": "SyntheticTESSSource"
+  },
+  "single_events": {
+    "note": "individual dips found without folding, for transits seen once or twice; an event inside a listed signal's transits is that signal, ramp-shaped dips are listed under ramps rather than as events, and none of this is scored",
+    "events": [],
+    "duos": [],
+    "ramps": []
+  },
+  "fit": {
+    "target_id": "TIC 410153553",
+    "model": "batman, circular orbit, quadratic limb darkening, integrated over 0.0-minute exposures, with a quadratic baseline under each transit, marginalised",
+    "parameters": {
+      "t0": {
+        "median": 1337.7617492958605,
+        "lower": 1337.761495375311,
+        "upper": 1337.7620310114091,
+        "lower95": 1337.7612612943421,
+        "upper95": 1337.7622831542621
+      },
+      "period": {
+        "median": 0.9258403762275578,
+        "lower": 0.9258158420526499,
+        "upper": 0.9258629422675423,
+        "lower95": 0.9257913957776158,
+        "upper95": 0.925886660487346
+      },
+      "k": {
+        "median": 0.06480631429982506,
+        "lower": 0.06240508718335061,
+        "upper": 0.06756128810708366,
+        "lower95": 0.06016113331771649,
+        "upper95": 0.07033517449986022
+      },
+      "b": {
+        "median": 0.3482194063972892,
+        "lower": 0.11560939675967788,
+        "upper": 0.6123132779996772,
+        "lower95": 0.020138901983517782,
+        "upper95": 0.7603046441652132
+      },
+      "rho_star": {
+        "median": 54.96624504046095,
+        "lower": 34.586630501941336,
+        "upper": 66.5148374978341,
+        "lower95": 20.777795883066005,
+        "upper95": 77.62263878366569
+      },
+      "log10_rho_star": {
+        "median": 1.7400960696215781,
+        "lower": 1.5389082540156773,
+        "upper": 1.8229185343079488,
+        "lower95": 1.3175994755314526,
+        "upper95": 1.8899884025073899
+      },
+      "a_over_rs": {
+        "median": 13.5552543121096,
+        "lower": 11.61590601297832,
+        "upper": 14.444933919699658,
+        "lower95": 9.801438189759711,
+        "upper95": 15.207897553891184
+      },
+      "inclination_deg": {
+        "median": 88.53764765942847,
+        "lower": 86.98723613117608,
+        "upper": 89.53948763587995,
+        "lower95": 85.57231946681324,
+        "upper95": 89.9207944594159
+      },
+      "t14_hours": {
+        "median": 0.5255823401035371,
+        "lower": 0.5065885228910447,
+        "upper": 0.5425563037568603,
+        "lower95": 0.48864832455913854,
+        "upper95": 0.5606510525340755
+      },
+      "t23_hours": {
+        "median": 0.4465802337288098,
+        "lower": 0.4207205630792703,
+        "upper": 0.4662880787876973,
+        "lower95": 0.3835116006848238,
+        "upper95": 0.48129811375435816
+      },
+      "u1": {
+        "median": 0.34801453455563125,
+        "lower": 0.1174367293733014,
+        "upper": 0.6565944707439333,
+        "lower95": 0.020362408118186577,
+        "upper95": 0.9696866745060453
+      },
+      "u2": {
+        "median": 0.144021569116852,
+        "lower": -0.14701119194323417,
+        "upper": 0.5108293449327377,
+        "lower95": -0.37850218272838115,
+        "upper95": 0.7799890645496732
+      },
+      "q1": {
+        "median": 0.30710306240321206,
+        "lower": 0.10516600635557583,
+        "upper": 0.641765501390143,
+        "lower95": 0.020544384573625677,
+        "upper95": 0.920675070012863
+      },
+      "q2": {
+        "median": 0.35025906273859575,
+        "lower": 0.1130677392817441,
+        "upper": 0.6939383100138702,
+        "lower95": 0.020188351014701955,
+        "upper95": 0.9389361553682216
+      },
+      "depth_ppm": {
+        "median": 4808.999959827697,
+        "lower": 4554.313755748529,
+        "upper": 5072.757501293595,
+        "lower95": 4320.958082059104,
+        "upper95": 5339.27624738435
+      },
+      "rp_earth": {
+        "median": 1.3333478142106618,
+        "lower": 1.283944126286641,
+        "upper": 1.3900296104801002,
+        "lower95": 1.2377762333234563,
+        "upper95": 1.4471005209096928
+      }
+    },
+    "map": {
+      "t0": 1337.7616365248437,
+      "period": 0.9258453784778116,
+      "k": 0.06339770097098066,
+      "b": 1.9136788080091778e-10,
+      "log10_t14": -1.6578089041625164,
+      "q1": 0.47940674334692035,
+      "q2": 0.15019319972401407
+    },
+    "noise": {
+      "n_points": 3890,
+      "n_in_transit": 765,
+      "n_transits": 28,
+      "sigma_ppm": 3333.3028254680466,
+      "beta": 1.1670322866044436,
+      "measured_from": "cadences outside the fitted windows"
+    },
+    "sampler": {
+      "n_walkers": 32,
+      "n_steps": 4000,
+      "n_burn": 1000,
+      "acceptance_fraction": 0.24705468749999998,
+      "autocorr_time_max": 41.335053737912446,
+      "n_effective": 2322.4839771273587,
+      "converged": true,
+      "seed": 0
+    },
+    "density_check": {
+      "stellar_density": 33.173110678343726,
+      "stellar_density_sd": 9.951933203503117,
+      "ratio": {
+        "median": 1.65695178765205,
+        "lower": 1.0426104092951523,
+        "upper": 2.005082916184183,
+        "lower95": 0.6263445139207369,
+        "upper95": 2.3399264403123876
+      },
+      "two_sided_tail": 0.36470833333333336,
+      "consistent": true,
+      "note": "fitted density against the star's; a transit that needs a very different density suggests an eclipsing binary, a blend or an eccentric orbit"
+    },
+    "warnings": [],
+    "interval_note": "median with the central 68% (lower, upper) and 95% (lower95, upper95) posterior intervals"
+  }
+}

@@ -62,3 +62,6 @@ results/kepler_dr25/training_set.npz
 # The larger DR25 sample and the fitted CNN weights are rebuilt by one run each.
 results/kepler_dr25/large/training_set.npz
 results/kepler_dr25/cnn/cnn_models.pt
+# Known-planet fits (python -m transitml.real_check planets): comparison.csv,
+# comparison.txt and each planet's vet JSON are committed, the figures are not.
+results/real_planets/reports/**/*.png
