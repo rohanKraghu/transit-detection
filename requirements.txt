@@ -12,6 +12,9 @@
 # Also optional: transitleastsquares (2.0 or later) for
 # `run_pipeline.py --search tls`, and CuPy for the GPU BLS engine
 # (`--bls-engine gpu`).  Neither is needed for the default run.
+#
+# Also not pinned: torch, which only transitml.cnn (the CNN on the Kepler DR25
+# views) needs.  pip install torch  (the CPU build is enough.)
 numpy==2.4.6
 scipy==1.17.1
 scikit-learn==1.9.1

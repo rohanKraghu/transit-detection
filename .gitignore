@@ -52,3 +52,6 @@ results/batch/**/curves/
 # data/kepler_dr25/dr25_tce_labels.csv lists every TCE, so one run rebuilds both.
 results/kepler_dr25/curves/
 results/kepler_dr25/training_set.npz
+# The larger DR25 sample and the fitted CNN weights are rebuilt by one run each.
+results/kepler_dr25/large/training_set.npz
+results/kepler_dr25/cnn/cnn_models.pt
