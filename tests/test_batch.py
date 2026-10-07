@@ -260,6 +260,63 @@ def test_mast_download_is_chunked_cached_and_resumable(monkeypatch, tmp_path):
     assert len(list(tmp_path.glob("chunk_*.npz"))) == 2
 
 
+def test_a_failed_download_is_retried_on_the_next_run(monkeypatch, tmp_path):
+    """A target whose download raised is not remembered as tried; one MAST lacks is."""
+    from transitml.data import mast
+
+    calls: list[list[str]] = []
+    lc, _ = clean_transit_curve(seed=1)
+    flaky = {"TIC 2"}
+
+    class FakeMAST:
+        def __init__(self, targets, **kwargs):
+            self.targets = [t for t, _ in targets]
+            self.failed: list[str] = []
+            calls.append(self.targets)
+
+        def __iter__(self):
+            for t in self.targets:
+                if t in flaky:
+                    self.failed.append(t)
+                elif t != "TIC 3":
+                    yield replace(lc, target_id=t, meta={"sector": 14})
+
+    monkeypatch.setattr(mast, "MASTLightCurveSource", FakeMAST)
+    targets = ["TIC 1", "TIC 2", "TIC 3"]
+    got = fetch_sector_curves(targets, 14, tmp_path, progress=False)
+    assert [c.target_id for c in got] == ["TIC 1"]
+    flaky.clear()
+    got = fetch_sector_curves(targets, 14, tmp_path, progress=False)
+    assert calls[1] == ["TIC 2"]  # TIC 3 had nothing and stays tried
+    assert [c.target_id for c in got] == ["TIC 1", "TIC 2"]
+
+
+def test_the_mast_source_records_failures_apart_from_empty_searches(monkeypatch):
+    """Offline: a search that raises is a failure; one that finds nothing is not."""
+    from transitml.data.mast import MASTLightCurveSource
+
+    class FakeSearch(list):
+        def download_all(self, **_):
+            raise TimeoutError("read timed out")
+
+    class FakeLK:
+        @staticmethod
+        def search_lightcurve(target, **_):
+            if target == "TIC 9":
+                raise ConnectionError("reset")
+            return FakeSearch([1]) if target == "TIC 8" else FakeSearch()
+
+    monkeypatch.setattr(MASTLightCurveSource, "_import_lightkurve", staticmethod(lambda: FakeLK))
+    source = MASTLightCurveSource([("TIC 7", None), ("TIC 8", None), ("TIC 9", None)])
+    with pytest.warns(UserWarning) as caught:
+        assert list(source) == []
+    assert [str(w.message) for w in caught] == [
+        "TIC 8: skipped (TimeoutError: read timed out)",
+        "TIC 9: skipped (ConnectionError: reset)",
+    ]
+    assert source.failed == ["TIC 8", "TIC 9"]
+
+
 def test_cli_runs_a_synthetic_sector(model_path, tmp_path, capsys):
     status = batch.main([
         "--synthetic", "12", "--seed", "3", "--model", str(model_path), "--out-dir", str(tmp_path),

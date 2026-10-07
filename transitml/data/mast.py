@@ -104,30 +104,60 @@ class MASTLightCurveSource(LightCurveSource):
         self.sector = sector
         self.n_workers = n_workers
         self.stitch_sectors = stitch_sectors
+        #: Targets whose search or download raised (a timeout, a corrupt
+        #: file), filled in as the source is iterated.  Unlike a target MAST
+        #: simply has nothing for, these are worth asking for again.
+        self.failed: list[str] = []
 
     def __len__(self) -> int:
         return len(self.targets)
 
     def __iter__(self) -> Iterator[LightCurve]:
         self._import_lightkurve()  # fail fast, before spawning workers
+        self.failed = []
+        ids, labels = zip(*self.targets) if self.targets else ((), ())
         if self.n_workers <= 1:
-            for target_id, label in self.targets:
-                yield from self._fetch(target_id, label)
+            results: Iterator[tuple[list[LightCurve], str | None]] = map(
+                self._fetch_or_error, ids, labels
+            )
+            yield from self._report(ids, results)
             return
         # Each target is an independent search + download that spends most of
         # its time waiting on MAST, so parallel workers give a near-linear
         # speed-up.  They are processes, not threads: lightkurve's FITS
         # reading is not thread-safe.  ``map`` keeps the output in target order.
-        ids, labels = zip(*self.targets) if self.targets else ((), ())
         with ProcessPoolExecutor(max_workers=self.n_workers) as pool:
-            for curves in pool.map(self._fetch, ids, labels, chunksize=4):
-                yield from curves
+            yield from self._report(
+                ids, pool.map(self._fetch_or_error, ids, labels, chunksize=4)
+            )
+
+    def _report(self, ids, results) -> Iterator[LightCurve]:
+        """Yield each target's curves; warn about and record the ones that failed.
+
+        One bad target (a timeout, a corrupt file) is skipped rather than
+        aborting a download of thousands.  The warning is raised here, in the
+        parent process, so it names the target even when a worker fetched it.
+        """
+        for target_id, (curves, error) in zip(ids, results):
+            if error is not None:
+                self.failed.append(target_id)
+                warnings.warn(f"{target_id}: skipped ({error})", stacklevel=3)
+            yield from curves
 
     def _fetch(self, target_id: str, label: int | None) -> list[LightCurve]:
-        """Every matching curve for one target; ``[]`` if MAST has none or fails.
+        """Every matching curve for one target; ``[]`` if MAST has none or fails."""
+        curves, error = self._fetch_or_error(target_id, label)
+        if error is not None:
+            warnings.warn(f"{target_id}: skipped ({error})", stacklevel=2)
+        return curves
 
-        One bad target (a timeout, a corrupt file) is skipped with a warning
-        rather than aborting a download of thousands.
+    def _fetch_or_error(
+        self, target_id: str, label: int | None
+    ) -> tuple[list[LightCurve], str | None]:
+        """Every matching curve for one target, and why it failed if it did.
+
+        ``([], None)`` means MAST has nothing for the target; ``([], error)``
+        means the search or download raised.
         """
         lk = self._import_lightkurve()
         try:
@@ -139,15 +169,14 @@ class MASTLightCurveSource(LightCurveSource):
                 sector=self.sector,
             )
             if len(search) == 0:
-                return []
+                return [], None
             collection = search.download_all(quality_bitmask=self.quality_bitmask)
             curves = [self._to_lightcurve(lc, target_id, label) for lc in collection]
             if self.stitch_sectors and len(curves) > 1:
-                return [stitch_light_curves(curves)]
-            return curves
+                return [stitch_light_curves(curves)], None
+            return curves, None
         except Exception as exc:  # noqa: BLE001 - network and FITS errors vary
-            warnings.warn(f"{target_id}: skipped ({type(exc).__name__}: {exc})", stacklevel=2)
-            return []
+            return [], f"{type(exc).__name__}: {exc}"
 
     def _to_lightcurve(self, lc, target_id: str, label: int | None) -> LightCurve:
         """Convert one ``lightkurve.LightCurve`` into our container.
