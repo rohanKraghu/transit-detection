@@ -38,7 +38,12 @@ from numpy.typing import NDArray
 
 from .centroid import CentroidConfig, centroid_test
 from .config import BLSConfig, PreprocessConfig
-from .data.base import LightCurve, LightCurveSource, bin_light_curve
+from .data.base import (
+    LightCurve,
+    LightCurveSource,
+    bin_light_curve,
+    stitch_light_curves,
+)
 from .data.injection import load_curves, save_curves, tic_number
 from .data.loader import Dataset, build_dataset
 from .data.tic import load_or_fetch_stars, read_star_table, with_star
@@ -158,13 +163,24 @@ def load_or_fetch_curves(
     tried |= set(have)
     missing = [t for t in targets if key(t.target_id, t.sector) not in tried]
     if missing:
-        fetched = fetch_benchmark_curves(
-            missing, author=author, exposure_time=exposure_time, n_workers=n_workers
-        )
-        # Keyed by the sector asked for: that is the sector MAST was searched in.
-        sector_of = {t.target_id: t.sector for t in missing}
-        for lc in fetched:
-            have[key(lc.target_id, sector_of[lc.target_id])] = lc
+        # A star asked for in several sectors is fetched in rounds, one sector
+        # of it per round, since a fetch returns one curve per star.
+        rounds: list[list[BenchmarkTarget]] = []
+        asked: Counter[str] = Counter()
+        for target in missing:
+            n = asked[target.target_id]
+            if n == len(rounds):
+                rounds.append([])
+            rounds[n].append(target)
+            asked[target.target_id] += 1
+        for batch in rounds:
+            fetched = fetch_benchmark_curves(
+                batch, author=author, exposure_time=exposure_time, n_workers=n_workers
+            )
+            # Keyed by the sector asked for: that is the sector MAST was searched in.
+            sector_of = {t.target_id: t.sector for t in batch}
+            for lc in fetched:
+                have[key(lc.target_id, sector_of[lc.target_id])] = lc
         tried |= {key(t.target_id, t.sector) for t in missing}
         cache.parent.mkdir(parents=True, exist_ok=True)
         save_curves(list(have.values()), cache)
@@ -176,6 +192,52 @@ def load_or_fetch_curves(
         if lc is not None:
             out.append(replace(lc, label=target.label))
     return out
+
+
+def load_or_fetch_stitched(
+    targets: Sequence[BenchmarkTarget],
+    sectors: Sequence[int],
+    cache: str | Path,
+    *,
+    author: str = "TESS-SPOC",
+    exposure_time: int | None = 1800,
+    n_workers: int = 8,
+) -> tuple[list[BenchmarkTarget], list[LightCurve]]:
+    """Every one of ``sectors`` each target was observed in, joined into one curve.
+
+    Each star's curves come from ``cache`` or MAST as :func:`load_or_fetch_curves`
+    gets them, one per sector, and are joined with
+    :func:`~transitml.data.base.stitch_light_curves` (each sector normalised to
+    its own median, the gaps between sectors kept).  Returns the targets, each
+    moved to the first of its sectors that had a curve (whose pixel file the
+    centroid test then reads; unchanged when none had one), and one curve per
+    star that had any, both in the order given.
+    """
+    order = {s: i for i, s in enumerate(sectors)}
+    per_sector = [
+        replace(target, sector=s)
+        for target in targets
+        for s in sorted(
+            {s for toi in target.tois for s in toi.sectors if s in order}, key=order.get
+        )
+    ]
+    found: dict[str, list[LightCurve]] = {}
+    for lc in load_or_fetch_curves(
+        per_sector, cache, author=author, exposure_time=exposure_time, n_workers=n_workers
+    ):
+        found.setdefault(lc.target_id, []).append(lc)
+    moved: list[BenchmarkTarget] = []
+    curves: list[LightCurve] = []
+    for target in targets:
+        star = found.get(target.target_id)
+        if not star:
+            moved.append(target)
+            continue
+        first = min(star, key=lambda lc: order[int(lc.meta["sector"])])
+        moved.append(replace(target, sector=int(first.meta["sector"])))
+        joined = stitch_light_curves(star) if len(star) > 1 else star[0]
+        curves.append(replace(joined, meta={**joined.meta, "sector": first.meta["sector"]}))
+    return moved, curves
 
 
 def fetch_with_fallback(
@@ -542,6 +604,9 @@ class BenchmarkResult:
     #: Average precision lost when each feature is shuffled across these stars,
     #: when asked for (``importance_repeats``).
     feature_importance: list[dict[str, Any]] = field(default_factory=list)
+    #: Each star searched on every one of ``sectors`` it was observed in,
+    #: joined, rather than on the first.
+    stitched: bool = False
 
     @property
     def positive_rate(self) -> float:
@@ -550,6 +615,7 @@ class BenchmarkResult:
     def to_dict(self) -> dict[str, Any]:
         return {
             "sectors": self.sectors,
+            "stitched": self.stitched,
             "selection": self.selection,
             "n_without_curve": self.n_without_curve,
             "n_stars": self.n_stars,
@@ -637,6 +703,7 @@ def benchmark(
     centroid_config: CentroidConfig | None = None,
     comments: Mapping[str, str] | None = None,
     importance_repeats: int = 0,
+    stitched: bool = False,
 ) -> BenchmarkResult:
     """Score the TOI hosts in ``dataset`` with ``trained`` at its frozen threshold.
 
@@ -773,6 +840,7 @@ def benchmark(
     accepted.sort(key=lambda r: -r["model_score"])
 
     return BenchmarkResult(
+        stitched=stitched,
         sectors=list(sectors),
         selection=dict(selection),
         n_without_curve=int(n_without_curve),
@@ -847,7 +915,8 @@ def format_benchmark_report(result: BenchmarkResult) -> str:
     add("=" * 72)
     add("REAL-LABEL BENCHMARK: TOI HOSTS WITH FOLLOW-UP DISPOSITIONS")
     add("=" * 72)
-    add(f"sectors: {', '.join(str(s) for s in result.sectors)} (one sector per star)")
+    per_star = "every sector of each star, joined" if result.stitched else "one sector per star"
+    add(f"sectors: {', '.join(str(s) for s in result.sectors)} ({per_star})")
     add(
         f"stars in TOI table: {sel.get('stars_in_table', 0)}   unlabelled (PC/APC): "
         f"{sel.get('unlabelled', 0)}   not observed in these sectors: "
@@ -928,7 +997,8 @@ def format_benchmark_report(result: BenchmarkResult) -> str:
         f"   when it was not: {_fmt(given['period_not_recovered'], '.2f')}"
     )
     add("")
-    add("  recall by catalogue TOI SNR (all sectors; one sector is scored here)")
+    scored = "these sectors are" if result.stitched else "one sector is"
+    add(f"  recall by catalogue TOI SNR (all sectors; {scored} scored here)")
     add(f"  {'SNR bin':<16s}{'n':>5s}{'recall':>9s}{'search':>9s}")
     for row in result.recall_by_toi_snr:
         hi = "inf" if row["snr_high"] > 1e8 else f"{row['snr_high']:.0f}"
