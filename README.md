@@ -2710,6 +2710,13 @@ on. Sizes are rough: S is a few hours, M a day or two, L longer.
   pipeline's features with the centroid test. About half of that lead
   comes from the catalogue ephemeris the views are given: where BLS found
   the period it is +0.027 and +0.016, with intervals crossing zero.
+- Views at the pipeline's own BLS period (`python -m transitml.bls_views`):
+  folded at the ephemeris the pipeline's own search found, the views score
+  about what the pipeline's features do through the same booster (with the
+  centroid test, 0.818 against 0.810 on sectors 14 to 26 and 0.831 against
+  0.846 on 1 to 13, every interval crossing zero) and add nothing to them.
+  So the catalogue ephemeris was most of the views' lead, and the
+  pipeline's features with the centroid test remain the vetter.
 
 **Next**
 
@@ -2718,7 +2725,7 @@ to next:
 
 | Item | Why | Size |
 | --- | --- | --- |
-| Views at the pipeline's own BLS period, in progress | The view model is handed each TOI's catalogue period, and about half its lead over the pipeline's model goes on the hosts where BLS found it; folding at the pipeline's own ephemeris tests it as a vetter of a new star's candidates | M |
+| Every sector of each star, searched together, in progress | One sector's search finds the catalogued period for 73% of planets, and a planet whose period it misses is kept only 4 to 7% of the time. Most misses are long-period TOIs or stars observed in several sectors, which one sector cannot show | M |
 
 ## References
 
