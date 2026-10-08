@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field, replace
 from itertools import repeat
@@ -42,7 +42,12 @@ from .data.base import LightCurve, LightCurveSource, bin_light_curve
 from .data.injection import load_curves, save_curves, tic_number
 from .data.loader import Dataset, build_dataset
 from .data.tic import load_or_fetch_stars, read_star_table, with_star
-from .data.toi import FALSE_POSITIVE_REASONS, BenchmarkTarget, false_positive_reason
+from .data.toi import (
+    FALSE_POSITIVE_REASONS,
+    BenchmarkTarget,
+    false_positive_reason,
+    later_target,
+)
 from .data.tpf import bin_target_pixels, download_tpfs, load_tpf, save_tpf
 from .evaluate import (
     N_BOOTSTRAP,
@@ -171,6 +176,33 @@ def load_or_fetch_curves(
         if lc is not None:
             out.append(replace(lc, label=target.label))
     return out
+
+
+def fetch_with_fallback(
+    targets: Sequence[BenchmarkTarget],
+    sectors: Sequence[int],
+    fetch: Callable[[list[BenchmarkTarget]], list[LightCurve]],
+) -> tuple[list[BenchmarkTarget], list[LightCurve]]:
+    """Curves for ``targets``, each from the first of its ``sectors`` that has one.
+
+    A target ``fetch`` finds no curve for is asked for again in the next of
+    ``sectors`` it was observed in (:func:`~transitml.data.toi.later_target`),
+    until one is found or its sectors run out.  This is for a training set,
+    which loses nothing by taking a star from another of its sectors; a
+    benchmark star keeps its first.  Returns the targets as last asked for (a
+    moved one carries its new sector) and the curves found, both in the order
+    given.
+    """
+    curves = fetch(list(targets))
+    found = {lc.target_id: lc for lc in curves}
+    current = {t.target_id: t for t in targets}
+    missing = [t for t in targets if t.target_id not in found]
+    while missing := [m for t in missing if (m := later_target(t, sectors)) is not None]:
+        current.update((t.target_id, t) for t in missing)
+        found.update((lc.target_id, lc) for lc in fetch(missing))
+        missing = [t for t in missing if t.target_id not in found]
+    last = [current[t.target_id] for t in targets]
+    return last, [found[t.target_id] for t in last if t.target_id in found]
 
 
 def with_tic_stars(curves: Sequence[LightCurve], path: str | Path) -> list[LightCurve]:

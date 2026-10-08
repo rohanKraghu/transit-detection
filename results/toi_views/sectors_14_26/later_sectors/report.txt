@@ -1,0 +1,58 @@
+TOI hosts as folded views, with depth and the centroid test
+========================================================================
+
+Trained on 1330 labelled TOIs on 1271 stars of sectors 14-102 (762 planet TOIs; 148 stars taken from a later sector than their first).
+Scored on 824 TOI hosts of sectors 1-13 (450 CP/KP hosts, 374 FP/FA-only hosts; 914 TOIs folded), no star shared with training.
+Centroid test at the catalogue ephemeris placed the dip for 77% of training TOIs and 83% of scored ones.
+Each view model is the mean of 5 boosting fits (seeds 0 to 4); a star scores as its highest TOI.
+
+Average precision, all stars (chance 0.546)
+  views + depth and scatter + centroid test                  0.880
+  views + depth and scatter + centroid test (one year)       0.864
+  views + depth and scatter                                  0.862
+  views                                                      0.859
+  pipeline features + centroid test                          0.847
+  views + depth and scatter (one year)                       0.839
+  views (one year)                                           0.839
+  pipeline features                                          0.819
+
+Paired bootstrap, difference in AP (95% interval)
+  views + depth and scatter minus views
+      +0.004  (-0.002 to +0.009)
+  views + depth and scatter + centroid test minus views + depth and scatter
+      +0.017  (+0.004 to +0.032)
+  views minus pipeline features
+      +0.040  (+0.011 to +0.067)
+  views + depth and scatter minus pipeline features
+      +0.044  (+0.015 to +0.071)
+  views + depth and scatter + centroid test minus pipeline features
+      +0.061  (+0.031 to +0.090)
+  views minus pipeline features + centroid test
+      +0.012  (-0.017 to +0.039)
+  views + depth and scatter minus pipeline features + centroid test
+      +0.016  (-0.013 to +0.043)
+  views + depth and scatter + centroid test minus pipeline features + centroid test
+      +0.033  (+0.006 to +0.061)
+  views minus views (one year)
+      +0.020  (+0.006 to +0.034)
+  views + depth and scatter minus views + depth and scatter (one year)
+      +0.023  (+0.009 to +0.038)
+  views + depth and scatter + centroid test minus views + depth and scatter + centroid test (one year)
+      +0.016  (-0.001 to +0.032)
+
+Stars where the TESS search found the TOI period (652, 378 planets, chance 0.580)
+  views + depth and scatter + centroid test                  0.901
+  pipeline features + centroid test                          0.886
+  views + depth and scatter + centroid test (one year)       0.884
+  views + depth and scatter                                  0.882
+  views                                                      0.880
+  pipeline features                                          0.857
+  views (one year)                                           0.853
+  views + depth and scatter (one year)                       0.853
+
+views + depth and scatter + centroid test at probability 0.50:
+  planet hosts kept      89.1%
+  FP/FA hosts rejected   62.3%
+
+The view models are given each TOI's catalogue ephemeris; the pipeline's
+models find their own period with BLS.  See transitml.toi_views.

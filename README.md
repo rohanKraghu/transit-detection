@@ -20,7 +20,7 @@ whose coverage is measured by injection.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python run_pipeline.py            # ~3 min on 4 cores
-pytest                            # ~5 min, 499 tests
+pytest                            # ~5 min, 506 tests
 ```
 
 It writes `results/metrics.json`, `results/report.txt`, the trained model
@@ -1307,13 +1307,131 @@ What the paired bootstraps say:
   against 0.791), so the views themselves carry information the summary
   features drop.
 * The fine-tuned CNN and the pixel-feature model are level (+0.001, -0.040 to
-  +0.050). The views use no pixel data, so the two could still be combined.
+  +0.050). The views use no pixel data, so the two could still be combined,
+  as the next section does for boosting.
 
 At a calibrated probability of 0.5, the fine-tuned CNN keeps 74.9% of planet
 hosts and rejects 70.0% of false positives. The caveat from training on TOI
 dispositions applies here too. The labels carry the follow-up programme's
 selection, so these models rank TOIs that look like the resolved ones. Full
 numbers are in `results/tess_finetune/report.txt`.
+
+### Views, the centroid test and every label together
+
+Three results above suggest one model. Boosting on folded views beat
+boosting on the pipeline's features when both learned from the same TOI
+labels (the fine-tuning test), the centroid test lifted the pipeline's model
+by 0.04 to 0.05 as three more features, and the labelled hosts of later
+sectors lifted it again ("Training on TOI dispositions" and "More labels,
+from later sectors"). `python -m transitml.toi_views` asks whether the three
+add up. It folds every labelled TOI on a training star into the five views at
+the TOI's catalogue ephemeris, as the fine-tuning test does, and trains the
+same boosting model on three sets of inputs, each adding to the last:
+
+* **Views**: the views with log period and duration, the "TESS TOIs only"
+  model of the fine-tuning test.
+* **+ depth and scatter**: the depth the views were divided by and the
+  out-of-transit scatter, both of which the views' common scale takes out.
+* **+ centroid test**: the dip's offset from the target in sigma and in
+  pixels, and the difference-image SNR, the three features of
+  `--pixel-features`, but run at the catalogue ephemeris on the same target
+  pixel files.
+
+Stars are chosen as `run_pipeline.py --train-sectors` chooses them: a star
+observed in any benchmark sector is never trained on, a training star with no
+light curve in its first sector is taken from its next, and a benchmark star
+scores as its highest TOI. The pipeline's models are the ones from "More
+labels, from later sectors", rescored on the hosts the views can fold (723 of
+746 in sectors 14 to 26 and 824 of 845 in 1 to 13, the rest having no TOI
+with a complete ephemeris).
+
+| Average precision | 14 to 26, one year | 14 to 26, all labels | 1 to 13, one year | 1 to 13, all labels |
+| --- | --- | --- | --- | --- |
+| Pipeline features | 0.753 | 0.765 | 0.769 | 0.819 |
+| Pipeline features + centroid test | 0.798 | 0.805 | 0.813 | 0.847 |
+| Views | 0.827 | 0.835 | 0.839 | 0.859 |
+| Views + depth and scatter | **0.842** | 0.843 | 0.839 | 0.862 |
+| Views + depth and scatter + centroid test | 0.838 | **0.855** | **0.864** | **0.880** |
+
+Chance is 0.506 on the 723 hosts of sectors 14 to 26 and 0.546 on the 824 of
+1 to 13. "One year" trains on the other year's TOI hosts (the view models on
+904 TOIs on 835 stars, and on 789 on 743 the other way round); "all labels"
+adds the hosts of sectors 27 to 102 (1442 TOIs on 1361 stars, and 1330 on
+1271). What the paired bootstraps say (95% intervals):
+
+* **Views beat the pipeline's features in every column**: by +0.074 (+0.033
+  to +0.116) and +0.070 (+0.030 to +0.109) with one year of labels, and by
+  +0.071 (+0.034 to +0.111) and +0.040 (+0.011 to +0.067) with all of them.
+  Trained on one year, the views already score above the pipeline's features
+  trained on everything (0.827 against 0.765, and 0.839 against 0.819).
+* **With everything in, the views stay ahead of the pipeline's best model.**
+  Views, depth and the centroid test against the pipeline's features with the
+  centroid test, with one year of labels and then all of them: +0.040 (+0.007
+  to +0.077) and +0.049 (+0.014 to +0.087) on 14 to 26, +0.051 (+0.021 to
+  +0.082) and +0.033 (+0.006 to +0.061) on 1 to 13.
+* **The centroid test adds less to the views than to the pipeline's
+  features.** On top of views, depth and scatter it adds +0.025 (+0.005 to
+  +0.046) and +0.017 (+0.004 to +0.032) on 1 to 13, +0.012 (-0.005 to
+  +0.029) on 14 to 26 with all labels, and nothing there with one year
+  (-0.004, -0.023 to +0.016), against 0.03 to 0.045 on the pipeline's
+  features. That suggests the views already carry part of what it catches.
+* **Depth and scatter add little**: +0.015 (+0.008 to +0.022) on 14 to 26
+  with one year, and +0.007, +0.000 and +0.004 in the other columns.
+* **More labels still help the full model, by about 0.02**: +0.017 (+0.002
+  to +0.033) on 14 to 26 and +0.016 (-0.001 to +0.032) on 1 to 13. On 1 to
+  13 the pipeline's features gained more from the same hosts (+0.050, and
+  +0.034 with the centroid test), from a lower start.
+
+**Part of the lead is the catalogue ephemeris.** The view models are handed
+each TOI's period and epoch from the catalogue, which draws on every sector
+TESS has observed, while the pipeline's models search one sector with BLS and
+miss the period on a fifth to a quarter of the hosts. On the hosts where the
+search found it (540 of 723 and 652 of 824), the full model trained on all
+labels leads the pipeline's model with the centroid test by about half as
+much, and no longer clear of zero: +0.027 (-0.009 to +0.064) on 14 to 26 and
++0.016 (-0.009 to +0.043) on 1 to 13 (0.865 against 0.839, and 0.901 against
+0.886). On light curves alone the views keep a clear lead there on 14 to 26
+(+0.062 and +0.064, both intervals above zero) but not on 1 to 13 (+0.035
+and +0.023, both crossing zero). So the views carry information the
+pipeline's features drop, but about half the lead over the pipeline's best
+model goes when the stars BLS missed are left out, and a vetter of a new
+star's own BLS candidates would gain less than the table says.
+
+At a calibrated probability of 0.5, the full model trained on all labels
+keeps 90.2% of planet hosts and rejects 60.2% of false-positive hosts on 14
+to 26 (89.1% and 62.3% on 1 to 13); trained on one year, 84.7% and 63.3%
+(85.8% and 67.6%). As in "More labels, from later sectors", the threshold
+follows the training set's planet rate, which the later sectors raise (from
+57% to 60% of TOIs, and from 52% to 57%).
+
+Each view model is the mean of five boosting fits with different
+early-stopping splits (seeds 0 to 4). A single fit's average precision moved
+by about 0.007 with its seed on these stars, as much as some of the
+differences above, and the mean was adopted after seeing that; it averages
+the seeds rather than choosing one, the same way for every input set, and
+the input sets were fixed before any test sector was scored. The views alone
+score 0.827 here against 0.812 in the fine-tuning test: the 12 training stars
+taken from their next sector account for 0.010 of that and the five-fit mean
+for 0.005. The centroid test placed the dip for 77 to 84% of training TOIs
+and 76 to 83% of scored ones; for the rest (no pixel file, or a dip too faint
+to place in the difference image) its features are missing, and boosting
+learns where to send them.
+
+To reproduce, after the runs above (each takes three to five minutes on 4
+cores and reads the light curves and pixel files those runs cached):
+
+```bash
+python -m transitml.toi_views                          # trained on 1-13, scored on 14-26
+python -m transitml.toi_views --train-sectors 1-13,27-102 \
+    --compare features results/toi_trained/later_sectors/toi_benchmark.json \
+    --compare features_pixels results/toi_trained/later_sectors/pixels/toi_benchmark.json \
+    --compare-run one_year results/toi_views --results-dir results/toi_views/later_sectors
+```
+
+`--train-sectors 14-26 --test-sectors 1-13` (then `14-102`), with the models
+in `results/toi_trained/sectors_14_26` to compare and `--results-dir
+results/toi_views/sectors_14_26`, gives the other direction. Full numbers are
+in `results/toi_views/`.
 
 ### Transit Least Squares, and BLS on a GPU
 
@@ -2168,6 +2286,10 @@ Three further gaps:
   target for one sector of pixels. A model trained on TOI dispositions with
   the centroid test as three more features reaches 0.79 there, and 0.80 with
   the labels of later sectors too (see "Training on TOI dispositions").
+  Boosting on each TOI's folded views with the same test reaches 0.855 on
+  the hosts it can fold, against 0.805 for that model there, though about
+  half of that gap comes from the catalogue ephemeris the views are given
+  (see "Views, the centroid test and every label together").
 - **Labels.** Ground truth is known by construction here. On real data it has to
   come from a catalogue that inherits the selection function of the pipelines
   being benchmarked against, or from injection-recovery, which only measures
@@ -2238,6 +2360,7 @@ transit-detection/
 │   ├── cnn.py                  # python -m transitml.cnn: CNN on the views (needs torch)
 │   ├── tess_transfer.py        # the DR25 models scored on the TESS TOI benchmark
 │   ├── tess_finetune.py        # the DR25 models fine-tuned on TOI labels, sectors 1-13 to 14-26
+│   ├── toi_views.py            # views, depth and the centroid test on every labelled TOI
 │   ├── vet.py                  # python -m transitml.vet: one star, one page
 │   ├── single_benchmark.py     # injection-recovery for lone transits
 │   ├── fit.py                  # batman transit model sampled with emcee
@@ -2246,7 +2369,7 @@ transit-detection/
 │   ├── dashboard.py            # the batch's self-contained HTML dashboard
 │   ├── real_check.py           # known planets' fits and a real sector, against the archives
 │   └── plots.py                # figures (matplotlib Agg, no display)
-├── tests/                      # 499 tests, ~5 min
+├── tests/                      # 506 tests, ~5 min
 │   ├── test_generator.py       # imbalance is exact; injected physics is consistent
 │   ├── test_preprocess.py      # depth preservation; why the median was rejected
 │   ├── test_features.py        # recovery vs SNR; the vetting statistics fire
@@ -2273,6 +2396,7 @@ transit-detection/
 │   ├── test_cnn.py             # the CNN on synthetic views (skips without torch)
 │   ├── test_tess_transfer.py   # the transfer scorer, offline
 │   ├── test_tess_finetune.py   # fine-tuning and its comparison, offline
+│   ├── test_toi_views.py       # view inputs, pixels at the catalogue ephemeris, comparison
 │   ├── test_tpf.py             # pixel files: npz round trip, stubbed download
 │   ├── test_synthetic_tpf.py   # synthetic pixels put the light where it belongs
 │   ├── test_centroid.py        # blends flagged, on-target not; bad input survives
