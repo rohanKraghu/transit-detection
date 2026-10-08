@@ -20,7 +20,7 @@ whose coverage is measured by injection.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python run_pipeline.py            # ~3 min on 4 cores
-pytest                            # ~5 min, 506 tests
+pytest                            # ~5 min, 512 tests
 ```
 
 It writes `results/metrics.json`, `results/report.txt`, the trained model
@@ -1395,7 +1395,8 @@ much, and no longer clear of zero: +0.027 (-0.009 to +0.064) on 14 to 26 and
 and +0.023, both crossing zero). So the views carry information the
 pipeline's features drop, but about half the lead over the pipeline's best
 model goes when the stars BLS missed are left out, and a vetter of a new
-star's own BLS candidates would gain less than the table says.
+star's own BLS candidates would gain less than the table says. The next
+section measures how much less.
 
 At a calibrated probability of 0.5, the full model trained on all labels
 keeps 90.2% of planet hosts and rejects 60.2% of false-positive hosts on 14
@@ -1432,6 +1433,93 @@ python -m transitml.toi_views --train-sectors 1-13,27-102 \
 in `results/toi_trained/sectors_14_26` to compare and `--results-dir
 results/toi_views/sectors_14_26`, gives the other direction. Full numbers are
 in `results/toi_views/`.
+
+### Views at the pipeline's own BLS period
+
+The views above are folded at each TOI's catalogue ephemeris, which a vetter
+of a new star does not have. `python -m transitml.bls_views` folds every TOI
+host instead at the ephemeris the pipeline's own search found on it, the BLS
+peak its 23 features and its centroid test are measured at, and asks the
+question again with the ephemeris the same for every input. Each host is
+searched exactly as `run_pipeline.py --train-sectors` searches it (a fresh
+search reproduces the pipeline's features for all 857 training hosts of the
+first run and its BLS period for all 746 benchmark hosts), makes one row
+labelled as the pipeline labels it, and is detrended for its views with only
+that signal's transits masked. Six input sets go to the same booster as above
+(the mean of five fits): the pipeline's 23 features, alone and with the
+centroid test, as controls for the booster; then the views, depth and
+scatter, and the centroid test, each adding to the last; and finally the
+views with everything the pipeline has.
+
+| Average precision | 14 to 26, one year | 14 to 26, all labels | 1 to 13, one year | 1 to 13, all labels |
+| --- | --- | --- | --- | --- |
+| The pipeline's model | 0.745 | 0.759 | 0.764 | 0.812 |
+| The pipeline's model + centroid test | 0.792 | 0.802 | 0.807 | 0.841 |
+| Pipeline features, this booster | 0.762 | 0.764 | 0.784 | 0.814 |
+| Pipeline features + centroid test, this booster | **0.806** | 0.810 | **0.830** | **0.846** |
+| Views | 0.780 | 0.796 | 0.780 | 0.796 |
+| Views + depth and scatter | 0.785 | 0.796 | 0.795 | 0.803 |
+| Views + depth and scatter + centroid test | 0.790 | 0.818 | 0.823 | 0.831 |
+| Views, depth, centroid test and pipeline features | 0.799 | **0.821** | 0.823 | 0.838 |
+
+These are scored on all 746 hosts of sectors 14 to 26 (chance 0.504) and all
+845 of 1 to 13 (chance 0.542), the stars of "More labels, from later
+sectors"; every host has data near its BLS transit, so none is left out. What
+the paired bootstraps say (95% intervals):
+
+* **At the same ephemeris, the views are worth about what the features
+  are.** Views against the pipeline's features through the same booster:
+  +0.017 (-0.020 to +0.055) and +0.033 (-0.001 to +0.067) on 14 to 26,
+  -0.004 (-0.043 to +0.033) and -0.018 (-0.050 to +0.014) on 1 to 13. With
+  the centroid test on both sides the views are behind in three columns of
+  four (-0.015, +0.007, -0.007 and -0.015), every interval across zero.
+* **Adding the views to the pipeline's features does not help.** Views,
+  depth, the centroid test and the 23 features against the features with the
+  centroid test: -0.006, +0.011, -0.006 and -0.007, every interval across
+  zero.
+* **The booster accounts for a little.** The same 23 features through the
+  five-fit booster score above the pipeline's own model by +0.002 to +0.021
+  (+0.005 to +0.022 with the centroid test), clear of zero only on 1 to 13
+  with one year of labels.
+* **The centroid test adds to the views** +0.022 to +0.028 in three columns
+  (intervals above zero) and +0.005 (-0.013 to +0.023) on 14 to 26 with one
+  year of labels. Depth and scatter add +0.006 or less, except +0.014 on 1
+  to 13 with one year.
+* **More labels help the views here too**: +0.017 (+0.001 to +0.032) and
+  +0.016 (+0.000 to +0.033) for the views alone, and +0.028 (+0.013 to
+  +0.043) and +0.008 (-0.007 to +0.024) with depth and the centroid test.
+
+**So the catalogue ephemeris was most of the views' lead.** On the 723 and
+824 hosts both runs scored, the views with depth and the centroid test,
+trained on all labels, drop from 0.855 to 0.823 on 14 to 26 and from 0.880 to
+0.837 on 1 to 13 when they are folded at the BLS period instead of the
+catalogue's (-0.031 and -0.043), and each of the three view models loses
+0.03 to 0.06 in every column, all twelve intervals clear of zero. The
+catalogue runs differ in two more ways, one row per TOI rather than per host
+and every TOI on the star masked when detrending, so not all of that drop is
+the period, but none of what the catalogue gave is there when vetting a new
+star. For that job the pipeline's own features with the centroid test remain
+the best inputs here, and the views add nothing to them. At a calibrated
+probability of 0.5 the model with everything, trained on all labels, keeps
+81.4% of planet hosts and rejects 62.4% of false-positive hosts on 14 to 26
+(83.4% and 62.8% on 1 to 13).
+
+To reproduce, after the runs of "More labels, from later sectors" (each takes
+four to five minutes on 4 cores, most of it the search, and reads the light curves and
+pixel files those runs cached):
+
+```bash
+python -m transitml.bls_views                          # trained on 1-13, scored on 14-26
+python -m transitml.bls_views --train-sectors 1-13,27-102 \
+    --compare pipeline results/toi_trained/later_sectors/toi_benchmark.json \
+    --compare pipeline_pixels results/toi_trained/later_sectors/pixels/toi_benchmark.json \
+    --compare-run one_year results/bls_views --results-dir results/bls_views/later_sectors
+```
+
+`--train-sectors 14-26 --test-sectors 1-13` (then `14-102`), with the models
+in `results/toi_trained/sectors_14_26` to compare and `--results-dir
+results/bls_views/sectors_14_26`, gives the other direction. Full numbers are
+in `results/bls_views/`.
 
 ### Transit Least Squares, and BLS on a GPU
 
@@ -2287,9 +2375,9 @@ Three further gaps:
   the centroid test as three more features reaches 0.79 there, and 0.80 with
   the labels of later sectors too (see "Training on TOI dispositions").
   Boosting on each TOI's folded views with the same test reaches 0.855 on
-  the hosts it can fold, against 0.805 for that model there, though about
-  half of that gap comes from the catalogue ephemeris the views are given
-  (see "Views, the centroid test and every label together").
+  the hosts it can fold when it is given the catalogue ephemeris, but folded
+  at the period the pipeline's own search found, the views add nothing to
+  the pipeline's features (see "Views at the pipeline's own BLS period").
 - **Labels.** Ground truth is known by construction here. On real data it has to
   come from a catalogue that inherits the selection function of the pipelines
   being benchmarked against, or from injection-recovery, which only measures
@@ -2361,6 +2449,7 @@ transit-detection/
 │   ├── tess_transfer.py        # the DR25 models scored on the TESS TOI benchmark
 │   ├── tess_finetune.py        # the DR25 models fine-tuned on TOI labels, sectors 1-13 to 14-26
 │   ├── toi_views.py            # views, depth and the centroid test on every labelled TOI
+│   ├── bls_views.py            # the same views at the pipeline's own BLS ephemeris
 │   ├── vet.py                  # python -m transitml.vet: one star, one page
 │   ├── single_benchmark.py     # injection-recovery for lone transits
 │   ├── fit.py                  # batman transit model sampled with emcee
@@ -2369,7 +2458,7 @@ transit-detection/
 │   ├── dashboard.py            # the batch's self-contained HTML dashboard
 │   ├── real_check.py           # known planets' fits and a real sector, against the archives
 │   └── plots.py                # figures (matplotlib Agg, no display)
-├── tests/                      # 506 tests, ~5 min
+├── tests/                      # 512 tests, ~5 min
 │   ├── test_generator.py       # imbalance is exact; injected physics is consistent
 │   ├── test_preprocess.py      # depth preservation; why the median was rejected
 │   ├── test_features.py        # recovery vs SNR; the vetting statistics fire
@@ -2397,6 +2486,7 @@ transit-detection/
 │   ├── test_tess_transfer.py   # the transfer scorer, offline
 │   ├── test_tess_finetune.py   # fine-tuning and its comparison, offline
 │   ├── test_toi_views.py       # view inputs, pixels at the catalogue ephemeris, comparison
+│   ├── test_bls_views.py       # hosts searched as the pipeline does, inputs, comparison
 │   ├── test_tpf.py             # pixel files: npz round trip, stubbed download
 │   ├── test_synthetic_tpf.py   # synthetic pixels put the light where it belongs
 │   ├── test_centroid.py        # blends flagged, on-target not; bad input survives

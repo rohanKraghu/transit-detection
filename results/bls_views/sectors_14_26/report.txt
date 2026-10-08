@@ -1,0 +1,53 @@
+TOI hosts folded at the pipeline's own BLS ephemeris
+========================================================================
+
+Trained on 766 TOI hosts of sectors 14-26 (376 planet hosts; 20 taken from a later sector than their first).
+Scored on 845 TOI hosts of sectors 1-13 (458 CP/KP hosts, 387 FP/FA-only hosts), no star shared with training.
+Hosts without data near their BLS transit, left out: 0 in training, 0 scored.
+Centroid test at the BLS ephemeris placed the dip for 80% of training hosts and 89% of scored ones.
+Each model here is the mean of 5 boosting fits (seeds 0 to 4).
+
+Average precision, all stars (chance 0.542)
+  pipeline features + centroid test                              0.830
+  views, depth, centroid test and pipeline features              0.823
+  views + depth and scatter + centroid test                      0.823
+  the pipeline's model + centroid test                           0.807
+  views + depth and scatter                                      0.795
+  pipeline features                                              0.784
+  views                                                          0.780
+  the pipeline's model                                           0.764
+
+Paired bootstrap, difference in AP (95% interval)
+  pipeline features minus the pipeline's model
+      +0.021  (+0.002 to +0.040)
+  pipeline features + centroid test minus the pipeline's model + centroid test
+      +0.022  (+0.006 to +0.039)
+  views minus pipeline features
+      -0.004  (-0.043 to +0.033)
+  views + depth and scatter + centroid test minus pipeline features + centroid test
+      -0.007  (-0.037 to +0.023)
+  views, depth, centroid test and pipeline features minus pipeline features + centroid test
+      -0.006  (-0.036 to +0.023)
+  views + depth and scatter minus views
+      +0.014  (+0.004 to +0.025)
+  views + depth and scatter + centroid test minus views + depth and scatter
+      +0.028  (+0.011 to +0.046)
+  views, depth, centroid test and pipeline features minus views + depth and scatter + centroid test
+      +0.000  (-0.007 to +0.008)
+
+Stars where the TESS search found the TOI period (652, 378 planets, chance 0.580)
+  pipeline features + centroid test                              0.878
+  views, depth, centroid test and pipeline features              0.862
+  views + depth and scatter + centroid test                      0.859
+  the pipeline's model + centroid test                           0.859
+  pipeline features                                              0.841
+  views + depth and scatter                                      0.832
+  views                                                          0.819
+  the pipeline's model                                           0.818
+
+views, depth, centroid test and pipeline features at probability 0.50:
+  planet hosts kept      77.1%
+  FP/FA hosts rejected   70.3%
+
+Every model here sees the ephemeris the pipeline's search found, as a
+vetter of a new star would.  See transitml.bls_views.
