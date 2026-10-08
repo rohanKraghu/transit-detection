@@ -84,11 +84,24 @@ def period_grid(baseline_days: float, config: BLSConfig) -> NDArray[np.float64]:
     periods and undersamples short ones.  The upper bound is set so that at
     least two transits fit in the baseline -- a single event cannot be confirmed
     as periodic, and including such periods just adds false positives.
+
+    On a log grid with step d(ln P), a transit's phase drifts by
+    ``baseline * d(ln P)`` between neighbouring trials whatever the period, so
+    a baseline longer than ``grid_baseline_days`` gets more than
+    ``n_periods``: as many as keep that drift to what ``n_periods`` allow on
+    ``grid_baseline_days``.
     """
-    p_max = max(config.min_period_days * 1.5, baseline_days * config.max_period_fraction_of_baseline)
-    return np.logspace(
-        np.log10(config.min_period_days), np.log10(p_max), config.n_periods
-    )
+    p_max = _max_period(baseline_days, config)
+    reference = config.grid_baseline_days
+    allowed = reference * np.log(_max_period(reference, config) / config.min_period_days)
+    allowed /= config.n_periods - 1
+    steps = np.log(p_max / config.min_period_days) * baseline_days / allowed
+    n = max(config.n_periods, int(np.ceil(steps - 1e-9)) + 1)
+    return np.logspace(np.log10(config.min_period_days), np.log10(p_max), n)
+
+
+def _max_period(baseline_days: float, config: BLSConfig) -> float:
+    return max(config.min_period_days * 1.5, baseline_days * config.max_period_fraction_of_baseline)
 
 
 #: Environment variable choosing who computes the BLS periodogram: ``astropy``
