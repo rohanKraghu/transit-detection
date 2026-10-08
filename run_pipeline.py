@@ -78,7 +78,6 @@ from transitml.data.loader import Dataset, build_dataset
 from transitml.data.synthetic import SYSTEMATIC_COMPONENTS, SyntheticTESSSource
 from transitml.data.toi import (
     BenchmarkTarget,
-    later_target,
     observed_in,
     parse_sector_spec,
     read_toi_table,
@@ -476,6 +475,7 @@ def load_toi_hosts(
     from transitml.benchmark import (
         build_benchmark_dataset,
         centroid_tests,
+        fetch_with_fallback,
         load_or_fetch_curves,
         load_or_fetch_tpfs,
         with_centroid_features,
@@ -509,19 +509,15 @@ def load_toi_hosts(
             n_workers=args.download_workers,
         )
 
-    curves = fetch(targets)
     if training:
-        found = {lc.target_id: lc for lc in curves}
-        current = {t.target_id: t for t in targets}
-        missing = [t for t in targets if t.target_id not in found]
-        while missing := [m for t in missing if (m := later_target(t, sectors)) is not None]:
-            current.update((t.target_id, t) for t in missing)
-            found.update((lc.target_id, lc) for lc in fetch(missing))
-            missing = [t for t in missing if t.target_id not in found]
-        moved = [current[t.target_id] for t in targets if current[t.target_id] != t]
-        selection["from_a_later_sector"] = sum(1 for t in moved if t.target_id in found)
-        targets = [current[t.target_id] for t in targets]
-        curves = [found[t.target_id] for t in targets if t.target_id in found]
+        fetched, curves = fetch_with_fallback(targets, sectors, fetch)
+        have = {lc.target_id for lc in curves}
+        selection["from_a_later_sector"] = sum(
+            1 for first, last in zip(targets, fetched) if last != first and last.target_id in have
+        )
+        targets = fetched
+    else:
+        curves = fetch(targets)
     curves = with_tic_stars(curves, args.benchmark_stars)
     n_known = sum(1 for lc in curves if all(np.isfinite(lc.star)))
     print(
