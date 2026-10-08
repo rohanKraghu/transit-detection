@@ -2503,6 +2503,14 @@ on. Sizes are rough: S is a few hours, M a day or two, L longer.
   to 26 from 0.745 to 0.759. The learning curves still rise 0.02 to 0.04
   per doubling, but another doubling would need more resolved TOI hosts
   than exist (2,675).
+- Views, the centroid test and every label together (`python -m
+  transitml.toi_views`): boosting on each TOI's folded views, with depth,
+  scatter and the centroid test at the catalogue ephemeris, trained on
+  every labelled host, scores AP 0.855 on the 723 hosts of sectors 14 to 26
+  and 0.880 on the 824 of 1 to 13, against 0.805 and 0.847 for the
+  pipeline's features with the centroid test. About half of that lead
+  comes from the catalogue ephemeris the views are given: where BLS found
+  the period it is +0.027 and +0.016, with intervals crossing zero.
 
 **Next**
 
@@ -2511,7 +2519,7 @@ to next:
 
 | Item | Why | Size |
 | --- | --- | --- |
-| Views, pixels and every label in one model, in progress | Boosting on folded views beat the pipeline's features in the fine-tuning test (+0.06), and the centroid test and later sectors' labels each added more; this checks whether they stack, in both directions | M |
+| Views at the pipeline's own BLS period, in progress | The view model is handed each TOI's catalogue period, and about half its lead over the pipeline's model goes on the hosts where BLS found it; folding at the pipeline's own ephemeris tests it as a vetter of a new star's candidates | M |
 
 ## References
 
