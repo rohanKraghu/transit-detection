@@ -1,0 +1,24 @@
+Kepler DR25 models on the TESS TOI benchmark
+============================================
+
+723 TOI hosts scored by every model (366 CP/KP hosts, 357 FP/FA-only hosts); 780 TOIs folded.
+
+Average precision, all stars (chance 0.506)
+  Kepler DR25 boosting on views                        0.767
+  Kepler DR25 CNN                                      0.761
+  TESS model, trained on synthetic curves              0.615
+  TESS model, trained on injections into real curves   0.611
+  Kepler CNN minus tess model, trained on synthetic curves: 95% paired bootstrap +0.096 to +0.194
+
+Stars where the TESS search found the TOI period (540, 274 planets, chance 0.507)
+  Kepler DR25 boosting on views                        0.805
+  Kepler DR25 CNN                                      0.798
+  TESS model, trained on synthetic curves              0.645
+  TESS model, trained on injections into real curves   0.637
+
+Kepler CNN at its Kepler threshold (0.451, 90% PC recall on Kepler):
+  TESS planet hosts kept      68.3%
+  TESS FP/FA hosts rejected   69.2%
+
+The DR25 models are given each TOI's catalogue ephemeris; the TESS models
+find their own period with BLS.  See transitml.tess_transfer.

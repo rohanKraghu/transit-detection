@@ -346,6 +346,95 @@ def _fit_candidates(
 
 
 # --------------------------------------------------------------------------
+# The centroid test on the best candidates
+# --------------------------------------------------------------------------
+@dataclass(frozen=True)
+class PixelSource:
+    """Where the batch's target pixel files come from: MAST, cached in ``cache_dir``.
+
+    The same pipeline and cadence as the light curves by default (TESS-SPOC
+    30-minute FFI cut-outs); ``cache_dir`` defaults to ``<out-dir>/cache/tpfs``.
+    """
+
+    author: str = "TESS-SPOC"
+    exposure_time: int | None = 1800
+    n_workers: int = 8
+    cache_dir: Path | None = None
+
+
+@dataclass(frozen=True)
+class _PixelTarget:
+    target_id: str
+    sector: int
+
+
+def _centroid_one(path: Path, row: dict[str, Any]) -> dict[str, Any]:
+    from .benchmark import _centroid_one as centroid_fields
+
+    try:
+        out = centroid_fields(
+            path, row["period_days"], row["epoch"], row["duration_hours"] / 24.0, None
+        )
+    except Exception as exc:  # noqa: BLE001 - one bad stamp stays with that star
+        return {"status": "error", "message": f"{type(exc).__name__}: {exc}", "significant": False}
+    return {k: (_finite_or_none(v, 4) if isinstance(v, float) else v) for k, v in out.items()}
+
+
+def _centroid_candidates(
+    rows: list[dict[str, Any]],
+    out_dir: Path,
+    n_centroids: int,
+    source: PixelSource,
+    n_jobs: int,
+    progress: bool,
+) -> dict[str, Any] | None:
+    """Run the centroid test on the ``n_centroids`` best-ranked flagged stars; sets ``row["centroid"]``.
+
+    Each star's target pixel file for its own sector is downloaded once and
+    kept (see :func:`~transitml.benchmark.load_or_fetch_tpfs`); the test runs
+    on the star's search ephemeris, as ``vet --centroids`` does.  The score
+    and rank are unchanged: an off-target dip is reported beside them.
+    """
+    if n_centroids <= 0:
+        return None
+    from .benchmark import load_or_fetch_tpfs
+
+    targets = [
+        r for r in rows
+        if r["status"] == "ok" and r["flagged"] and r.get("sector") not in (None, "")
+        and str(r.get("target_id", "")).upper().startswith("TIC")
+    ][:n_centroids]
+    wanted = [_PixelTarget(r["target_id"], int(r["sector"])) for r in targets]
+    if progress:
+        print(f"  centroid test on {len(targets)} candidates: fetching pixel files")
+    paths = load_or_fetch_tpfs(
+        wanted,
+        source.cache_dir or out_dir / "cache" / "tpfs",
+        author=source.author,
+        exposure_time=source.exposure_time,
+        n_workers=source.n_workers,
+    )
+    jobs = [r for r in targets if r["target_id"] in paths]
+    done = Parallel(n_jobs=n_jobs)(delayed(_centroid_one)(paths[r["target_id"]], r) for r in jobs)
+    for row, test in zip(jobs, done):
+        row["centroid"] = test
+    for row in targets:
+        row.setdefault("centroid", {"status": "no pixel file", "significant": False})
+    tests = [r["centroid"] for r in targets]
+    status: dict[str, int] = {}
+    for test in tests:
+        status[test["status"]] = status.get(test["status"], 0) + 1
+    return {
+        "requested": n_centroids,
+        "tested": len(targets),
+        "with_pixels": len(jobs),
+        "status": status,
+        "offset": [r["id"] for r in targets if r["centroid"].get("significant")],
+        "pixels": {"author": source.author, "exposure_time": source.exposure_time},
+    }
+
+
+# --------------------------------------------------------------------------
 # The result cache
 # --------------------------------------------------------------------------
 class ResultCache:
@@ -440,6 +529,8 @@ def run_batch(
     progress: bool = True,
     n_fits: int = 0,
     fit_config: FitConfig | None = None,
+    n_centroids: int = 0,
+    pixel_source: PixelSource | None = None,
 ) -> BatchResult:
     """Vet ``curves``, reusing cached results, and write every output."""
     started = time.time()
@@ -486,6 +577,9 @@ def run_batch(
         rows, curves, keys, model, out_dir, n_fits, fit_config or FitConfig(), n_jobs, progress,
         force,
     )
+    centroids = _centroid_candidates(
+        rows, out_dir, n_centroids, pixel_source or PixelSource(), n_jobs, progress
+    )
 
     report_paths = _write_reports(rows, curves, keys, model, multi, out_dir, n_reports)
     summary = summarise(
@@ -503,6 +597,8 @@ def run_batch(
     )
     if fits is not None:
         summary["fits"] = fits
+    if centroids is not None:
+        summary["centroids"] = centroids
     write_candidates_csv(rows, out_dir / "candidates.csv")
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2, allow_nan=False) + "\n")
     from .dashboard import write_dashboard
@@ -630,6 +726,9 @@ def write_candidates_csv(rows: list[dict[str, Any]], path: Path) -> Path:
         for name in _FIT_COLUMNS:
             columns += [f"fit_{_FIT_COLUMNS[name]}", f"fit_{_FIT_COLUMNS[name]}_err"]
         columns += ["fit_density_ratio", "fit_density_consistent", "fit_converged", "fit_status"]
+    has_centroid = any("centroid" in r for r in rows)
+    if has_centroid:
+        columns += [f"centroid_{name}" for name in _CENTROID_COLUMNS]
     with open(path, "w", newline="") as handle:
         writer = csv.writer(handle)
         writer.writerow(columns)
@@ -651,8 +750,21 @@ def write_candidates_csv(rows: list[dict[str, Any]], path: Path) -> Path:
                 values["truth_kind"] = truth.get("kind", "")
             if has_fit and "fit" in row:
                 values.update(_fit_csv_values(row["fit"]))
+            if has_centroid and "centroid" in row:
+                values.update({
+                    f"centroid_{name}": row["centroid"].get(key)
+                    for name, key in _CENTROID_COLUMNS.items()
+                })
             writer.writerow(["" if values.get(c) is None else values.get(c, "") for c in columns])
     return path
+
+
+#: The centroid test in candidates.csv: column suffix and the test's field.
+_CENTROID_COLUMNS = {
+    "status": "status", "offset": "significant", "offset_sigma": "offset_sigma",
+    "offset_pixels": "offset_distance_pixels", "offset_arcsec": "offset_arcsec",
+    "difference_snr": "difference_snr",
+}
 
 
 #: Fitted quantities in candidates.csv, and their column names.
@@ -769,7 +881,7 @@ def fetch_sector_curves(
     ``cache_dir/chunk_NNNN.npz`` and the targets tried are added to
     ``cache_dir/tried.json``, so a download that dies part way resumes at the
     next untried target, and targets MAST has nothing for are not asked for
-    again.  Keyed by target and sector, so one cache can serve several sectors.
+    again.  A target whose download raised is asked for again next run.  Keyed by target and sector, so one cache can serve several sectors.
     """
     from .data.mast import MASTLightCurveSource
 
@@ -807,10 +919,17 @@ def fetch_sector_curves(
             n_chunks += 1
         for lc in fetched.values():
             have[key(lc.target_id)] = lc
-        tried |= {key(t) for t in batch}
+        # A target whose download raised (a timeout, a corrupt file) is not
+        # remembered as tried, so the next run asks for it again.
+        failed = set(getattr(source, "failed", ()))
+        tried |= {key(t) for t in batch if t not in failed}
         tried_path.write_text(json.dumps(sorted(tried)))
         if progress:
-            print(f"  downloaded {start + len(batch)}/{len(missing)} targets ({len(fetched)} found)")
+            note = f", {len(failed)} failed and left for the next run" if failed else ""
+            print(
+                f"  downloaded {start + len(batch)}/{len(missing)} targets "
+                f"({len(fetched)} found{note})"
+            )
     return [have[key(t)] for t in dict.fromkeys(targets) if key(t) in have]
 
 
@@ -858,6 +977,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--fit", type=int, default=0, metavar="N",
         help="Fit a transit model (batman + emcee) to the N best-ranked flagged stars.",
+    )
+    parser.add_argument(
+        "--centroids", type=int, default=0, metavar="N",
+        help="Download target pixel files for the N best-ranked flagged stars (TIC targets) "
+        "and run the centroid test on each; same author and cadence as the light curves.",
     )
     parser.add_argument(
         "--fit-max-steps", type=int, default=FitConfig.max_steps,
@@ -935,6 +1059,10 @@ def main(argv: list[str] | None = None) -> int:
         fit_config=FitConfig(
             min_steps=min(FitConfig.min_steps, args.fit_max_steps), max_steps=args.fit_max_steps
         ),
+        n_centroids=args.centroids,
+        pixel_source=PixelSource(
+            author=args.author, exposure_time=args.exposure_time, n_workers=args.download_workers
+        ),
     )
     s = result.summary
     print(
@@ -958,6 +1086,13 @@ def main(argv: list[str] | None = None) -> int:
                 f"; density inconsistent with the star: {', '.join(f['density_inconsistent'])}"
                 if f["density_inconsistent"] else ""
             )
+        )
+    if "centroids" in s:
+        c = s["centroids"]
+        print(
+            f"  centroid test on {c['tested']} candidates ({c['with_pixels']} with pixels): "
+            f"{len(c['offset'])} off target"
+            + (f" ({', '.join(c['offset'])})" if c["offset"] else "")
         )
     for name in ("candidates.csv", "summary.json", "dashboard.html"):
         print(f"  wrote {out_dir / name}")

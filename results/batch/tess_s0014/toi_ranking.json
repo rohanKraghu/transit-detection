@@ -1,0 +1,114 @@
+{
+  "candidates": "results/batch/tess_s0014/candidates.csv",
+  "toi_table": "data/toi_benchmark/exofop_toi_2026-10-06.csv",
+  "sector": 14,
+  "n_stars": 1452,
+  "n_toi_hosts_in_sector": 782,
+  "groups": {
+    "planet": {
+      "n": 130,
+      "flagged": 0.4076923076923077,
+      "median_rank": 307.5,
+      "period_found": 0.5615384615384615,
+      "flagged_when_period_found": 0.7123287671232876
+    },
+    "false positive": {
+      "n": 92,
+      "flagged": 0.40217391304347827,
+      "median_rank": 497.0,
+      "period_found": 0.6847826086956522,
+      "flagged_when_period_found": 0.5873015873015873
+    },
+    "open TOI": {
+      "n": 233,
+      "flagged": 0.21030042918454936,
+      "median_rank": 800.0,
+      "period_found": 0.3948497854077253,
+      "flagged_when_period_found": 0.5108695652173914
+    },
+    "not a TOI": {
+      "n": 997,
+      "flagged": 0.05315947843530592,
+      "median_rank": 757.0
+    }
+  },
+  "average_precision": {
+    "planet vs not a TOI": {
+      "ap": 0.4730701543389647,
+      "chance": 0.11535048802129548
+    },
+    "open TOI vs not a TOI": {
+      "ap": 0.32064408270765976,
+      "chance": 0.18943089430894308
+    },
+    "false positive vs not a TOI": {
+      "ap": 0.360419159536164,
+      "chance": 0.0844811753902663
+    },
+    "planet vs false positive": {
+      "ap": 0.6529879575704323,
+      "chance": 0.5855855855855856
+    }
+  },
+  "top": {
+    "10": {
+      "planet": 6,
+      "open TOI": 3,
+      "false positive": 1
+    },
+    "50": {
+      "planet": 23,
+      "open TOI": 14,
+      "false positive": 10,
+      "not a TOI": 3
+    },
+    "100": {
+      "planet": 42,
+      "open TOI": 29,
+      "false positive": 23,
+      "not a TOI": 6
+    },
+    "192": {
+      "planet": 53,
+      "open TOI": 49,
+      "false positive": 37,
+      "not a TOI": 53
+    }
+  },
+  "centroid": {
+    "groups": {
+      "planet": {
+        "tested": 53,
+        "placed": 50,
+        "off_target": 1
+      },
+      "false positive": {
+        "tested": 37,
+        "placed": 32,
+        "off_target": 11
+      },
+      "open TOI": {
+        "tested": 49,
+        "placed": 45,
+        "off_target": 0
+      },
+      "not a TOI": {
+        "tested": 53,
+        "placed": 28,
+        "off_target": 5
+      }
+    },
+    "average_precision": {
+      "planet vs false positive": {
+        "without": 0.6529879575704323,
+        "with_veto": 0.6924739856652309,
+        "chance": 0.5855855855855856
+      },
+      "planet vs not a TOI": {
+        "without": 0.4730701543389647,
+        "with_veto": 0.4732854463576331,
+        "chance": 0.11535048802129548
+      }
+    }
+  }
+}

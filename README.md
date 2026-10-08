@@ -20,7 +20,7 @@ whose coverage is measured by injection.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python run_pipeline.py            # ~3 min on 4 cores
-pytest                            # ~5 min, 481 tests
+pytest                            # ~5 min, 499 tests
 ```
 
 It writes `results/metrics.json`, `results/report.txt`, the trained model
@@ -1233,6 +1233,88 @@ keeps learning as labels are added. Full numbers are in
 
 ![Full-catalogue precision-recall](figures/kepler_dr25/04_full_catalogue_precision_recall.png)
 
+### Kepler labels on TESS: the transfer test
+
+Do 34,000 Kepler labels help vet TESS? `python -m transitml.tess_transfer`
+scores the TOI benchmark's hosts (the same sectors 14 to 26 stars as above)
+with the DR25 models, unchanged. Each host's one TESS-SPOC sector (30-minute
+cadence, close to Kepler's 29.4) is folded into the same five views at every
+TOI's catalogue ephemeris, and the star scores as its highest TOI, so which
+TOI is scored never depends on the label.
+
+| Average precision on 723 TOI hosts (366 planet hosts, chance 0.506) | All hosts | TESS search found the period (540) |
+| --- | --- | --- |
+| Kepler DR25 boosting on views | **0.767** | **0.805** |
+| Kepler DR25 CNN | 0.761 | 0.798 |
+| TESS model trained on synthetic curves | 0.615 | 0.645 |
+| TESS model trained on injections into real curves | 0.611 | 0.637 |
+
+The Kepler-trained models are well ahead: CNN minus the better TESS model is
++0.096 to +0.194 in a paired bootstrap. Two things make the comparison less
+than equal, and the second column addresses the first. The DR25 models are
+handed each TOI's catalogue period and epoch, while the TESS models find their
+own with BLS and miss it on a quarter of the hosts; on the 540 hosts where the
+search did find it, the gap is the same size. And the catalogue ephemeris
+comes from every sector TESS has, so it is sharper than one sector would give.
+
+What does not transfer is the threshold: the CNN's Kepler operating point
+(90% recall on Kepler PCs) keeps 68% of TESS planet hosts and rejects 69% of
+TESS false positives, so it would need to be set again on TESS labels. Full
+numbers are in `results/tess_transfer/report.txt`.
+
+This suggests that real labels, even from another telescope and graded by a robot, teach more
+about what a false positive looks like than the synthetic and injected signals
+the TESS models were trained on. 23 of the 746 hosts have no TOI with a
+complete ephemeris and are left out.
+
+### Kepler first, then TESS: fine-tuning on TOI labels
+
+The transfer test and the model trained on TOI dispositions (above) each beat
+the synthetic-trained models from a different side. `python -m
+transitml.tess_finetune` asks whether they add up. It folds the labelled TOIs
+of sectors 1 to 13 (892 TOIs on 823 stars, 516 of them planets) into the same
+views, trains on them, and scores the same 723 hosts of sectors 14 to 26. No
+star is in both sets, and every model choice was fixed before the test
+sectors were scored.
+
+| Average precision on 723 TOI hosts (chance 0.506) | All hosts | TESS search found the period (540) |
+| --- | --- | --- |
+| Boosting on views, Kepler TCEs + TESS TOIs | **0.817** | **0.850** |
+| Boosting on views, TESS TOIs only | 0.812 | 0.835 |
+| Kepler CNN fine-tuned on TESS TOIs | 0.799 | 0.821 |
+| Boosting on TOI labels, with pixel features | 0.789 | 0.824 |
+| Kepler boosting on views, unchanged | 0.767 | 0.805 |
+| Kepler CNN, unchanged | 0.761 | 0.798 |
+| CNN on TESS TOIs only | 0.757 | 0.776 |
+| Boosting on TOI labels, light-curve features | 0.749 | 0.795 |
+| TESS model trained on synthetic curves | 0.615 | 0.645 |
+
+What the paired bootstraps say:
+
+* **Fine-tuning helps the CNN.** Fine-tuned minus unchanged is +0.028 to
+  +0.049. Starting from the Kepler weights beats the same network trained on
+  TESS alone by +0.009 to +0.076, so 34,000 Kepler labels are worth something
+  when there are only 900 TESS ones.
+* **For boosting, Kepler adds nothing measurable once TESS labels are in.**
+  Adding the Kepler TCEs (weighted so TESS counts as much in total) changes
+  AP by +0.005 (-0.016 to +0.026). The fine-tuned CNN does not beat boosting
+  on the TESS views either (0.799 against 0.812).
+* **The views account for most of the gain over the earlier TOI-trained
+  model.** Boosting on the views of the same TOIs beats boosting on the
+  pipeline's features by +0.021 to +0.106. Part of that is the catalogue
+  ephemeris the views are given, which the pipeline has to find with BLS.
+  But the gap holds on the 540 hosts where BLS found the period (0.835
+  against 0.795), so the views themselves carry information the summary
+  features drop.
+* The fine-tuned CNN and the pixel-feature model are level (+0.011, -0.031 to
+  +0.059). The views use no pixel data, so the two could still be combined.
+
+At a calibrated probability of 0.5, the fine-tuned CNN keeps 74.9% of planet
+hosts and rejects 70.0% of false positives. The caveat from training on TOI
+dispositions applies here too. The labels carry the follow-up programme's
+selection, so these models rank TOIs that look like the resolved ones. Full
+numbers are in `results/tess_finetune/report.txt`.
+
 ### Transit Least Squares, and BLS on a GPU
 
 **TLS as the search.** `python run_pipeline.py --search tls` replaces BLS
@@ -1319,9 +1401,12 @@ them as `--teff 6200 --density 0.8` (kelvin and g/cm³; either one alone
 implies the other on the main sequence). Without them the report says the star
 is unknown, and the whole secondary counts.
 
-**The TIC path has only been tested offline**, with the MAST source replaced
-by a stub; this environment could not reach MAST. Local CSV and npz input is
-tested end to end. The model file is a pickle tied to the scikit-learn
+**The TIC path works on real data.** Fifteen known planets were vetted
+from their SPOC 2-minute curves (`--author SPOC --exposure-time 120`; the
+default is TESS-SPOC 30-minute FFI curves) and a whole sector through the
+batch; see "Checked against real planets" and "A real sector" below. A
+download takes a few seconds a star. The unit tests still replace MAST with
+a stub, so they run offline. The model file is a pickle tied to the scikit-learn
 version that wrote it, so it is git-ignored and rebuilt by `run_pipeline.py`;
 load only model files you made.
 
@@ -1566,6 +1651,16 @@ It writes four things to `--out-dir` (default `results/batch/<source>/`):
 - `reports/`: the full one-page `vet` report for the top `--reports`
   flagged stars (10 by default).
 
+`--centroids N` downloads the target pixel files of the N best-ranked
+flagged stars (TIC targets; the same pipeline, cadence and sector as their
+light curves), runs the centroid test of "Centroid test" below on each
+star's own search ephemeris, and adds `centroid_*` columns to
+`candidates.csv` (status, whether the dip is off target, the offset in
+sigma, pixels and arcseconds, and the difference image's SNR), a count in
+`summary.json`, and a centroid panel in the dashboard's row detail. Pixel
+files are kept in `cache/tpfs/`, one per star and sector. The score and
+the rank are unchanged; an off-target dip is reported beside them.
+
 ![Batch dashboard](figures/08_batch_dashboard.png)
 
 The committed demo is `results/batch/synthetic_seed7/`, from
@@ -1621,11 +1716,70 @@ reasons in full; the rest carry the table columns and their top reason, and
 `candidates.csv` has everything. That keeps a 2000-star sector to 0.8 MB;
 a 20,000-star sector flagged at the same rate would be about 7 MB.
 
-**The MAST path has only been tested offline**, with the download replaced
-by a stub, as for `vet`: this environment could not reach MAST. The files
-path and the synthetic path are tested end to end. The batch runs the same
-code as `vet`, star by star, so its scores match `run_pipeline.py`'s for the
-same curves (checked to 5e-9 on the 120 test stars of a small run).
+**A real sector.** `results/batch/tess_s0014/` is a run on real TESS data:
+
+```bash
+python -m transitml.batch --targets data/batch/targets_s0014.txt --sector 14 --fit 10 --centroids 200
+python -m transitml.real_check sector results/batch/tess_s0014/candidates.csv \
+    --tois data/toi_benchmark/exofop_toi_2026-10-06.csv --sector 14
+```
+
+The target list is every star with a sector 14 TOI (782) plus 1,000 drawn
+at random from the sector's TESS-SPOC FFI targets that host none. 1,452 of
+the 1,782 had a TESS-SPOC 30-minute curve. The other 330 are 327 TOI hosts
+with no TESS-SPOC curve for the sector (none of 25 sampled has one; the
+pilot's are faint stars covered by QLP and other high-level products), and 3
+downloads that failed and worked on a second try. The download took about
+20 minutes with 16 workers (1.3 stars a second), vetting 375 s on 4 cores,
+and the ten fits about 100 s. Nothing in the pipeline failed. Against the
+TOI catalogue (`toi_ranking.txt`):
+
+| group | stars | flagged | search found the TOI period | flagged when it did |
+|---|---|---|---|---|
+| confirmed or known planet hosts | 130 | 41% | 56% | 71% |
+| known false positives | 92 | 40% | 68% | 59% |
+| open TOIs | 233 | 21% | 39% | 51% |
+| not a TOI | 997 | 5% | | |
+
+Planet hosts against stars that are not TOIs give an average precision of
+0.47, against 0.12 by chance; the top 10 are 6 planets, 3 open TOIs and one
+false positive, and the top 50 hold 23 planets and 3 non-TOIs. Two things
+hold it back, and neither is the batch. Most missed planets are missed by
+the search, not the classifier: 59 of the 130 planet hosts have a TOI period
+the BLS did not find, with a median period of 16 days (one or two transits
+in a 27-day sector, past the grid's half-baseline limit) or a single-sector
+SNR too low. And the classifier barely separates real planets from TOI
+false positives (average precision 0.65 against 0.59 by chance): those are
+the eclipsing binaries and blends that already looked enough like planets
+to become TOIs. The ten fits all converged and all ten passed the density
+check against the TIC star.
+
+**The centroid test on the sector.** `--centroids 200` covers all 192
+flagged stars; their pixel files (221 MB) downloaded in under a minute, and
+every one had a file. The test placed the dip for 155 of them:
+
+| group (flagged stars) | tested | dip placed | off target |
+|---|---|---|---|
+| confirmed or known planet hosts | 53 | 50 | 1 |
+| known false positives | 37 | 32 | 11 |
+| open TOIs | 49 | 45 | 0 |
+| not a TOI | 53 | 28 | 5 |
+
+It puts 11 of the 37 flagged false positives on another star and 1 of the
+53 planets. The TOI benchmark flags 1.6% of planets and 22% of false
+positives (30% of those the observers placed on another star), so the
+batch's rate on false positives is at the high end of that. Used as a veto, ranking off-target dips below the
+rest, it lifts the average precision of planets against false positives
+from 0.65 to 0.69 (chance 0.59) and leaves planets against non-TOIs at 0.47.
+The 5 non-TOI stars it flags are worth a look as blends the TOI process
+never caught. The remaining false positives are mostly eclipsing binaries
+on the target itself, which pixels cannot separate from planets.
+
+The batch runs the same code as `vet`, star by star, so its scores match
+`run_pipeline.py`'s for the same curves (checked to 5e-9 on the 120 test
+stars of a small run). A download that raises (a timeout, a corrupt file)
+is skipped with a warning naming the star and asked for again on the next
+run; a star MAST has nothing for is remembered and not asked for again.
 
 ## Fitting a candidate's transit
 
@@ -1697,10 +1851,14 @@ times the star's.
 - **The density check** (Seager & Mallen-Ornelas 2003). The star's density
   is not a prior: the fit runs without it and is then compared with it, so
   the comparison is a test. When the density is known (`--stellar-density`,
-  or the metadata synthetic and injected curves carry), the report gives
+  the metadata synthetic and injected curves carry, or, for a MAST
+  download, the TIC's log g and radius in the file header), the report gives
   the ratio of fitted to stellar density with its interval and flags the
   pair as inconsistent when the two-sided tail probability is below 0.003.
-  A planet transiting the target gives a consistent density; an eclipsing
+  A density from the TIC is taken with a 30% uncertainty, not 10%: for the
+  15 known planets below, the TIC's log g and radius came within 30% of the
+  published density (HD 1397, a subgiant, 28% low). A planet transiting
+  the target gives a consistent density; an eclipsing
   binary, a blend diluted by another star, or an eccentric orbit often
   does not. A test fits a planet against its own star, which passes, and
   against a star ten times denser, which is flagged.
@@ -1783,6 +1941,70 @@ study, and `FitConfig.baseline`, switch between `offset`, `line` and
 the masked second pass, which `vet` and the batch now run, then took the
 whole chain to 57 converged chains and depth coverage to 0.53 and 0.90.
 
+**Checked against real planets.** Fifteen known TESS planets, fitted from
+one sector of SPOC 2-minute photometry each and compared with the NASA
+Exoplanet Archive's composite values (`data/real_planets/published.csv`):
+
+```bash
+python -m transitml.real_check planets      # writes results/real_planets/comparison.{csv,txt}
+```
+
+They span hot Jupiters (WASP-18 b, WASP-62 b, WASP-121 b, WASP-126 b,
+HD 2685 b), a warm Saturn round a subgiant (HD 1397 b), Neptunes (HD 219666 b,
+TOI-132 b, LTT 9779 b), small planets round M dwarfs (LHS 3844 b, TOI-270 c,
+L 98-59 c), pi Men c at 300 ppm, and a grazing one (HIP 65 A b, b = 1.17).
+Fitted median against published, and the difference in units of the
+combined 1-sigma uncertainty:
+
+| planet | P (d) | Rp/R* | b | T14 (h) | density (g/cm³) |
+|---|---|---|---|---|---|
+| pi Men c | 6.2676 (+0.5) | 0.0167 / 0.0158 (-1.7) | 0.44 / 0.65 (+0.6) | 3.00 / 2.95 (-1.1) | 1.53 / 0.94 (-0.6) |
+| WASP-18 b | 0.94146 (-2.5) | 0.0980 / 0.1018 (+3.3) | 0.41 / 0.36 (-0.4) | 2.19 / 2.21 (+0.8) | 0.86 / 0.80 (-0.6) |
+| HD 2685 b | 4.1269 (-0.1) | 0.0948 / 0.0947 (-0.3) | 0.27 / 0.26 (-0.1) | 4.50 / 4.41 (-4.4) | 0.46 / 0.51 (+0.4) |
+| LHS 3844 b | **0.9258, twice 0.4629** | 0.0648 / 0.0626 (-0.9) | 0.35 / 0.14 (-0.9) | 0.53 / 0.52 (-0.1) | 55 / 32 (-1.1) |
+| HD 219666 b | 6.0358 (-2.1) | 0.0401 / 0.0421 (+1.0) | 0.78 / 0.84 (+0.7) | 2.09 / 2.16 (+0.7) | 1.9 / 1.2 (-0.8) |
+| WASP-62 b | 4.4120 (-0.8) | 0.1097 / 0.1111 (+2.2) | 0.13 / 0.23 (+1.0) | 3.78 / 3.82 (+1.4) | 0.93 / 0.85 (-0.7) |
+| HD 1397 b | 11.5352 (+0.1) | 0.0450 / 0.0451 (+0.3) | 0.16 / 0.17 (+0.0) | 8.53 / 8.60 (+1.6) | 0.17 / 0.15 (-1.5) |
+| WASP-121 b | 1.27493 (-0.4) | 0.1216 / 0.1226 (+2.2) | 0.09 / 0.10 (+0.1) | 2.90 / 2.91 (+0.6) | 0.64 / 0.63 (-0.9) |
+| HIP 65 A b | 0.98097 (+0.3) | 0.283 / 0.287 (+0.0) | 1.16 / 1.17 (+0.0) | 0.79 / 0.79 (-0.3) | 2.87 / 2.90 (+0.1) |
+| TOI-132 b | 2.1093 (+2.3) | 0.0342 / 0.0356 (+0.8) | 0.41 / 0.53 (+0.4) | 2.06 / 2.13 (+0.4) | 1.8 / 1.9 (+0.3) |
+| TOI-270 c | 5.6604 (+0.2) | 0.0593 / 0.0560 (-1.1) | 0.37 / 0.35 (-0.1) | 1.68 / 1.68 (+0.1) | 9.9 / 10.6 (+0.3) |
+| L 98-59 c | 3.6906 (+0.7) | 0.0408 / 0.0396 (-0.7) | 0.51 / 0.41 (-0.3) | 1.28 / 1.28 (+0.0) | 11 / 13 (+0.3) |
+| WASP-126 b | 3.2886 (+2.8) | 0.0779 / 0.0780 (+0.2) | 0.11 / 0.30 (+0.9) | 3.42 / 3.44 (+0.8) | 0.86 / 0.79 (-0.8) |
+| TOI-169 b | 2.2556 (-1.1) | 0.0735 / 0.0866 (+1.4) | 0.76 / 0.92 (+1.6) | 1.58 / 1.71 (+1.2) | 2.2 / 0.76 (-1.4) |
+| LTT 9779 b | 0.79204 (+0.6) | 0.0344 / 0.0455 (+3.0) | 0.38 / no value | 0.77 / 0.37 (-5.1) | 13 / 1.8 (-2.4) |
+
+Of the 59 comparisons of radius ratio, impact parameter, duration and
+density, 69% fall within one unit, 88% within two and 95% within three,
+close to what honest intervals give (68%, 95%, 99.7%), with the caveat
+that the composite table mixes papers, so a planet's published numbers can
+come from different solutions. Every chain converged, and every planet but
+LHS 3844 b scored above the threshold. What the comparison found:
+
+- **LHS 3844 b** (P = 11 hours) was found at twice its period, because the
+  search grid starts at 0.5 days. At 2P every other transit sits at phase
+  0.5, where it looks like a binary's secondary eclipse, and the score
+  drops to 0.05 (the secondary statistic is among the report's top reasons). The fit itself, at 2P, still recovers Rp/R*, b and
+  T14.
+- **LTT 9779 b**, a shallow 46-minute transit, fitted at the wrong end of
+  the radius-ratio and impact-parameter ridge: Rp/R* 0.034 against 0.046
+  and a stellar density of 13 against 1.8. The density check flags it
+  (against the TIC's 1.4 g/cm³), which is the check doing its job. (The
+  archive's T14 for it, 0.37 hours, is shorter than its own period and
+  density allow for any non-grazing transit, so that column is not a fair
+  test.)
+- The other differences beyond two units are small in absolute terms: Rp/R*
+  of WASP-18 b, WASP-62 b and WASP-121 b 1% to 4% below the composite value
+  (Shporer et al. 2019, from TESS alone, find 0.0972 for WASP-18 b, the
+  same as this fit), and
+  the duration of HD 2685 b 6 minutes longer while its density agrees.
+
+Before this check, a MAST curve's fit had no density check at all: the fit
+looked for a density only in the synthetic curves' metadata, while a MAST
+download carries the TIC's log g and radius instead. It now works the
+density out from those (see "The density check" above), and all 15 hosts'
+TIC densities are within 30% of the published ones.
+
 **Limits.**
 
 - Circular orbits only. An eccentric planet's transit has a different
@@ -1793,9 +2015,13 @@ whole chain to 57 converged chains and depth coverage to 0.53 and 0.90.
   transits, so fits of them are approximate: the limb darkening absorbs
   part of the mismatch. The coverage study injects `batman` transits for
   this reason.
-- **Not yet checked against real planets.** Comparing fits of known TESS
-  planets with their published parameters needs MAST, which this
-  environment could not reach.
+- Periods under half a day are out of reach: the search grid starts at
+  0.5 days and its shortest box is 58 minutes, so an ultra-short-period
+  planet is found at twice its period and fitted there (LHS 3844 b above).
+- Without the star's density the radius ratio and impact parameter of a
+  shallow, short transit trade off along a ridge, and the fit can settle on
+  the wrong end of it (LTT 9779 b above). The density check is what catches
+  it, so give `--stellar-density` for a curve that does not carry one.
 
 ---
 
@@ -2010,14 +2236,17 @@ transit-detection/
 │   ├── views.py                # global, local, odd, even, secondary folded views
 │   ├── kepler_dr25.py          # python -m transitml.kepler_dr25: training set + model
 │   ├── cnn.py                  # python -m transitml.cnn: CNN on the views (needs torch)
+│   ├── tess_transfer.py        # the DR25 models scored on the TESS TOI benchmark
+│   ├── tess_finetune.py        # the DR25 models fine-tuned on TOI labels, sectors 1-13 to 14-26
 │   ├── vet.py                  # python -m transitml.vet: one star, one page
 │   ├── single_benchmark.py     # injection-recovery for lone transits
 │   ├── fit.py                  # batman transit model sampled with emcee
 │   ├── fit_coverage.py         # do the fitted intervals cover the truth?
 │   ├── batch.py                # python -m transitml.batch: a sector, cached and ranked
 │   ├── dashboard.py            # the batch's self-contained HTML dashboard
+│   ├── real_check.py           # known planets' fits and a real sector, against the archives
 │   └── plots.py                # figures (matplotlib Agg, no display)
-├── tests/                      # 481 tests, ~5 min
+├── tests/                      # 499 tests, ~5 min
 │   ├── test_generator.py       # imbalance is exact; injected physics is consistent
 │   ├── test_preprocess.py      # depth preservation; why the median was rejected
 │   ├── test_features.py        # recovery vs SNR; the vetting statistics fire
@@ -2042,11 +2271,14 @@ transit-detection/
 │   ├── test_vet.py             # vet end to end on CSV, npz and a stubbed TIC
 │   ├── test_kepler_dr25.py     # DR25 labels, FITS, views and CLI, offline
 │   ├── test_cnn.py             # the CNN on synthetic views (skips without torch)
+│   ├── test_tess_transfer.py   # the transfer scorer, offline
+│   ├── test_tess_finetune.py   # fine-tuning and its comparison, offline
 │   ├── test_tpf.py             # pixel files: npz round trip, stubbed download
 │   ├── test_synthetic_tpf.py   # synthetic pixels put the light where it belongs
 │   ├── test_centroid.py        # blends flagged, on-target not; bad input survives
 │   ├── test_vet_centroid.py    # centroid section in JSON and PNG; score unchanged
-│   ├── test_batch.py           # ranking, cache reuse and invalidation, dashboard
+│   ├── test_batch.py           # ranking, caches, retries, centroid test, dashboard
+│   ├── test_real_check.py      # published-value comparisons and the TOI ranking, offline
 │   ├── test_fit.py             # geometry, prior, red noise, recovery, density check
 │   ├── test_fit_wiring.py      # vet --fit, batch --fit N and its cache, coverage
 │   └── test_pipeline.py        # end to end, reproducible, figures on disk
@@ -2115,6 +2347,31 @@ on. Sizes are rough: S is a few hours, M a day or two, L longer.
   TCEs the CNN scores AP 0.910 against 0.893 for boosting (paired bootstrap
   gain +0.009 to +0.026), so it pulls ahead at full scale after tying on
   9,075.
+- Training on real TOI labels (`run_pipeline.py --train-sectors`,
+  `--pixel-features`): trained on the TOI hosts of sectors 1 to 13, the same
+  classifier scores AP 0.74 on sectors 14 to 26, against 0.61 for the
+  synthetic-trained model, and 0.78 with the centroid test as three more
+  features (0.72, 0.77 and 0.81 the other way round).
+- A real-data check (`python -m transitml.real_check`): fifteen known TESS
+  planets fitted from SPOC curves, with 95% of radius ratio, impact
+  parameter, duration and density within three combined sigma of the
+  published values, and all of sector 14 (1,452 stars) through the batch,
+  where planet hosts score AP 0.47 against stars that are not TOIs (chance
+  0.12).
+- Kepler DR25 models on the TESS TOI benchmark (`python -m
+  transitml.tess_transfer`): unchanged, they score AP 0.767 (boosting) and
+  0.761 (CNN) on 723 TOI hosts, against 0.615 for the TESS synthetic-trained
+  model; the Kepler threshold does not transfer.
+- The centroid test in the batch (`batch --centroids N`, on the N
+  best-ranked flagged stars): on real sector 14 it puts 11 of 37 flagged
+  false positives and 1 of 53 planets off target, and as a veto lifts
+  planets against false positives from AP 0.65 to 0.69.
+- Kepler first, then TESS (`python -m transitml.tess_finetune`): trained on
+  the TOI labels of sectors 1 to 13 and scored on 723 hosts of 14 to 26,
+  boosting on Kepler and TESS views scores AP 0.817, on TESS views alone
+  0.812, and the Kepler CNN fine-tuned on TESS 0.799 (0.761 unchanged).
+  Kepler labels help the CNN but add little to boosting once TESS labels
+  are in.
 
 **Next**
 
@@ -2123,7 +2380,7 @@ to next:
 
 | Item | Why | Size |
 | --- | --- | --- |
-| Training on real TOI labels, in progress | Both TOI models are trained on synthetic or injected signals; training on the dispositions of sectors 1 to 13 and testing on 14 to 26 checks what real labels add | M |
+| More TOI labels, in progress | Real labels lift the TOI benchmark from AP 0.61 to 0.74; a learning curve on the 845 training hosts, then the labelled hosts of later sectors, shows whether more of them keep helping | M |
 
 ## References
 

@@ -1,0 +1,51 @@
+Kepler first, then TESS: fine-tuning on real TOI labels
+=======================================================
+
+Trained on 892 labelled TOIs on 823 stars of sectors 1-13 (516 planet TOIs); TESS row weight in the combined boosting model 38.2.
+Scored on 723 TOI hosts of sectors 14-26 (366 CP/KP hosts, 357 FP/FA-only hosts), no star shared with training.
+Epochs run: Kepler CNN fine-tuned on TESS TOIs 7, 19, 14; CNN trained on TESS TOIs only 16, 7, 7
+
+Average precision, all stars (chance 0.506)
+  boosting on Kepler TCEs + TESS TOIs                0.817
+  boosting on views, TESS TOIs only                  0.812
+  Kepler CNN fine-tuned on TESS TOIs                 0.799
+  boosting on TOI labels, with pixel features        0.789
+  Kepler boosting on views, unchanged                0.767
+  Kepler CNN, unchanged                              0.761
+  CNN trained on TESS TOIs only                      0.757
+  boosting on TOI labels, light-curve features       0.749
+  TESS model, trained on synthetic curves            0.615
+
+Paired bootstrap, difference in AP (95% interval)
+  Kepler CNN fine-tuned on TESS TOIs minus kepler cnn, unchanged
+      +0.039  (+0.028 to +0.049)
+  Kepler CNN fine-tuned on TESS TOIs minus cnn trained on tess tois only
+      +0.042  (+0.009 to +0.076)
+  Kepler CNN fine-tuned on TESS TOIs minus boosting on toi labels, light-curve features
+      +0.050  (+0.005 to +0.103)
+  boosting on Kepler TCEs + TESS TOIs minus boosting on views, tess tois only
+      +0.005  (-0.016 to +0.026)
+  boosting on views, TESS TOIs only minus boosting on toi labels, light-curve features
+      +0.063  (+0.021 to +0.106)
+  boosting on Kepler TCEs + TESS TOIs minus boosting on toi labels, light-curve features
+      +0.068  (+0.027 to +0.111)
+  Kepler CNN fine-tuned on TESS TOIs minus boosting on toi labels, with pixel features
+      +0.011  (-0.031 to +0.059)
+
+Stars where the TESS search found the TOI period (540, 274 planets, chance 0.507)
+  boosting on Kepler TCEs + TESS TOIs                0.850
+  boosting on views, TESS TOIs only                  0.835
+  boosting on TOI labels, with pixel features        0.824
+  Kepler CNN fine-tuned on TESS TOIs                 0.821
+  Kepler boosting on views, unchanged                0.805
+  Kepler CNN, unchanged                              0.798
+  boosting on TOI labels, light-curve features       0.795
+  CNN trained on TESS TOIs only                      0.776
+  TESS model, trained on synthetic curves            0.645
+
+Fine-tuned CNN at probability 0.50:
+  TESS planet hosts kept      74.9%
+  TESS FP/FA hosts rejected   70.0%
+
+The view-based models are given each TOI's catalogue ephemeris; the
+benchmark models find their own period with BLS.  See transitml.tess_finetune.

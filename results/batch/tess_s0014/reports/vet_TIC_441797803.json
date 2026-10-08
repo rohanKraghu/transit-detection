@@ -1,0 +1,274 @@
+{
+  "target_id": "TIC 441797803",
+  "score": 0.9986336008987498,
+  "threshold": 0.20511228952516056,
+  "above_threshold": true,
+  "verdict": "planet candidate (score at or above the operating threshold)",
+  "probability": 0.9341758986968665,
+  "planet_rate": 0.03974358974358974,
+  "probability_note": "calibrated on out-of-fold training scores; the chance this star hosts a planet if a fraction planet_rate of stars like it do",
+  "primary_signal": {
+    "period": 5.66712078096369,
+    "epoch": 1684.4131639790667,
+    "duration": 0.112,
+    "depth": 0.008593353107773464,
+    "depth_snr": 102.15304918271855,
+    "sde": 6.856368835711533
+  },
+  "candidates": [
+    {
+      "rank": 1,
+      "period": 5.66712078096369,
+      "epoch": 1684.4131639790667,
+      "duration": 0.112,
+      "depth": 0.008593353107773464,
+      "depth_snr": 102.15304918271855,
+      "sde": 6.856368835711533,
+      "n_cadences_searched": 1215
+    }
+  ],
+  "features": {
+    "bls_sde": 6.856368835711533,
+    "bls_depth_snr": 102.15304918271855,
+    "bls_depth_over_scatter": 17.26625783356085,
+    "delta_loglike": 11600.475158001838,
+    "power_contrast": 1.6692608120378938,
+    "log_depth": -2.065837342332183,
+    "bls_duration": 0.112,
+    "duration_over_period": 0.019763122108887626,
+    "log_duration_ratio": -0.0810376922010915,
+    "log_period": 0.753362468675919,
+    "n_transits": 5.0,
+    "min_points_per_transit": 5.0,
+    "odd_even_sigma": 0.7460728182678125,
+    "secondary_sigma": -1.6118026960920384,
+    "half_period_depth_ratio": 0.4841783391644078,
+    "flat_bottom_fraction": 0.95,
+    "harmonic_delta_loglike": -4939.7671582142675,
+    "harmonic_amp_over_depth": 0.04879889843610256,
+    "red_noise_beta": 1.37225282319749,
+    "log_scatter": -3.303035564188028,
+    "max_single_event_fraction": 0.21569816971358996,
+    "flux_skew": -5.05978516160671,
+    "clipped_fraction": 0.0
+  },
+  "log_odds": 2.6526786963971913,
+  "base_log_odds": -4.485722263330984,
+  "top_reasons": [
+    {
+      "feature": "power_contrast",
+      "value": 1.6692608120378938,
+      "training_median": 1.057325837780274,
+      "shap": 1.3868301628736057,
+      "odds_factor": 4.00214378128446
+    },
+    {
+      "feature": "flux_skew",
+      "value": -5.05978516160671,
+      "training_median": -0.03799755350298734,
+      "shap": 1.0581243249700234,
+      "odds_factor": 2.8809621694560272
+    },
+    {
+      "feature": "secondary_sigma",
+      "value": -1.6118026960920384,
+      "training_median": 0.0,
+      "shap": 1.0373369345971115,
+      "odds_factor": 2.8216926477903588
+    },
+    {
+      "feature": "harmonic_delta_loglike",
+      "value": -4939.7671582142675,
+      "training_median": -27.757128684695886,
+      "shap": 0.7326325789500874,
+      "odds_factor": 2.080550618159705
+    },
+    {
+      "feature": "log_duration_ratio",
+      "value": -0.0810376922010915,
+      "training_median": 0.029874003725954147,
+      "shap": 0.6341714420762606,
+      "odds_factor": 1.885459281860422
+    }
+  ],
+  "contributions": [
+    {
+      "feature": "power_contrast",
+      "value": 1.6692608120378938,
+      "training_median": 1.057325837780274,
+      "shap": 1.3868301628736057,
+      "odds_factor": 4.00214378128446
+    },
+    {
+      "feature": "flux_skew",
+      "value": -5.05978516160671,
+      "training_median": -0.03799755350298734,
+      "shap": 1.0581243249700234,
+      "odds_factor": 2.8809621694560272
+    },
+    {
+      "feature": "secondary_sigma",
+      "value": -1.6118026960920384,
+      "training_median": 0.0,
+      "shap": 1.0373369345971115,
+      "odds_factor": 2.8216926477903588
+    },
+    {
+      "feature": "harmonic_delta_loglike",
+      "value": -4939.7671582142675,
+      "training_median": -27.757128684695886,
+      "shap": 0.7326325789500874,
+      "odds_factor": 2.080550618159705
+    },
+    {
+      "feature": "log_duration_ratio",
+      "value": -0.0810376922010915,
+      "training_median": 0.029874003725954147,
+      "shap": 0.6341714420762606,
+      "odds_factor": 1.885459281860422
+    },
+    {
+      "feature": "odd_even_sigma",
+      "value": 0.7460728182678125,
+      "training_median": 0.6670887462954469,
+      "shap": 0.49087912516852306,
+      "odds_factor": 1.6337518611890383
+    },
+    {
+      "feature": "max_single_event_fraction",
+      "value": 0.21569816971358996,
+      "training_median": 0.3795534590813556,
+      "shap": 0.45541426356265685,
+      "odds_factor": 1.576826469500635
+    },
+    {
+      "feature": "log_depth",
+      "value": -2.065837342332183,
+      "training_median": -3.2218388274471046,
+      "shap": 0.3828421578494481,
+      "odds_factor": 1.4664465447235182
+    },
+    {
+      "feature": "bls_sde",
+      "value": 6.856368835711533,
+      "training_median": 3.5037168156549647,
+      "shap": 0.3790366140517153,
+      "odds_factor": 1.460876523372803
+    },
+    {
+      "feature": "delta_loglike",
+      "value": 11600.475158001838,
+      "training_median": 1015.7261025438174,
+      "shap": -0.16362680631592155,
+      "odds_factor": 0.8490588261531844
+    },
+    {
+      "feature": "log_period",
+      "value": 0.753362468675919,
+      "training_median": 0.7523585972812794,
+      "shap": 0.14443025711808868,
+      "odds_factor": 1.1553811125452655
+    },
+    {
+      "feature": "duration_over_period",
+      "value": 0.019763122108887626,
+      "training_median": 0.023463880386692074,
+      "shap": 0.1353933068525671,
+      "odds_factor": 1.14498702704758
+    },
+    {
+      "feature": "bls_duration",
+      "value": 0.112,
+      "training_median": 0.16,
+      "shap": 0.10684679117502371,
+      "odds_factor": 1.1127637561911756
+    },
+    {
+      "feature": "clipped_fraction",
+      "value": 0.0,
+      "training_median": 0.0,
+      "shap": 0.09639334751245884,
+      "odds_factor": 1.101192130000752
+    },
+    {
+      "feature": "red_noise_beta",
+      "value": 1.37225282319749,
+      "training_median": 1.307213752418937,
+      "shap": 0.08945666439923029,
+      "odds_factor": 1.0935799413417306
+    },
+    {
+      "feature": "log_scatter",
+      "value": -3.303035564188028,
+      "training_median": -3.363653005014345,
+      "shap": 0.06941437671091215,
+      "odds_factor": 1.071880279360468
+    },
+    {
+      "feature": "bls_depth_over_scatter",
+      "value": 17.26625783356085,
+      "training_median": 1.28259301408926,
+      "shap": 0.0692299301008138,
+      "odds_factor": 1.071682592908367
+    },
+    {
+      "feature": "harmonic_amp_over_depth",
+      "value": 0.04879889843610256,
+      "training_median": 0.017752813145093083,
+      "shap": 0.052429510338062396,
+      "odds_factor": 1.0538282754614712
+    },
+    {
+      "feature": "flat_bottom_fraction",
+      "value": 0.95,
+      "training_median": 0.95,
+      "shap": 0.04039282656031463,
+      "odds_factor": 1.0412197126244327
+    },
+    {
+      "feature": "half_period_depth_ratio",
+      "value": 0.4841783391644078,
+      "training_median": 0.4914085257188307,
+      "shap": -0.036709695810983475,
+      "odds_factor": 0.9639559351795669
+    },
+    {
+      "feature": "min_points_per_transit",
+      "value": 5.0,
+      "training_median": 5.0,
+      "shap": -0.0139303672143881,
+      "odds_factor": 0.9861662113724673
+    },
+    {
+      "feature": "bls_depth_snr",
+      "value": 102.15304918271855,
+      "training_median": 8.645244498969332,
+      "shap": -0.004510611237745425,
+      "odds_factor": 0.9954995462911634
+    },
+    {
+      "feature": "n_transits",
+      "value": 5.0,
+      "training_median": 5.0,
+      "shap": -0.004076174559693471,
+      "odds_factor": 0.9959321217635785
+    }
+  ],
+  "contribution_method": "SHAP values (exact path-dependent TreeSHAP) in calibrated log-odds; base_log_odds plus the sum over every feature equals log_odds",
+  "n_cadences": 1215,
+  "baseline_days": 26.79178925074598,
+  "model": {
+    "threshold_rule": "max recall subject to Wilson 1-sigma lower bound on CV precision >= 0.50 (bound 0.500 at 81 candidates)",
+    "sklearn": "1.9.1",
+    "n_train": 1560,
+    "n_train_positive": 62,
+    "seed": 42,
+    "source": "SyntheticTESSSource"
+  },
+  "single_events": {
+    "note": "individual dips found without folding, for transits seen once or twice; an event inside a listed signal's transits is that signal, ramp-shaped dips are listed under ramps rather than as events, and none of this is scored",
+    "events": [],
+    "duos": [],
+    "ramps": []
+  }
+}

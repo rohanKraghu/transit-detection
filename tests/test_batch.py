@@ -260,6 +260,63 @@ def test_mast_download_is_chunked_cached_and_resumable(monkeypatch, tmp_path):
     assert len(list(tmp_path.glob("chunk_*.npz"))) == 2
 
 
+def test_a_failed_download_is_retried_on_the_next_run(monkeypatch, tmp_path):
+    """A target whose download raised is not remembered as tried; one MAST lacks is."""
+    from transitml.data import mast
+
+    calls: list[list[str]] = []
+    lc, _ = clean_transit_curve(seed=1)
+    flaky = {"TIC 2"}
+
+    class FakeMAST:
+        def __init__(self, targets, **kwargs):
+            self.targets = [t for t, _ in targets]
+            self.failed: list[str] = []
+            calls.append(self.targets)
+
+        def __iter__(self):
+            for t in self.targets:
+                if t in flaky:
+                    self.failed.append(t)
+                elif t != "TIC 3":
+                    yield replace(lc, target_id=t, meta={"sector": 14})
+
+    monkeypatch.setattr(mast, "MASTLightCurveSource", FakeMAST)
+    targets = ["TIC 1", "TIC 2", "TIC 3"]
+    got = fetch_sector_curves(targets, 14, tmp_path, progress=False)
+    assert [c.target_id for c in got] == ["TIC 1"]
+    flaky.clear()
+    got = fetch_sector_curves(targets, 14, tmp_path, progress=False)
+    assert calls[1] == ["TIC 2"]  # TIC 3 had nothing and stays tried
+    assert [c.target_id for c in got] == ["TIC 1", "TIC 2"]
+
+
+def test_the_mast_source_records_failures_apart_from_empty_searches(monkeypatch):
+    """Offline: a search that raises is a failure; one that finds nothing is not."""
+    from transitml.data.mast import MASTLightCurveSource
+
+    class FakeSearch(list):
+        def download_all(self, **_):
+            raise TimeoutError("read timed out")
+
+    class FakeLK:
+        @staticmethod
+        def search_lightcurve(target, **_):
+            if target == "TIC 9":
+                raise ConnectionError("reset")
+            return FakeSearch([1]) if target == "TIC 8" else FakeSearch()
+
+    monkeypatch.setattr(MASTLightCurveSource, "_import_lightkurve", staticmethod(lambda: FakeLK))
+    source = MASTLightCurveSource([("TIC 7", None), ("TIC 8", None), ("TIC 9", None)])
+    with pytest.warns(UserWarning) as caught:
+        assert list(source) == []
+    assert [str(w.message) for w in caught] == [
+        "TIC 8: skipped (TimeoutError: read timed out)",
+        "TIC 9: skipped (ConnectionError: reset)",
+    ]
+    assert source.failed == ["TIC 8", "TIC 9"]
+
+
 def test_cli_runs_a_synthetic_sector(model_path, tmp_path, capsys):
     status = batch.main([
         "--synthetic", "12", "--seed", "3", "--model", str(model_path), "--out-dir", str(tmp_path),
@@ -276,3 +333,44 @@ def test_cli_wants_exactly_one_source(model_path):
         batch.main(["--synthetic", "3", "--targets", "t.txt", "--model", str(model_path)])
     with pytest.raises(SystemExit):
         batch.main(["--model", str(model_path)])
+
+
+def test_the_centroid_test_runs_on_the_best_candidates_from_cached_pixels(tmp_path):
+    """Offline: the pixel files are already in the cache, so nothing is downloaded."""
+    from transitml.batch import PixelSource, _centroid_candidates, write_candidates_csv
+    from transitml.benchmark import tpf_cache_path
+    from transitml.data.synthetic_tpf import blend_scenario
+    from transitml.data.tpf import save_tpf
+
+    cache = tmp_path / "tpfs"
+    rows = []
+    for i, kind in enumerate(["on_target", "blend", "blend", "on_target"]):
+        tpf, truth = blend_scenario(kind, seed=300 + i)
+        target = f"TIC {900 + i}"
+        if i < 3:  # the fourth star has no pixel file
+            save_tpf(tpf, tpf_cache_path(cache, target, 14))
+        rows.append({
+            "id": target, "target_id": target, "sector": 14, "status": "ok", "flagged": True,
+            "period_days": truth["period"], "epoch": truth["epoch"],
+            "duration_hours": 24.0 * truth["duration"],
+        })
+    rows.append({**rows[0], "id": "TIC 999", "target_id": "TIC 999", "flagged": False})
+    (cache / "tried.json").write_text(json.dumps(["TIC 903:14"]))
+
+    summary = _centroid_candidates(
+        rows, tmp_path, 10, PixelSource(cache_dir=cache), n_jobs=1, progress=False
+    )
+    assert summary["tested"] == 4 and summary["with_pixels"] == 3
+    assert summary["offset"] == ["TIC 901", "TIC 902"]
+    assert rows[0]["centroid"]["status"] == "ok" and not rows[0]["centroid"]["significant"]
+    assert rows[3]["centroid"] == {"status": "no pixel file", "significant": False}
+    assert "centroid" not in rows[4]  # not flagged, not tested
+    assert _centroid_candidates(rows, tmp_path, 0, PixelSource(), 1, False) is None
+
+    for row in rows:
+        row.update(rank=1, p_planet=0.5, score=0.5)
+    path = write_candidates_csv(rows, tmp_path / "candidates.csv")
+    with open(path, newline="") as handle:
+        written = list(csv.DictReader(handle))
+    assert [r["centroid_offset"] for r in written] == ["False", "True", "True", "False", ""]
+    assert written[3]["centroid_status"] == "no pixel file"
