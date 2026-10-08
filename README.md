@@ -20,7 +20,7 @@ whose coverage is measured by injection.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python run_pipeline.py            # ~3 min on 4 cores
-pytest                            # ~5 min, 512 tests
+pytest                            # ~5 min, 518 tests
 ```
 
 It writes `results/metrics.json`, `results/report.txt`, the trained model
@@ -380,8 +380,9 @@ threshold included:
 
 A star is a planet host if any of its TOIs is CP or KP, and a negative only if
 every TOI on it is FP or FA. Each star is scored on one sector (the first of
-`--benchmark-sectors` it was observed in), and every star the model was
-trained on is removed first. Code in `transitml/data/toi.py` and
+`--benchmark-sectors` it was observed in; with `--stitch`, on all of them
+joined, see "Every sector of a star, searched together" below), and every
+star the model was trained on is removed first. Code in `transitml/data/toi.py` and
 `transitml/benchmark.py`; the table used is a 2026-10-06 ExoFOP snapshot in
 `data/toi_benchmark/`.
 
@@ -600,7 +601,9 @@ chance AP 0.54), synthetic-trained AP 0.72 [0.70, 0.74] alone and 0.77
 
 The search is the other ceiling: BLS recovers the catalogued period for 73% of
 planets in one sector (88% above TOI SNR 40, 32% below 10), and when it
-misses the period the planet is kept 4 to 7% of the time.
+misses the period the planet is kept 4 to 7% of the time. Searching each
+host's sectors 14 to 26 together finds it for 86% (see "Every sector of a
+star, searched together").
 
 To reproduce (downloads about 750 curves the first time and caches them to
 `toi_curves.npz` beside the results, and with `--benchmark-centroids` as many
@@ -844,6 +847,105 @@ model with the centroid test, and `--train-sectors 14-102 --benchmark-sectors
 1-13 --results-dir results/toi_trained/sectors_14_26/later_sectors` the other
 direction.
 
+### Every sector of a star, searched together
+
+Every model above searches each star on one sector, and on the TOI hosts that
+one sector is often where the signal is lost. BLS finds the catalogued period
+(or a low-order alias) for 73% of the 746 hosts of sectors 14 to 26 and 77% of
+the 845 of 1 to 13, and where it does not the model ranks the star little
+better than chance (average precision 0.56 and 0.53 on those stars, against
+0.79 and 0.82 where it finds it). Most of the misses are TOIs with periods
+longer than half a sector, or stars observed in many sectors near an ecliptic
+pole, where the catalogue found the signal by stacking them. Of the 746 hosts
+of sectors 14 to 26, 60% were observed in more than one of those sectors (93
+in seven or more); of the 845 of 1 to 13, 39%.
+
+`--stitch` searches every host, training and benchmark alike, on all of the
+given sectors it was observed in that have a TESS-SPOC curve, joined by
+`stitch_light_curves` (each sector divided by its own median, the gaps kept;
+`load_or_fetch_stitched` in `transitml/benchmark.py`). One thing had to change
+for that. The BLS grid kept its 2000 trial periods however long the baseline,
+and on a year of sectors that lets a transit drift by about a day in phase
+between neighbouring trial periods, far more than its own duration. The grid
+now grows with the baseline so that the drift stays at what 2000 periods allow
+on one sector, 0.05 days (`grid_baseline_days` in `BLSConfig`): a single
+sector's grid is unchanged, and a year of sectors gets about 42,000 trial
+periods. The centroid test still reads the pixel file of the star's first
+sector with a curve. Features, classifier and threshold rule are the same.
+
+Average precision on the stars both runs score; the last column is the share
+of 2000 paired bootstrap resamples in which joining the sectors scores higher:
+
+| Scored on | Inputs | One sector | Every sector, joined | Ahead in |
+|---|---|---|---|---|
+| *746 hosts of sectors 14 to 26 (chance 0.504)* | | | | |
+| | light curve | 0.745 | 0.776 | 98% |
+| | light curve, centroid test as a veto | 0.762 | 0.791 | 97% |
+| | light curve and centroid test | 0.792 | 0.804 | 79% |
+| | catalogued period found | 73% | 82% | |
+| *845 hosts of sectors 1 to 13 (chance 0.542)* | | | | |
+| | light curve | 0.764 | 0.796 | 99% |
+| | light curve, centroid test as a veto | 0.783 | 0.824 | 99.9% |
+| | light curve and centroid test | 0.807 | 0.838 | 98% |
+| | catalogued period found | 77% | 82% | |
+
+- **The search finds more of the catalogued signals, where one sector could
+  not show them.** 84 and 54 hosts gain their period and 17 and 14 lose it,
+  most of those (18 of 31) to a period longer than 15 days, a range one
+  sector never offered the search. On stars observed in seven or more
+  sectors the share found rises from 53% to 87% and from 43% to 68%; for
+  TOIs with periods between half a sector and a whole one (13.7 to 27 days)
+  from 45% to 78% and from 38% to 63%, and for longer ones from 6% and 5% to
+  about a third. Stars observed in one sector are searched as before (79%
+  and 82%).
+- **The ranking improves most on the same stars.** On the hosts observed in
+  seven or more sectors the light-curve model's average precision rises from
+  0.785 to 0.908 (93 hosts of 14 to 26) and from 0.645 to 0.755 (68 of 1 to
+  13). Overall it gains about 0.03 in both directions, ahead in 98% and 99%
+  of resamples, and the models' own cross-validation on their training hosts
+  rises by about as much (0.783 to 0.808, and 0.717 to 0.748).
+- **With the centroid test as features the gain is clear in one direction
+  only.** Scored on 1 to 13 the model rises from 0.807 to 0.838, ahead in 98%
+  of resamples; on 14 to 26 from 0.792 to 0.804, ahead in 79%. There its gain
+  on the stars with seven or more sectors (0.77 to 0.92) is partly offset by
+  a drop on the 266 with two or three (0.81 to 0.77), which these runs cannot
+  tell from noise.
+- **A few more stars get a score.** 20 hosts of 14 to 26 and 12 of 1 to 13
+  have no curve in their first sector but do in a later one, so all 766 and
+  857 are scored: average precision 0.766 and 0.793 for the light-curve model
+  (chance 0.491 and 0.536), 0.796 and 0.835 with the centroid test. At the
+  frozen threshold the light-curve model keeps more planets (0.77 against
+  0.71, and 0.75 against 0.71) and rejects about as many false positives
+  (0.66 against 0.68, and 0.68 against 0.67).
+- **Where the pixels lag.** For 28 hosts in each direction the first sector
+  holds no transit at the ephemeris the joined search found, so their
+  centroid test is empty. Testing the sector with the most transits instead
+  would close that gap.
+
+So joining a star's sectors is worth about 0.03 of average precision in both
+directions, less than the 550 later-sector labels added scored on sectors 1
+to 13 (0.05) and twice what they added on 14 to 26 (0.014), and most of it
+comes from the stars one sector could not show. The labels of later sectors
+(27 to 102) are not joined here: their stars span several years, which this
+grid would search with hundreds of thousands of trial periods each.
+
+To reproduce, after the runs above (the first run downloads every other
+sector of each host, about 2800 more curves, which takes about an hour from
+MAST; the search then takes 25 to 40 minutes for each set of hosts on 4
+cores):
+
+```bash
+python run_pipeline.py --train-sectors 1-13 --benchmark-centroids --stitch \
+    --benchmark-tois data/toi_benchmark/exofop_toi_2026-10-06.csv --benchmark-sectors 14-26
+```
+
+It writes to `results/toi_trained/stitched/` and shares the curve cache with
+the runs above. `--pixel-features` gives the model with the centroid test
+(`stitched/pixels/`), and `--train-sectors 14-26 --benchmark-sectors 1-13
+--results-dir results/toi_trained/stitched/sectors_14_26` with
+`--train-cache` and `--benchmark-cache` set to
+`results/toi_trained/toi_curves.npz` the other direction.
+
 ---
 
 ## Preprocessing: the part that decides whether anything else matters
@@ -968,8 +1070,9 @@ baseline cadences beside it; the masked fit keeps 97% and clips none.
 ## Features and model
 
 `transitml/features.py` runs a Box Least Squares periodogram (astropy) over a
-log-spaced grid of 2000 periods from 0.5 d to half the baseline, and turns the
-result into 23 features in four groups:
+log-spaced grid of 2000 periods from 0.5 d to half the baseline (more when the
+baseline is longer than one sector), and turns the result into 23 features in
+four groups:
 
 - **Detection strength** — `bls_sde` (robust periodogram peak significance),
   `bls_depth_snr`, `bls_depth_over_scatter`, `delta_loglike`, `power_contrast`
@@ -1633,9 +1736,11 @@ segment spans one, and the BLS grid extends to half the stitched baseline,
 which brings the long-period planets of failure mode 2 below within reach.
 The test that pins this uses a 10-day planet with three transits per sector:
 neither sector alone gives a significant peak at 10 days, the two stitched
-together do. The grid keeps its 2000 periods however long the baseline, so
-sectors far apart in time are searched too coarsely; consecutive sectors
-are fine.
+together do. A baseline longer than one sector gets proportionally more
+trial periods, so that between neighbouring ones a transit's phase drifts no
+further than it does on one sector (about 42,000 periods for a year of
+sectors, against 2000); a 40-day planet that transits at most once in any
+sector is found in five of them joined.
 
 ### Single and duo transits
 
@@ -2268,9 +2373,11 @@ gain is `sqrt(3)`, and the BLS peak is not distinguishable from the alias forest
 Single-transit events are excluded from the periodic search by construction: the
 period grid is capped at half the baseline, because a single event cannot be
 confirmed as periodic. Real surveys solve this by stacking sectors, not by better
-statistics on one. `vet` now also lists lone and paired dips from a separate
-single-event search (see "Single and duo transits" above), but the classifier and
-these numbers do not use it.
+statistics on one: on the real TOI hosts, searching each star's sectors
+together finds the catalogued period for 82% of them instead of 73 to 77%
+(see "Every sector of a star, searched together"). `vet` now also lists
+lone and paired dips from a separate single-event search (see "Single and
+duo transits" above), but the classifier and these numbers do not use it.
 
 **3. Grazing, V-shaped transits.** `SYN-001633` (b = 0.94) and `SYN-000250`
 (b = 0.92) are both missed. A grazing planet produces exactly the V-shaped,
@@ -2385,7 +2492,8 @@ Three further gaps:
   the first, and shows the synthetic-trained model separates real planets from
   real TOI false positives only slightly better than a signal-to-noise
   ranking. Trained on the dispositions of other sectors, the same classifier
-  does clearly better (0.75 against 0.60 for that ranking), but those labels
+  does clearly better (0.75 against 0.60 for that ranking, and 0.78 when each
+  star's sectors are searched together), but those labels
   carry the follow-up programme's selection, so it is a ranker of TOIs like
   the resolved ones.
 - **Sample size.** 96 positives in total and 34 in the test set. The bootstrap
@@ -2458,7 +2566,7 @@ transit-detection/
 │   ├── dashboard.py            # the batch's self-contained HTML dashboard
 │   ├── real_check.py           # known planets' fits and a real sector, against the archives
 │   └── plots.py                # figures (matplotlib Agg, no display)
-├── tests/                      # 512 tests, ~5 min
+├── tests/                      # 518 tests, ~5 min
 │   ├── test_generator.py       # imbalance is exact; injected physics is consistent
 │   ├── test_preprocess.py      # depth preservation; why the median was rejected
 │   ├── test_features.py        # recovery vs SNR; the vetting statistics fire
@@ -2466,7 +2574,7 @@ transit-detection/
 │   ├── test_tls.py             # TLS finds the period; same features; falls back
 │   ├── test_search.py          # two planets found; noise yields nothing
 │   ├── test_single.py          # lone and duo transits found; ramps and noise are not
-│   ├── test_stitch.py          # sectors joined; marginal pair becomes a detection
+│   ├── test_stitch.py          # sectors joined, period grid grows with them; pair detected
 │   ├── test_evaluation.py      # no test-set leakage into threshold or metrics
 │   ├── test_calibration.py     # Platt fit, ranking unchanged, proper scores
 │   ├── test_treeshap.py        # SHAP against brute force and the shap package
@@ -2476,6 +2584,7 @@ transit-detection/
 │   ├── test_benchmark.py       # the real-label benchmark, offline, from a cache
 │   ├── test_benchmark_centroids.py  # the centroid veto on synthetic pixel scenes
 │   ├── test_toi_training.py    # training on TOI labels: threshold, pixels, learning curve
+│   ├── test_toi_stitch.py      # every sector of a host fetched, joined, trained on, scored
 │   ├── test_cadence.py         # later sectors' faster photometry averaged to 30 minutes
 │   ├── test_stars.py           # host-star parameters and the occultation allowance
 │   ├── test_files.py           # CSV and npz input
