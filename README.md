@@ -2473,9 +2473,9 @@ on. Sizes are rough: S is a few hours, M a day or two, L longer.
   9,075.
 - Training on real TOI labels (`run_pipeline.py --train-sectors`,
   `--pixel-features`): trained on the TOI hosts of sectors 1 to 13, the same
-  classifier scores AP 0.74 on sectors 14 to 26, against 0.61 for the
-  synthetic-trained model, and 0.78 with the centroid test as three more
-  features (0.72, 0.77 and 0.81 the other way round).
+  classifier scores AP 0.75 on sectors 14 to 26, against 0.61 for the
+  synthetic-trained model, and 0.79 with the centroid test as three more
+  features (0.72, 0.76 and 0.81 the other way round).
 - A real-data check (`python -m transitml.real_check`): fifteen known TESS
   planets fitted from SPOC curves, with 95% of radius ratio, impact
   parameter, duration and density within three combined sigma of the
@@ -2496,6 +2496,13 @@ on. Sizes are rough: S is a few hours, M a day or two, L longer.
   0.812, and the Kepler CNN fine-tuned on TESS 0.799 (0.761 unchanged).
   Kepler labels help the CNN but add little to boosting once TESS labels
   are in.
+- More TOI labels (`run_pipeline.py --learning-curve`, and later sectors'
+  hosts with `--train-sectors 1-13,27-102`, their FFI photometry averaged
+  to 30 minutes): adding about 550 later-sector hosts lifts AP on sectors 1
+  to 13 from 0.76 to 0.81 (0.81 to 0.84 with the centroid test) and on 14
+  to 26 from 0.745 to 0.759. The learning curves still rise 0.02 to 0.04
+  per doubling, but another doubling would need more resolved TOI hosts
+  than exist (2,675).
 
 **Next**
 
@@ -2504,7 +2511,7 @@ to next:
 
 | Item | Why | Size |
 | --- | --- | --- |
-| More TOI labels, in progress | Real labels lift the TOI benchmark from AP 0.61 to 0.74; a learning curve on the 845 training hosts, then the labelled hosts of later sectors, shows whether more of them keep helping | M |
+| Views, pixels and every label in one model, in progress | Boosting on folded views beat the pipeline's features in the fine-tuning test (+0.06), and the centroid test and later sectors' labels each added more; this checks whether they stack, in both directions | M |
 
 ## References
 
