@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from scipy.special import expit, logit
+from sklearn.metrics import average_precision_score
 
 from transitml.benchmark import (
     CENTROID_FEATURE_NAMES,
@@ -38,6 +39,7 @@ from transitml.model import (
 )
 from transitml.toi_training import (
     format_training_report,
+    learning_curve,
     summarise_training,
     train_on_hosts,
 )
@@ -122,6 +124,49 @@ def test_the_survey_rule_keeps_every_star_at_the_catalogue_mix():
     assert "Scored, unchanged" not in report
     payload = json.loads(json.dumps(summary.to_dict(), default=str))
     assert payload["n_stars"] == 240 and "n_with_pixels" not in payload
+
+
+def test_a_learning_curve_trains_on_doubling_subsets_and_ends_at_the_model(monkeypatch):
+    from transitml import toi_training
+
+    train_set, test_set = _toy_hosts(450, 0.55, seed=1), _toy_hosts(300, 0.55, seed=2)
+    fitted: list[np.ndarray] = []
+
+    class Recorded:
+        def __init__(self, seed):
+            self.model = build_model(seed)
+
+        def fit(self, X, y):
+            fitted.append(y)
+            self.model.fit(X, y)
+            return self
+
+        def predict_proba(self, X):
+            return self.model.predict_proba(X)
+
+    monkeypatch.setattr(toi_training, "build_model", Recorded)
+    rows = learning_curve(
+        train_set, test_set, feature_names=FEATURE_NAMES, seed=0, repeats=4, start=50
+    )
+
+    assert [row["n_training"] for row in rows] == [50, 100, 200, 400, 450]
+    assert [row["n_draws"] for row in rows] == [4, 4, 4, 4, 1]
+    assert [len(y) for y in fitted] == [50] * 4 + [100] * 4 + [200] * 4 + [400] * 4 + [450]
+    # Every subset has the training set's planet rate, to the nearest star.
+    for y in fitted:
+        assert abs(y.sum() - len(y) * train_set.y.mean()) <= 0.5
+    assert rows[0]["sd"] > 0.0 and rows[-1]["sd"] == 0.0
+    assert rows[0]["average_precision"] < rows[-1]["average_precision"]
+
+    # The last row is the model itself: all the training stars, the run's seed.
+    model = build_model(0).fit(train_set.inputs(FEATURE_NAMES), train_set.y)
+    scores = model.predict_proba(test_set.inputs(FEATURE_NAMES))[:, 1]
+    assert rows[-1]["average_precision"] == pytest.approx(
+        average_precision_score(test_set.y, scores)
+    )
+    assert learning_curve(
+        train_set, test_set, feature_names=FEATURE_NAMES, seed=0, start=500
+    ) == rows[-1:]
 
 
 def test_centroid_features_blank_what_the_test_could_not_place():
@@ -264,8 +309,11 @@ def test_training_flags_and_their_defaults(tmp_path):
     assert pixels.train_cache == args.train_cache and pixels.train_tpfs == args.train_tpfs
     assert pixels.benchmark_centroids
 
+    assert not args.learning_curve
+    assert run_pipeline.parse_args([*base, "--learning-curve"]).learning_curve
     for bad in (
         ["--pixel-features"],
+        [*base[2:], "--learning-curve"],
         base[:4],
         [*base, "--inject-into", "targets.txt"],
         [*base, "--systematics"],
@@ -283,8 +331,16 @@ def test_run_pipeline_trains_on_one_sector_and_scores_another(small_config, tmp_
 
     train_curves, train_tois = _hosts(small_config, 60, seed=11, tic0=6000, sector=14)
     test_curves, test_tois = _hosts(small_config, 24, seed=12, tic0=8000, sector=15)
-    # A star seen in both sectors is trained on, so the benchmark must not score it.
-    tois = [replace(train_tois[0], sectors=(14, 15)), *train_tois[1:], *test_tois]
+    shared, moved = train_tois[0], train_tois[1]
+    tois = [
+        # Seen in the benchmark's sector too: scored there and never trained on,
+        # so the benchmark scores the same stars whatever the model learned from.
+        replace(shared, sectors=(14, 15)),
+        # First seen in sector 13, where MAST has no curve: trained on sector 14.
+        replace(moved, sectors=(13, 14)),
+        *train_tois[2:],
+        *test_tois,
+    ]
     table = tmp_path / "exofop_toi.csv"
     table.write_text(
         "TIC ID,TOI,TFOPWG Disposition,Period (days),Planet SNR,Sectors\n"
@@ -295,12 +351,16 @@ def test_run_pipeline_trains_on_one_sector_and_scores_another(small_config, tmp_
     )
     results = tmp_path / "results"
     results.mkdir()
-    save_curves(train_curves + test_curves, results / "toi_curves.npz")
+    shared_in_15 = replace(train_curves[0], meta={**train_curves[0].meta, "sector": 15})
+    save_curves(train_curves + test_curves + [shared_in_15], results / "toi_curves.npz")
 
-    def no_network(*_, **__):
-        raise AssertionError("everything is cached; MAST must not be queried")
+    asked: list[tuple[str, int]] = []
 
-    monkeypatch.setattr(bench, "fetch_benchmark_curves", no_network)
+    def mast(targets, **_):
+        asked.extend((t.target_id, t.sector) for t in targets)
+        return []
+
+    monkeypatch.setattr(bench, "fetch_benchmark_curves", mast)
     monkeypatch.setattr(
         tic_module,
         "fetch_tic_stars",
@@ -308,39 +368,55 @@ def test_run_pipeline_trains_on_one_sector_and_scores_another(small_config, tmp_
     )
     args = run_pipeline.parse_args(
         [
-            "--train-sectors", "14",
+            "--train-sectors", "13-14",
             "--benchmark-tois", str(table),
             "--benchmark-sectors", "15",
             "--results-dir", str(results),
             "--no-figures",
             "--n-jobs", "2",
+            "--learning-curve",
         ]
     )
     assert run_pipeline.run_toi_training(args, small_config, started=0.0) == 0
 
+    # The one star not in the cache at its first sector, asked for once.
+    assert asked == [(f"TIC {moved.tic}", 13)]
     metrics = json.loads((results / "metrics.json").read_text())
-    assert metrics["dataset"]["n_curves"] == 60 and metrics["dataset"]["n_test"] == 0
+    assert metrics["dataset"]["n_curves"] == 59 and metrics["dataset"]["n_test"] == 0
+    selection = metrics["training"]["selection"]
+    assert selection["in_benchmark_sectors"] == 1 and selection["from_a_later_sector"] == 1
     assert metrics["training"]["operating_point"]["rule"].startswith("calibrated P(planet)")
-    assert metrics["toi_benchmark"]["n_stars"] == 24
+    assert metrics["toi_benchmark"]["n_stars"] == 25
 
     scored = json.loads((results / "toi_benchmark.json").read_text())
-    assert scored["selection"]["in_training_set"] == 1
-    assert {s["target_id"] for s in scored["stars"]}.isdisjoint(lc.target_id for lc in train_curves)
+    assert scored["selection"]["in_training_set"] == 0
+    trained_on = {lc.target_id for lc in train_curves[1:]}
+    assert {s["target_id"] for s in scored["stars"]}.isdisjoint(trained_on)
+    assert f"TIC {shared.tic}" in {s["target_id"] for s in scored["stars"]}
     assert len(scored["feature_importance"]) == len(FEATURE_NAMES)
     assert "model_features" not in scored
 
     calibration = metrics["toi_benchmark"]["calibration"]
-    assert sum(row["n"] for row in calibration["reliability"]) == 24
+    assert sum(row["n"] for row in calibration["reliability"]) == 25
+    # Fewer than 100 training stars: the curve is the model alone, scored as above.
+    (learning,) = metrics["toi_benchmark"]["learning_curve"]
+    assert learning["n_training"] == 59 and learning["n_draws"] == 1
+    assert learning["average_precision"] == pytest.approx(
+        metrics["toi_benchmark"]["average_precision"]
+    )
     assert calibration["planet_rate"] == pytest.approx(
-        sum(s["disposition"] == "CP" for s in scored["stars"]) / 24
+        sum(s["disposition"] == "CP" for s in scored["stars"]) / 25
     )
 
     report = (results / "report.txt").read_text()
-    assert "TRAINED ON REAL LABELS: TOI HOSTS OF SECTORS 14" in report
+    assert "TRAINED ON REAL LABELS: TOI HOSTS OF SECTORS 13, 14" in report
+    assert "observed in the benchmark's sectors, so left out: 1" in report
+    assert "of which 1 from a later sector than their first" in report
     assert "Scored, unchanged, on the TOI hosts of sectors 15" in report
     assert "calibrated P(planet): Brier score" in report
+    assert "Learning curve: trained on random subsets of the training stars" in report
 
     saved = load_model(results / "model.joblib")
-    assert saved.provenance["source"] == "TOI hosts, sectors 14"
+    assert saved.provenance["source"] == "TOI hosts, sectors 13-14"
     assert saved.threshold_probability == pytest.approx(0.5)
     assert (results / "dataset.npz").exists()

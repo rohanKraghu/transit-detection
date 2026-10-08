@@ -20,7 +20,7 @@ whose coverage is measured by injection.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python run_pipeline.py            # ~3 min on 4 cores
-pytest                            # ~5 min, 490 tests
+pytest                            # ~5 min, 499 tests
 ```
 
 It writes `results/metrics.json`, `results/report.txt`, the trained model
@@ -632,14 +632,17 @@ features and hyperparameters. The benchmark then scores it, unchanged, on the
 hosts of other sectors, after removing every star it was trained on (code in
 `transitml/toi_training.py`). TESS's first year (sectors 1 to 13, the
 southern ecliptic hemisphere) and its second (14 to 26, the northern) share no
-star, so each trains a model for the other: 845 hosts with curves in the first
-(458 planets, 387 false positives) and the 746 of the benchmark above in the
-second.
+star, so each trains a model for the other: 857 hosts with curves in the first
+(459 planets, 398 false positives) and 766 in the second (376 and 390). Those
+counts include 12 and 20 stars taken from a later sector of the same year,
+because MAST has no TESS-SPOC curve for them in their first. A scored star
+keeps its first sector, so the stars scored are the 746 of the benchmark above
+in the second year and 845 in the first.
 
 Two things change with the labels. At about half planets, the threshold rule
 above (a floor of 0.5 on the lower bound of cross-validated precision) is met
-by keeping every star or nearly: all 845 training hosts of sectors 1 to 13,
-and with those of 14 to 26 it rejects 6 to 8% of the false positives. So a
+by keeping every star or nearly: all 857 training hosts of sectors 1 to 13,
+and with those of 14 to 26 it rejects 12 to 13% of the false positives. So a
 model trained on TOIs keeps a star when its calibrated probability of being a
 planet, at the training set's mix, is at least one half
 (`probability_threshold` in `transitml/model.py`), again set by
@@ -650,13 +653,17 @@ missing where the test could not place the dip, which the trees treat as
 information rather than imputing.
 
 **Result on sectors 14 to 26** (746 hosts, chance AP 0.50; reports in
-[`results/toi_trained/`](results/toi_trained/)):
+[`results/toi_trained/`](results/toi_trained/), and in its `later_sectors/`
+for the models that also learned from sectors 27 to 102,
+[below](#more-labels-from-later-sectors)):
 
 | Model trained on | Inputs | AP | AP with the centroid veto | Planets kept | False positives rejected | Top 20 |
 |---|---|---|---|---|---|---|
 | Synthetic light curves | light curve | 0.61 [0.59, 0.64] | 0.68 [0.65, 0.71] | 0.57 | 0.58 | 0.65 |
-| TOI hosts, sectors 1 to 13 | light curve | **0.74** [0.72, 0.77] | 0.76 [0.74, 0.78] | 0.69 | 0.66 | 0.85 |
-| TOI hosts, sectors 1 to 13 | light curve and centroid test | **0.78** [0.76, 0.81] | 0.78 [0.76, 0.81] | 0.75 | 0.67 | 1.00 |
+| TOI hosts, sectors 1 to 13 | light curve | 0.75 [0.72, 0.77] | 0.76 [0.74, 0.79] | 0.70 | 0.68 | 0.90 |
+| TOI hosts, sectors 1 to 13 | light curve and centroid test | 0.79 [0.77, 0.81] | 0.79 [0.77, 0.81] | 0.73 | 0.70 | 1.00 |
+| TOI hosts, sectors 1 to 13 and 27 to 102 | light curve | 0.76 [0.74, 0.78] | 0.78 [0.76, 0.80] | 0.75 | 0.59 | 0.95 |
+| TOI hosts, sectors 1 to 13 and 27 to 102 | light curve and centroid test | **0.80** [0.78, 0.82] | 0.80 [0.78, 0.82] | 0.78 | 0.66 | 0.95 |
 | Baseline: rank by BLS SNR | | 0.60 [0.57, 0.63] | | | | 0.65 |
 
 Trained on sectors 14 to 26 and scored on the 845 hosts of 1 to 13 instead
@@ -666,8 +673,10 @@ Trained on sectors 14 to 26 and scored on the 845 hosts of 1 to 13 instead
 | Model trained on | Inputs | AP | AP with the centroid veto | Planets kept | False positives rejected | Top 20 |
 |---|---|---|---|---|---|---|
 | Synthetic light curves | light curve | 0.72 [0.70, 0.74] | 0.77 [0.75, 0.79] | 0.69 | 0.57 | 0.90 |
-| TOI hosts, sectors 14 to 26 | light curve | **0.77** [0.74, 0.79] | 0.78 [0.76, 0.81] | 0.73 | 0.64 | 0.85 |
-| TOI hosts, sectors 14 to 26 | light curve and centroid test | **0.81** [0.80, 0.83] | 0.81 [0.80, 0.83] | 0.80 | 0.65 | 1.00 |
+| TOI hosts, sectors 14 to 26 | light curve | 0.76 [0.74, 0.79] | 0.78 [0.76, 0.81] | 0.71 | 0.67 | 0.80 |
+| TOI hosts, sectors 14 to 26 | light curve and centroid test | 0.81 [0.79, 0.83] | 0.81 [0.79, 0.83] | 0.78 | 0.65 | 1.00 |
+| TOI hosts, sectors 14 to 102 | light curve | 0.81 [0.80, 0.83] | 0.83 [0.81, 0.85] | 0.78 | 0.55 | 1.00 |
+| TOI hosts, sectors 14 to 102 | light curve and centroid test | **0.84** [0.83, 0.86] | 0.84 [0.83, 0.86] | 0.83 | 0.60 | 1.00 |
 | Baseline: rank by BLS SNR | | 0.66 [0.63, 0.68] | | | | 0.55 |
 
 The veto's half-pixel floor was chosen on these 845 stars, so its column in
@@ -677,35 +686,35 @@ the second table is not independent of them.
 
 **Real labels do what none of the fixes could.** Trained on the other
 hemisphere's dispositions, the same classifier on the same light-curve
-features raises average precision on these 746 stars from 0.61 to 0.74, well
+features raises average precision on these 746 stars from 0.61 to 0.75, well
 outside each other's intervals and further than the centroid veto took the
 synthetic-trained model (0.68). It keeps more planets and rejects more false
-positives at once, and 17 of its top 20 are planets. With the centroid test as
-features it reaches 0.78, and the veto then adds nothing (+0.001): the model
+positives at once, and 18 of its top 20 are planets. With the centroid test as
+features it reaches 0.79, and the veto then adds nothing (+0.001): the model
 has learned what the veto does, and does it better, since the light-curve
-model with the veto reaches 0.76. The other direction agrees, 0.72 to 0.77 to
+model with the veto reaches 0.76. The other direction agrees, 0.72 to 0.76 to
 0.81.
 
 **The gain is in the shallow signals.** Below 1000 ppm the synthetic-trained
 model kept 28% of the planets and 23% of the false positives, so it did not
-separate them at all; trained on TOIs it keeps 47% and 18%, and with pixels
-55% and 14%. Between 1000 and 3000 ppm, where it kept more false positives
-than planets (51% against 45%), it now keeps 63% against 34%. Above 6000 ppm
+separate them at all; trained on TOIs it keeps 50% and 14%, and with pixels
+59% and 14%. Between 1000 and 3000 ppm, where it kept more false positives
+than planets (51% against 45%), it now keeps 65% against 33%. Above 6000 ppm
 little changes: the synthetic-trained model and both TOI-trained ones keep 82
-to 91% of those planets and 46 to 62% of those false positives. Shuffling one
+to 88% of those planets and 46 to 62% of those false positives. Shuffling one
 feature at a time across the 746 stars says what the light-curve model leans
-on: depth first (it loses 0.07 of average precision without it), then the
-secondary test, the period and the scatter (0.02 to 0.03 each). With pixels
-the centroid offset ties depth, at 0.05 each.
+on: depth first (it loses 0.08 of average precision without it), then the
+period (0.04), the secondary test and the scatter (0.03 each). With pixels
+the centroid offset and depth lead, at 0.05 and 0.04.
 
 **Its probabilities carry over.** On the other hemisphere the stars the
-light-curve model gives a calibrated P(planet) above 0.8 are 87% planets, and
-those below 0.2 are 13%; its Brier score is 0.205, against 0.251 for the
+light-curve model gives a calibrated P(planet) above 0.8 are 89% planets, and
+those below 0.2 are 12%; its Brier score is 0.203, against 0.251 for the
 training planet rate alone. The run saves it as
 `results/toi_trained/model.joblib`, so `python -m transitml.vet ... --model
-results/toi_trained/model.joblib` scores a TOI the way the first table does.
-The model with pixel features is not saved, since `vet` computes light-curve
-features only.
+results/toi_trained/model.joblib` scores a TOI the way its row of the first
+table does. The model with pixel features is not saved, since `vet` computes
+light-curve features only.
 
 **What these labels carry.** A resolved TOI is not a random TOI. A planet is
 confirmed sooner when it is deep and its star bright, and a false positive is
@@ -725,18 +734,115 @@ centroid test placed them off target.
 To reproduce:
 
 ```bash
-python run_pipeline.py --train-sectors 1-13 --benchmark-centroids \
+python run_pipeline.py --train-sectors 1-13 --benchmark-centroids --learning-curve \
     --benchmark-tois data/toi_benchmark/exofop_toi_2026-10-06.csv --benchmark-sectors 14-26
-python run_pipeline.py --train-sectors 1-13 --pixel-features \
+python run_pipeline.py --train-sectors 1-13 --pixel-features --learning-curve \
     --benchmark-tois data/toi_benchmark/exofop_toi_2026-10-06.csv --benchmark-sectors 14-26
 ```
 
-The two runs share one cache in `results/toi_trained/`, which holds the curves
-of both sets of hosts (about 1600) and their target pixel files (about 1.7 GB);
-`--train-cache` and `--benchmark-cache` can point at caches an earlier run
-filled instead, as these results did (`results/toi_sectors_01_13/` and
-`results/real_injection/`). Swapping the two sector ranges, with
-`--results-dir results/toi_trained/sectors_14_26`, runs the other direction.
+The two runs share one cache in `results/toi_trained/`, which holds the
+curves and target pixel files of every host they read (about 2300 of each,
+the pixel files 2.8 GB). A run given a `--results-dir` of its own starts a
+cache of its own unless `--train-cache` and `--benchmark-cache` both point at
+`results/toi_trained/toi_curves.npz`. Swapping the two sector ranges, with
+`--results-dir results/toi_trained/sectors_14_26` and those two flags, runs
+the other direction.
+
+### More labels, from later sectors
+
+Every model above learned from one year of labels. Whether more would help
+can be read off the labels in hand: `--learning-curve` trains the same
+classifier on random subsets of the training hosts, ten at each size and each
+with their planet rate, and scores every one on the benchmark's stars.
+Trained on sectors 1 to 13, the light-curve model's average precision on the
+746 stars of 14 to 26 rises by 0.05 from 100 hosts to 200, by 0.03 from 200
+to 400 and by 0.02 from 400 to 800 (table below). Each doubling is worth less
+than the last, but none of the curves has levelled off.
+
+After its first two years TESS went back over both hemispheres, and the TOI
+table holds labelled hosts observed in sectors up to 102. A star never
+observed in the benchmark's sectors can train a model for them:
+`--train-sectors 1-13,27-102` trains on 1402 hosts instead of 857 and scores
+the same 746 stars of 14 to 26, and `--train-sectors 14-102` trains on 1313
+instead of 766 and scores the same 845 of 1 to 13. A star observed in any of
+the benchmark's sectors is never trained on (779 and 927 are left out this
+way), which is what keeps the stars scored the same whichever sectors the
+model learned from. In both directions about 545 hosts are added, most of
+them from sectors 27 to 55: two thirds are planets, against about half in the
+first two years, and they are a magnitude fainter (median TESS magnitude 11.5
+to 11.6, against 10.4 to 10.6).
+
+The later sectors needed one change. TESS exposed its full-frame images for 30
+minutes in sectors 1 to 26, 10 minutes in 27 to 55 and 200 seconds since, and
+some features count cadences (points per transit) or scale with the scatter of
+one, so a later sector's light curve and target pixel file are fetched at that
+sector's cadence and averaged to 30 minutes (`bin_light_curve` in
+`transitml/data/base.py`, `bin_target_pixels` in `transitml/data/tpf.py`).
+`tests/test_cadence.py` checks that a 10-minute curve averaged this way gives
+the features of a 30-minute one, and on the averaged pixels the centroid test
+places these hosts' planets about as close to the target as the first year's
+(median offset 0.27 pixels in sectors 27 to 55 and 0.23 from 56 on, against
+0.23). A training star with no TESS-SPOC curve in the first of its sectors is
+taken from its next one, as within a single year (138 and 148 of them here).
+
+Average precision against the number of training hosts, each value the mean
+of ten random subsets (standard deviation 0.01 to 0.04); the last column is
+the model in the tables above:
+
+| Trained on (hosts) | Inputs | 100 | 200 | 400 | 800 | All |
+|---|---|---|---|---|---|---|
+| *Scored on the 746 hosts of sectors 14 to 26* | | | | | | |
+| Sectors 1 to 13 (857) | light curve | 0.63 | 0.68 | 0.72 | 0.74 | 0.75 |
+| Sectors 1 to 13 and 27 to 102 (1402) | light curve | 0.64 | 0.66 | 0.70 | 0.74 | 0.76 |
+| Sectors 1 to 13 (857) | light curve and centroid test | 0.68 | 0.72 | 0.75 | 0.78 | 0.79 |
+| Sectors 1 to 13 and 27 to 102 (1402) | light curve and centroid test | 0.68 | 0.70 | 0.74 | 0.78 | 0.80 |
+| *Scored on the 845 hosts of sectors 1 to 13* | | | | | | |
+| Sectors 14 to 26 (766) | light curve | 0.69 | 0.72 | 0.74 | | 0.76 |
+| Sectors 14 to 102 (1313) | light curve | 0.67 | 0.71 | 0.75 | 0.78 | 0.81 |
+| Sectors 14 to 26 (766) | light curve and centroid test | 0.75 | 0.76 | 0.79 | | 0.81 |
+| Sectors 14 to 102 (1313) | light curve and centroid test | 0.74 | 0.75 | 0.79 | 0.82 | 0.84 |
+
+**More labels help in both directions, by different amounts.** Scored on the
+845 stars of sectors 1 to 13, the light-curve model trained on 1313 hosts
+instead of 766 rises from 0.76 to 0.81, ahead in all 2000 paired bootstrap
+resamples, and ties the model trained on one year with the centroid test
+(0.812 against 0.807): there, about 550 more labels are worth what the pixels
+are, and with both the model reaches 0.84, ahead of either alone in 1998 of
+2000 resamples. Scored on the 746 stars of 14 to 26 the gains are a third as
+large, 0.745 to 0.759 for the light-curve model and 0.792 to 0.802 with the
+centroid test, each ahead in 84 to 86% of resamples: likely real, and small.
+Why the two directions differ this much is not clear from these runs. The
+hosts added are alike in both, and at equal training-set sizes the mixed sets
+score within 0.03 of a single year's hosts, so a host from a later sector is
+worth about what one from the first two years is.
+
+**What the curves say next.** In every row with later sectors more planets are
+kept and fewer false positives rejected, because the threshold follows the
+training set's planet rate (a calibrated P(planet) of one half at 56 to 58%
+planets rather than 49 to 54%), while the ranking itself improved. At their
+last step the curves still gain 0.02 to 0.04 of average precision per doubling
+of training hosts, so more labels would keep helping. But another doubling
+would take more resolved TOI hosts than the whole table holds today (2675
+stars), and on one year of labels the centroid features were worth 0.04 to
+0.05, about what that doubling would be.
+
+To reproduce, after the runs above (the later sectors add about 650 curves
+and 1.1 GB of pixel files to the cache; the first run took about 45 minutes,
+most of it searching MAST for stars it has no curve for):
+
+```bash
+python run_pipeline.py --train-sectors 1-13,27-102 --benchmark-centroids --learning-curve \
+    --benchmark-tois data/toi_benchmark/exofop_toi_2026-10-06.csv --benchmark-sectors 14-26 \
+    --train-cache results/toi_trained/toi_curves.npz \
+    --benchmark-cache results/toi_trained/toi_curves.npz \
+    --results-dir results/toi_trained/later_sectors \
+    --figures-dir figures/toi_trained/later_sectors
+```
+
+`--pixel-features`, with `later_sectors/pixels` as both directories, gives the
+model with the centroid test, and `--train-sectors 14-102 --benchmark-sectors
+1-13 --results-dir results/toi_trained/sectors_14_26/later_sectors` the other
+direction.
 
 ---
 
@@ -1176,11 +1282,11 @@ sectors were scored.
 | Boosting on views, Kepler TCEs + TESS TOIs | **0.817** | **0.850** |
 | Boosting on views, TESS TOIs only | 0.812 | 0.835 |
 | Kepler CNN fine-tuned on TESS TOIs | 0.799 | 0.821 |
-| Boosting on TOI labels, with pixel features | 0.789 | 0.824 |
+| Boosting on TOI labels, with pixel features | 0.798 | 0.837 |
 | Kepler boosting on views, unchanged | 0.767 | 0.805 |
 | Kepler CNN, unchanged | 0.761 | 0.798 |
 | CNN on TESS TOIs only | 0.757 | 0.776 |
-| Boosting on TOI labels, light-curve features | 0.749 | 0.795 |
+| Boosting on TOI labels, light-curve features | 0.753 | 0.791 |
 | TESS model trained on synthetic curves | 0.615 | 0.645 |
 
 What the paired bootstraps say:
@@ -1195,13 +1301,13 @@ What the paired bootstraps say:
   on the TESS views either (0.799 against 0.812).
 * **The views account for most of the gain over the earlier TOI-trained
   model.** Boosting on the views of the same TOIs beats boosting on the
-  pipeline's features by +0.021 to +0.106. Part of that is the catalogue
+  pipeline's features by +0.018 to +0.100. Part of that is the catalogue
   ephemeris the views are given, which the pipeline has to find with BLS.
   But the gap holds on the 540 hosts where BLS found the period (0.835
-  against 0.795), so the views themselves carry information the summary
+  against 0.791), so the views themselves carry information the summary
   features drop.
-* The fine-tuned CNN and the pixel-feature model are level (+0.011, -0.031 to
-  +0.059). The views use no pixel data, so the two could still be combined.
+* The fine-tuned CNN and the pixel-feature model are level (+0.001, -0.040 to
+  +0.050). The views use no pixel data, so the two could still be combined.
 
 At a calibrated probability of 0.5, the fine-tuned CNN keeps 74.9% of planet
 hosts and rejects 70.0% of false positives. The caveat from training on TOI
@@ -2060,8 +2166,8 @@ Three further gaps:
   raises the TOI benchmark's average precision from 0.61 to 0.68; the rest of
   the blends are too faint in the difference image or too close to the
   target for one sector of pixels. A model trained on TOI dispositions with
-  the centroid test as three more features reaches 0.78 there (see "Training
-  on TOI dispositions").
+  the centroid test as three more features reaches 0.79 there, and 0.80 with
+  the labels of later sectors too (see "Training on TOI dispositions").
 - **Labels.** Ground truth is known by construction here. On real data it has to
   come from a catalogue that inherits the selection function of the pipelines
   being benchmarked against, or from injection-recovery, which only measures
@@ -2069,7 +2175,7 @@ Three further gaps:
   the first, and shows the synthetic-trained model separates real planets from
   real TOI false positives only slightly better than a signal-to-noise
   ranking. Trained on the dispositions of other sectors, the same classifier
-  does clearly better (0.74 against 0.60 for that ranking), but those labels
+  does clearly better (0.75 against 0.60 for that ranking), but those labels
   carry the follow-up programme's selection, so it is a ranker of TOIs like
   the resolved ones.
 - **Sample size.** 96 positives in total and 34 in the test set. The bootstrap
@@ -2102,7 +2208,7 @@ transit-detection/
 │   ├── config.py               # every tunable number, in one dataclass tree
 │   ├── physics.py              # Kepler's third law, durations, occultation depths
 │   ├── data/
-│   │   ├── base.py             # LightCurve + LightCurveSource interface, stitching
+│   │   ├── base.py             # LightCurve + LightCurveSource interface, stitching, binning
 │   │   ├── synthetic.py        # the generator, and sector-wide systematics
 │   │   ├── mast.py             # real TESS/Kepler via lightkurve (same interface)
 │   │   ├── injection.py        # synthetic eclipses injected into real curves
@@ -2140,7 +2246,7 @@ transit-detection/
 │   ├── dashboard.py            # the batch's self-contained HTML dashboard
 │   ├── real_check.py           # known planets' fits and a real sector, against the archives
 │   └── plots.py                # figures (matplotlib Agg, no display)
-├── tests/                      # 490 tests, ~5 min
+├── tests/                      # 499 tests, ~5 min
 │   ├── test_generator.py       # imbalance is exact; injected physics is consistent
 │   ├── test_preprocess.py      # depth preservation; why the median was rejected
 │   ├── test_features.py        # recovery vs SNR; the vetting statistics fire
@@ -2157,7 +2263,8 @@ transit-detection/
 │   ├── test_toi.py             # TOI parsing, per-star labels, sector choice
 │   ├── test_benchmark.py       # the real-label benchmark, offline, from a cache
 │   ├── test_benchmark_centroids.py  # the centroid veto on synthetic pixel scenes
-│   ├── test_toi_training.py    # training on TOI labels, its threshold and pixel features
+│   ├── test_toi_training.py    # training on TOI labels: threshold, pixels, learning curve
+│   ├── test_cadence.py         # later sectors' faster photometry averaged to 30 minutes
 │   ├── test_stars.py           # host-star parameters and the occultation allowance
 │   ├── test_files.py           # CSV and npz input
 │   ├── test_model_io.py        # saved model reloads with threshold, calibration, features

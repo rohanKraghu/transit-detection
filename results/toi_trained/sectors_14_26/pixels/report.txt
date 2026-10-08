@@ -2,38 +2,48 @@
 TRAINED ON REAL LABELS: TOI HOSTS OF SECTORS 14 TO 26
 ========================================================================
 stars in TOI table: 7826   unlabelled (PC/APC): 5151   not observed in these sectors: 1672
-selected: 1003   no light curve at MAST: 257   trained on: 746
-training stars: 376 planets (CP/KP), 370 false positives (FP/FA), planet rate 50.4%
+selected: 1003   no light curve at MAST: 237   trained on: 766
+  of which 20 from a later sector than their first, which MAST had no light curve for
+training stars: 376 planets (CP/KP), 390 false positives (FP/FA), planet rate 49.1%
 model inputs: the 23 light-curve features and centroid_offset_sigma, centroid_offset_pixels, centroid_difference_snr
-stars with a target pixel file: 746 of 746
+stars with a target pixel file: 766 of 766
 
 5-fold cross-validation on the training stars (out-of-fold scores)
 ------------------------------------------------------------------------
-  random ranking (chance)            AP = 0.504
-  baseline: depth_threshold          AP = 0.584  [0.559, 0.613]   (ROC-AUC 0.599)
-  baseline: bls_snr                  AP = 0.597  [0.571, 0.625]   (ROC-AUC 0.576)
-  model: gradient boosting           AP = 0.780  [0.758, 0.803]   (ROC-AUC 0.781)
+  random ranking (chance)            AP = 0.491
+  baseline: depth_threshold          AP = 0.570  [0.547, 0.601]   (ROC-AUC 0.598)
+  baseline: bls_snr                  AP = 0.589  [0.564, 0.619]   (ROC-AUC 0.579)
+  model: gradient boosting           AP = 0.752  [0.730, 0.778]   (ROC-AUC 0.773)
   (brackets are 68% bootstrap intervals)
 
 Operating threshold
 ------------------------------------------------------------------------
-  score >= 0.4885: calibrated P(planet) >= 0.50 at the training planet rate (50.4%)
-  out of fold: planets kept 0.71, false positives rejected 0.71, precision 0.72
-  the survey rule would keep 1.00 of the planets and reject 0.06 of the false positives:
-    max recall subject to Wilson 1-sigma lower bound on CV precision >= 0.50 (bound 0.500 at 723 candidates)
-  calibration: P(planet) = expit(0.658 * log-odds + 0.030)
+  score >= 0.5074: calibrated P(planet) >= 0.50 at the training planet rate (49.1%)
+  out of fold: planets kept 0.68, false positives rejected 0.70, precision 0.69
+  the survey rule would keep 0.99 of the planets and reject 0.12 of the false positives:
+    max recall subject to Wilson 1-sigma lower bound on CV precision >= 0.50 (bound 0.500 at 717 candidates)
+  calibration: P(planet) = expit(0.638 * log-odds - 0.019)
 
 Scored, unchanged, on the TOI hosts of sectors 1 to 13 (toi_benchmark.txt)
 ------------------------------------------------------------------------
   845 stars, 458 planets and 387 false positives, none of them trained on; chance AP 0.542
-  model                              AP = 0.814  [0.796, 0.833]   (ROC-AUC 0.798)
-  model with the centroid veto       AP = 0.814  [0.796, 0.833]
-  at the threshold: planets kept 0.80, false positives rejected 0.65
-  calibrated P(planet): Brier score 0.182, against 0.250 for the training planet rate alone
+  model                              AP = 0.807  [0.789, 0.827]   (ROC-AUC 0.791)
+  model with the centroid veto       AP = 0.808  [0.789, 0.827]
+  at the threshold: planets kept 0.78, false positives rejected 0.65
+  calibrated P(planet): Brier score 0.185, against 0.251 for the training planet rate alone
     P(planet)      stars   mean P  planets
-    0.0 - 0.2         91    0.117    0.077
-    0.2 - 0.4        162    0.305    0.302
-    0.4 - 0.6        204    0.507    0.490
-    0.6 - 0.8        247    0.700    0.717
-    0.8 - 1.0        141    0.857    0.887
+    0.0 - 0.2        101    0.117    0.119
+    0.2 - 0.4        161    0.309    0.292
+    0.4 - 0.6        210    0.505    0.529
+    0.6 - 0.8        250    0.692    0.716
+    0.8 - 1.0        123    0.850    0.886
+
+Learning curve: trained on random subsets of the training stars, each with
+their planet rate, and scored on the stars above (the last row is the model)
+------------------------------------------------------------------------
+  training stars      AP      sd  draws
+             100   0.747   0.032     10
+             200   0.761   0.021     10
+             400   0.788   0.012     10
+             766   0.807       -      1
 ========================================================================

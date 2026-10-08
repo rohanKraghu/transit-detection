@@ -184,6 +184,48 @@ def stitch_light_curves(curves: Sequence[LightCurve]) -> LightCurve:
     )
 
 
+def bin_light_curve(lc: LightCurve, cadence_seconds: float) -> LightCurve:
+    """The curve averaged onto a slower cadence.
+
+    TESS exposed its full-frame images for 30 minutes in sectors 1 to 26, 10
+    minutes in 27 to 55 and 200 seconds since.  The features and the models
+    here were built on 30-minute photometry, and some of the features count
+    cadences (points per transit) or scale with the scatter of one cadence, so
+    faster photometry is averaged down to the cadence they expect rather than
+    fed in as it is.
+
+    Bins are ``cadence_seconds`` wide, counted from the first cadence.  A bin's
+    time and flux are the means of its cadences and its error is the error of
+    that mean.  A bin with fewer than half the cadences a full one holds (the
+    edge of a gap) is dropped, so no binned cadence is much noisier than the
+    rest.  A curve already at ``cadence_seconds`` or slower comes back as it is.
+    """
+    lc = lc.finite()
+    if lc.n_cadences < 2:
+        return lc
+    width = cadence_seconds / 86400.0
+    native = float(np.median(np.diff(lc.time)))
+    if native >= 0.9 * width:
+        return lc
+    # Edges half a cadence before the first one, so no cadence sits on an edge
+    # where rounding would decide its bin.
+    index = np.floor((lc.time - lc.time[0] + 0.5 * native) / width).astype(np.int64)
+    starts = np.flatnonzero(np.concatenate([[True], np.diff(index) > 0]))
+    counts = np.diff(np.append(starts, lc.n_cadences))
+    keep = counts >= 0.5 * width / native
+    n = counts[keep]
+    meta = dict(lc.meta)
+    meta["binned_from_seconds"] = round(native * 86400.0)
+    return LightCurve(
+        target_id=lc.target_id,
+        time=np.add.reduceat(lc.time, starts)[keep] / n,
+        flux=np.add.reduceat(lc.flux, starts)[keep] / n,
+        flux_err=np.sqrt(np.add.reduceat(lc.flux_err**2, starts)[keep]) / n,
+        label=lc.label,
+        meta=meta,
+    )
+
+
 class LightCurveSource(abc.ABC):
     """Abstract provider of light curves.
 

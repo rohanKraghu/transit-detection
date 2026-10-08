@@ -2,38 +2,49 @@
 TRAINED ON REAL LABELS: TOI HOSTS OF SECTORS 1 TO 13
 ========================================================================
 stars in TOI table: 7826   unlabelled (PC/APC): 5151   not observed in these sectors: 1531
-selected: 1144   no light curve at MAST: 299   trained on: 845
-training stars: 458 planets (CP/KP), 387 false positives (FP/FA), planet rate 54.2%
+selected: 1144   no light curve at MAST: 287   trained on: 857
+  of which 12 from a later sector than their first, which MAST had no light curve for
+training stars: 459 planets (CP/KP), 398 false positives (FP/FA), planet rate 53.6%
 model inputs: the 23 light-curve features and centroid_offset_sigma, centroid_offset_pixels, centroid_difference_snr
-stars with a target pixel file: 845 of 845
+stars with a target pixel file: 857 of 857
 
 5-fold cross-validation on the training stars (out-of-fold scores)
 ------------------------------------------------------------------------
-  random ranking (chance)            AP = 0.542
-  baseline: depth_threshold          AP = 0.658  [0.635, 0.684]   (ROC-AUC 0.663)
-  baseline: bls_snr                  AP = 0.658  [0.634, 0.684]   (ROC-AUC 0.647)
-  model: gradient boosting           AP = 0.832  [0.814, 0.851]   (ROC-AUC 0.816)
+  random ranking (chance)            AP = 0.536
+  baseline: depth_threshold          AP = 0.651  [0.629, 0.678]   (ROC-AUC 0.661)
+  baseline: bls_snr                  AP = 0.650  [0.626, 0.677]   (ROC-AUC 0.644)
+  model: gradient boosting           AP = 0.823  [0.804, 0.844]   (ROC-AUC 0.813)
   (brackets are 68% bootstrap intervals)
 
 Operating threshold
 ------------------------------------------------------------------------
-  score >= 0.4470: calibrated P(planet) >= 0.50 at the training planet rate (54.2%)
-  out of fold: planets kept 0.79, false positives rejected 0.65, precision 0.73
+  score >= 0.4542: calibrated P(planet) >= 0.50 at the training planet rate (53.6%)
+  out of fold: planets kept 0.78, false positives rejected 0.67, precision 0.73
   the survey rule would keep 1.00 of the planets and reject 0.00 of the false positives:
-    max recall subject to Wilson 1-sigma lower bound on CV precision >= 0.50 (bound 0.525 at 845 candidates)
-  calibration: P(planet) = expit(0.717 * log-odds + 0.152)
+    max recall subject to Wilson 1-sigma lower bound on CV precision >= 0.50 (bound 0.519 at 857 candidates)
+  calibration: P(planet) = expit(0.707 * log-odds + 0.130)
 
 Scored, unchanged, on the TOI hosts of sectors 14 to 26 (toi_benchmark.txt)
 ------------------------------------------------------------------------
   746 stars, 376 planets and 370 false positives, none of them trained on; chance AP 0.504
-  model                              AP = 0.783  [0.763, 0.805]   (ROC-AUC 0.789)
-  model with the centroid veto       AP = 0.784  [0.764, 0.806]
-  at the threshold: planets kept 0.75, false positives rejected 0.67
-  calibrated P(planet): Brier score 0.188, against 0.251 for the training planet rate alone
+  model                              AP = 0.792  [0.772, 0.813]   (ROC-AUC 0.794)
+  model with the centroid veto       AP = 0.793  [0.773, 0.814]
+  at the threshold: planets kept 0.73, false positives rejected 0.70
+  calibrated P(planet): Brier score 0.185, against 0.251 for the training planet rate alone
     P(planet)      stars   mean P  planets
-    0.0 - 0.2        125    0.113    0.096
-    0.2 - 0.4        143    0.297    0.350
-    0.4 - 0.6        173    0.507    0.486
-    0.6 - 0.8        159    0.704    0.667
-    0.8 - 1.0        146    0.867    0.849
+    0.0 - 0.2        130    0.117    0.100
+    0.2 - 0.4        147    0.298    0.367
+    0.4 - 0.6        165    0.500    0.473
+    0.6 - 0.8        170    0.708    0.682
+    0.8 - 1.0        134    0.867    0.858
+
+Learning curve: trained on random subsets of the training stars, each with
+their planet rate, and scored on the stars above (the last row is the model)
+------------------------------------------------------------------------
+  training stars      AP      sd  draws
+             100   0.685   0.027     10
+             200   0.724   0.034     10
+             400   0.755   0.018     10
+             800   0.779   0.007     10
+             857   0.792       -      1
 ========================================================================

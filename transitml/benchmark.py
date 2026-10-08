@@ -38,12 +38,12 @@ from numpy.typing import NDArray
 
 from .centroid import CentroidConfig, centroid_test
 from .config import BLSConfig, PreprocessConfig
-from .data.base import LightCurve, LightCurveSource
+from .data.base import LightCurve, LightCurveSource, bin_light_curve
 from .data.injection import load_curves, save_curves, tic_number
 from .data.loader import Dataset, build_dataset
 from .data.tic import load_or_fetch_stars, read_star_table, with_star
 from .data.toi import FALSE_POSITIVE_REASONS, BenchmarkTarget, false_positive_reason
-from .data.tpf import download_tpfs, load_tpf, save_tpf
+from .data.tpf import bin_target_pixels, download_tpfs, load_tpf, save_tpf
 from .evaluate import (
     N_BOOTSTRAP,
     CurveScores,
@@ -96,9 +96,11 @@ def fetch_benchmark_curves(
     """Download one light curve per target, in its assigned sector.
 
     Targets MAST has no matching curve for are skipped (the report counts
-    them).  Each curve carries its star's label.
+    them).  Each curve carries its star's label.  Full-frame-image curves of
+    sectors after 26, exposed faster than ``exposure_time``, are fetched at
+    their own cadence and averaged to it (:func:`fetch_exposure_seconds`).
     """
-    from .data.mast import MASTLightCurveSource
+    from .data.mast import MASTLightCurveSource, fetch_exposure_seconds
 
     by_sector: dict[int, list[BenchmarkTarget]] = {}
     for target in targets:
@@ -106,15 +108,18 @@ def fetch_benchmark_curves(
 
     curves: dict[str, LightCurve] = {}
     for sector in sorted(by_sector):
+        fetch = fetch_exposure_seconds(author, exposure_time, sector)
         source = MASTLightCurveSource(
             [(t.target_id, t.label) for t in by_sector[sector]],
             mission="TESS",
             author=author,
-            exposure_time=exposure_time,
+            exposure_time=fetch,
             sector=sector,
             n_workers=n_workers,
         )
         for lc in source:
+            if fetch != exposure_time and exposure_time is not None:
+                lc = bin_light_curve(lc, exposure_time)
             curves.setdefault(lc.target_id, lc)
     return [curves[t.target_id] for t in targets if t.target_id in curves]
 
@@ -195,10 +200,17 @@ def tpf_cache_path(cache_dir: str | Path, target_id: str, sector: int) -> Path:
 def _fetch_tpf(
     target_id: str, sector: int, author: str, exposure_time: int | None, dest: Path
 ) -> bool:
-    tpfs = download_tpfs(target_id, author=author, exposure_time=exposure_time, sector=sector)
+    """One star's pixels in one sector, averaged to ``exposure_time`` when exposed faster."""
+    from .data.mast import fetch_exposure_seconds
+
+    fetch = fetch_exposure_seconds(author, exposure_time, sector)
+    tpfs = download_tpfs(target_id, author=author, exposure_time=fetch, sector=sector)
     if not tpfs:
         return False
-    save_tpf(tpfs[0], dest)
+    tpf = tpfs[0]
+    if exposure_time is not None and fetch != exposure_time:
+        tpf = bin_target_pixels(tpf, exposure_time)
+    save_tpf(tpf, dest)
     return True
 
 

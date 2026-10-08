@@ -44,7 +44,9 @@ Training on real labels instead::
 
 trains on the labelled TOI hosts of sectors 1 to 13 and benchmarks the model on
 those of sectors 14 to 26, none of them trained on; ``--pixel-features`` also
-gives it the centroid test.  Writes to ``results/toi_trained/``.
+gives it the centroid test, and ``--learning-curve`` scores models trained on
+fewer of the hosts too, to show whether more labels would help.  Writes to
+``results/toi_trained/``.
 """
 
 from __future__ import annotations
@@ -62,7 +64,7 @@ from typing import Any
 import numpy as np
 
 from transitml.config import Config, default_config
-from transitml.data.base import LightCurveSource
+from transitml.data.base import LightCurve, LightCurveSource
 from transitml.data.injection import (
     InjectionSource,
     exclude_known_hosts,
@@ -76,6 +78,8 @@ from transitml.data.loader import Dataset, build_dataset
 from transitml.data.synthetic import SYSTEMATIC_COMPONENTS, SyntheticTESSSource
 from transitml.data.toi import (
     BenchmarkTarget,
+    later_target,
+    observed_in,
     parse_sector_spec,
     read_toi_table,
     select_benchmark_targets,
@@ -263,6 +267,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "significance and the difference-image SNR (downloads each host's target pixel "
         "file; implies --benchmark-centroids; writes to results/toi_trained/pixels/).",
     )
+    labels.add_argument(
+        "--learning-curve",
+        action="store_true",
+        help="With --train-sectors: also train on random subsets of the training hosts, "
+        "doubling in size from 100, and score each on the benchmark's hosts, to show "
+        "whether more labels would help (adds learning_curve to metrics.json).",
+    )
     args = parser.parse_args(argv)
     default_results = args.results_dir == ROOT / "results"
     default_figures = args.figures_dir == ROOT / "figures"
@@ -319,6 +330,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                 args.figures_dir = args.figures_dir / "pixels"
     elif args.pixel_features:
         parser.error("--pixel-features needs --train-sectors: only TOI hosts come with pixels")
+    elif args.learning_curve:
+        parser.error("--learning-curve needs --train-sectors: it trains on TOI hosts")
     if args.search == "tls":
         # Beside the BLS run of the same data: results/tls/, results/systematics/tls/, ...
         if default_results:
@@ -449,11 +462,16 @@ def load_toi_hosts(
     tpfs: Path,
     centroids: bool,
     exclude_tics: set[int] | None = None,
+    training: bool = False,
 ) -> TOIHosts:
     """Select, fetch (or read from the caches) and search the labelled TOI hosts of ``spec``.
 
-    ``exclude_tics`` names the stars a model was trained on, which a benchmark
-    must not score; ``None`` for the training set itself.
+    ``exclude_tics`` names stars that must not be among them: for a benchmark,
+    the stars the model was trained on; for a ``training`` set, the stars
+    observed in the benchmark's sectors.  A benchmark star is scored on the
+    first of the sectors it was observed in; a training star MAST has no light
+    curve for there is taken from its next sector in ``spec`` instead, since a
+    training set loses nothing by that.
     """
     from transitml.benchmark import (
         build_benchmark_dataset,
@@ -468,22 +486,42 @@ def load_toi_hosts(
     targets, selection = select_benchmark_targets(
         read_toi_table(args.benchmark_tois), sectors, exclude_tics=exclude_tics or set()
     )
+    if training:
+        selection["in_benchmark_sectors"] = selection.pop("in_training_set")
+    dropped = (
+        f" ({selection['in_benchmark_sectors']} dropped as observed in the benchmark's sectors)"
+        if training and selection["in_benchmark_sectors"]
+        else f" ({selection['in_training_set']} dropped as training stars)"
+        if not training
+        else ""
+    )
     print(
-        f"\n{'TOI benchmark' if exclude_tics is not None else 'Training set'}: "
-        f"{selection['positives']} CP/KP and {selection['negatives']} FP/FA hosts in sectors {spec}"
-        + (
-            f" ({selection['in_training_set']} dropped as training stars)"
-            if exclude_tics is not None
-            else ""
+        f"\n{'Training set' if training else 'TOI benchmark'}: {selection['positives']} CP/KP "
+        f"and {selection['negatives']} FP/FA hosts in sectors {spec}{dropped}"
+    )
+
+    def fetch(wanted: list[BenchmarkTarget]) -> list[LightCurve]:
+        return load_or_fetch_curves(
+            wanted,
+            cache,
+            author=args.author,
+            exposure_time=args.exposure_time,
+            n_workers=args.download_workers,
         )
-    )
-    curves = load_or_fetch_curves(
-        targets,
-        cache,
-        author=args.author,
-        exposure_time=args.exposure_time,
-        n_workers=args.download_workers,
-    )
+
+    curves = fetch(targets)
+    if training:
+        found = {lc.target_id: lc for lc in curves}
+        current = {t.target_id: t for t in targets}
+        missing = [t for t in targets if t.target_id not in found]
+        while missing := [m for t in missing if (m := later_target(t, sectors)) is not None]:
+            current.update((t.target_id, t) for t in missing)
+            found.update((lc.target_id, lc) for lc in fetch(missing))
+            missing = [t for t in missing if t.target_id not in found]
+        moved = [current[t.target_id] for t in targets if current[t.target_id] != t]
+        selection["from_a_later_sector"] = sum(1 for t in moved if t.target_id in found)
+        targets = [current[t.target_id] for t in targets]
+        curves = [found[t.target_id] for t in targets if t.target_id in found]
     curves = with_tic_stars(curves, args.benchmark_stars)
     n_known = sum(1 for lc in curves if all(np.isfinite(lc.star)))
     print(
@@ -516,6 +554,30 @@ def load_toi_hosts(
     )
 
 
+def benchmark_hosts(
+    args: argparse.Namespace,
+    config: Config,
+    feature_names: tuple[str, ...],
+    exclude_tics: set[int],
+) -> TOIHosts:
+    """The labelled TOI hosts of the benchmark's sectors, less ``exclude_tics``.
+
+    With the centroid test's results whenever a model of ``feature_names``
+    needs them.
+    """
+    spec = args.benchmark_sectors or str(args.sector if args.sector is not None else 14)
+    return load_toi_hosts(
+        args,
+        config,
+        spec,
+        cache=args.benchmark_cache,
+        tpfs=args.benchmark_tpfs,
+        # A model with pixel features cannot be scored without them.
+        centroids=args.benchmark_centroids or tuple(feature_names) != FEATURE_NAMES,
+        exclude_tics=exclude_tics,
+    )
+
+
 def run_toi_benchmark(
     args: argparse.Namespace,
     config: Config,
@@ -523,25 +585,19 @@ def run_toi_benchmark(
     exclude_tics: set[int],
     *,
     importance_repeats: int = 0,
+    hosts: TOIHosts | None = None,
 ) -> dict[str, Any]:
     """Score ``trained`` on labelled TOI hosts; write the report, JSON and figure.
 
     ``exclude_tics`` are the stars it was trained on, which are not scored.
+    ``hosts`` are the hosts to score when the caller has loaded them already
+    (:func:`benchmark_hosts`).
     """
     from transitml.benchmark import benchmark, format_benchmark_report, plot_benchmark
     from transitml.data.toi import read_toi_comments
 
-    spec = args.benchmark_sectors or str(args.sector if args.sector is not None else 14)
-    hosts = load_toi_hosts(
-        args,
-        config,
-        spec,
-        cache=args.benchmark_cache,
-        tpfs=args.benchmark_tpfs,
-        # A model with pixel features cannot be scored without them.
-        centroids=args.benchmark_centroids or tuple(trained.feature_names) != FEATURE_NAMES,
-        exclude_tics=exclude_tics,
-    )
+    if hosts is None:
+        hosts = benchmark_hosts(args, config, tuple(trained.feature_names), exclude_tics)
     comments = (
         read_toi_comments(args.benchmark_comments)
         if Path(args.benchmark_comments).exists()
@@ -589,11 +645,17 @@ def run_toi_training(args: argparse.Namespace, config: Config, started: float) -
     from transitml.benchmark import CENTROID_FEATURE_NAMES
     from transitml.toi_training import (
         format_training_report,
+        learning_curve,
         scored_calibration,
         summarise_training,
         train_on_hosts,
     )
 
+    # A star observed in the benchmark's sectors is never trained on, so the
+    # benchmark scores the same stars whichever sectors the model learned from.
+    benchmark_stars = observed_in(
+        read_toi_table(args.benchmark_tois), parse_sector_spec(args.benchmark_sectors)
+    )
     hosts = load_toi_hosts(
         args,
         config,
@@ -601,6 +663,8 @@ def run_toi_training(args: argparse.Namespace, config: Config, started: float) -
         cache=args.train_cache,
         tpfs=args.train_tpfs,
         centroids=args.pixel_features,
+        exclude_tics=benchmark_stars,
+        training=True,
     )
     names = FEATURE_NAMES + (CENTROID_FEATURE_NAMES if args.pixel_features else ())
     evaluation = config.evaluation
@@ -649,16 +713,24 @@ def run_toi_training(args: argparse.Namespace, config: Config, started: float) -
             "numpy": np.__version__,
         },
     }
+    trained_on = {t.tic for t in hosts.targets}
+    scored = benchmark_hosts(args, config, names, trained_on)
     bench = run_toi_benchmark(
-        args,
-        config,
-        trained,
-        {t.tic for t in hosts.targets},
-        importance_repeats=10,
+        args, config, trained, trained_on, importance_repeats=10, hosts=scored
     )
     calibration = scored_calibration(bench["stars"], trained.calibration)
     payload["toi_benchmark"] = benchmark_headline(bench) | {"calibration": calibration}
-    report = format_training_report(summary, bench, calibration)
+    learning = None
+    if args.learning_curve:
+        print(f"\nlearning curve: subsets of the {len(hosts.dataset)} training stars ...")
+        learning = learning_curve(
+            hosts.dataset, scored.dataset, feature_names=names, seed=config.seed
+        )
+        for row in learning:
+            spread = f", sd {row['sd']:.3f} in {row['n_draws']} draws" if row["n_draws"] > 1 else ""
+            print(f"  {row['n_training']:>5d} stars: AP {row['average_precision']:.3f}{spread}")
+        payload["toi_benchmark"]["learning_curve"] = learning
+    report = format_training_report(summary, bench, calibration, learning)
 
     hosts.dataset.save(results_dir / "dataset.npz")
     written = [results_dir / "metrics.json", results_dir / "report.txt"]

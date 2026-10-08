@@ -32,13 +32,14 @@ from typing import Any
 
 import numpy as np
 from scipy.special import logit
+from sklearn.metrics import average_precision_score
 
 from .calibration import PlattScaling, brier_score, reliability_table
 from .data.loader import Dataset
 from .data.toi import POSITIVE_DISPOSITIONS
 from .evaluate import N_BOOTSTRAP, CurveScores, bootstrap_indices, score_curve
 from .features import FEATURE_NAMES
-from .model import BASELINES, Split, TrainedModel, select_threshold, train
+from .model import BASELINES, Split, TrainedModel, build_model, select_threshold, train
 
 #: Where the threshold of a model trained on TOI hosts goes: keep a star when it
 #: is at least as likely a planet as not, at the training set's own mix.
@@ -85,6 +86,59 @@ def train_on_hosts(
         feature_names=feature_names,
     )
     return trained, split
+
+
+def learning_curve(
+    train_set: Dataset,
+    test_set: Dataset,
+    *,
+    feature_names: Sequence[str],
+    seed: int,
+    repeats: int = 10,
+    start: int = 100,
+) -> list[dict[str, float]]:
+    """Average precision on ``test_set`` against the number of training hosts.
+
+    The classifier is trained on random subsets of ``train_set``, each with its
+    planet rate, at sizes doubling from ``start``, ``repeats`` subsets to a
+    size, and scored on ``test_set``.  The last row is all of ``train_set``,
+    the model itself.  A curve still rising at the end says more labels would
+    help; one gone flat says they would not.
+    """
+    X, y = train_set.inputs(feature_names), train_set.y
+    X_test, y_test = test_set.inputs(feature_names), test_set.y
+    sizes, size = [], start
+    while size < len(y):
+        sizes.append(size)
+        size *= 2
+    sizes.append(len(y))
+    rng = np.random.default_rng(seed)
+    planets, others = np.flatnonzero(y == 1), np.flatnonzero(y == 0)
+    rows: list[dict[str, float]] = []
+    for size in sizes:
+        scores = []
+        for draw in range(1 if size == len(y) else repeats):
+            if size == len(y):
+                rows_used = np.arange(len(y))
+            else:
+                k = round(size * len(planets) / len(y))
+                rows_used = np.concatenate(
+                    [
+                        rng.choice(planets, k, replace=False),
+                        rng.choice(others, size - k, replace=False),
+                    ]
+                )
+            model = build_model(seed + draw).fit(X[rows_used], y[rows_used])
+            scores.append(average_precision_score(y_test, model.predict_proba(X_test)[:, 1]))
+        rows.append(
+            {
+                "n_training": int(size),
+                "average_precision": float(np.mean(scores)),
+                "sd": float(np.std(scores, ddof=1)) if len(scores) > 1 else 0.0,
+                "n_draws": len(scores),
+            }
+        )
+    return rows
 
 
 @dataclass
@@ -241,11 +295,25 @@ def scored_calibration(
 
 
 def _sector_text(sectors: Sequence[int]) -> str:
-    """``[1, ..., 13]`` -> ``"1 to 13"``; anything not a plain run is listed."""
-    ordered = list(sectors)
-    if len(ordered) > 2 and ordered == list(range(ordered[0], ordered[-1] + 1)):
-        return f"{ordered[0]} to {ordered[-1]}"
-    return ", ".join(str(s) for s in ordered)
+    """``[1, ..., 13]`` -> ``"1 to 13"``, ``[1, ..., 13, 27, ..., 96]`` -> ``"1 to 13 and 27 to 96"``.
+
+    Runs of three or more are written as ranges, anything else is listed.
+    """
+    runs: list[list[int]] = []
+    for sector in sectors:
+        if runs and sector == runs[-1][-1] + 1:
+            runs[-1].append(sector)
+        else:
+            runs.append([sector])
+    parts: list[str] = []
+    for run in runs:
+        if len(run) > 2:
+            parts.append(f"{run[0]} to {run[-1]}")
+        else:
+            parts.extend(str(s) for s in run)
+    if len(parts) > 1 and any(len(run) > 2 for run in runs):
+        return ", ".join(parts[:-1]) + " and " + parts[-1]
+    return ", ".join(parts)
 
 
 def _fmt(value: float, spec: str = ".3f") -> str:
@@ -263,12 +331,13 @@ def format_training_report(
     summary: TrainingSummary,
     benchmark: dict[str, Any] | None = None,
     calibration: dict[str, Any] | None = None,
+    learning: Sequence[dict[str, float]] | None = None,
 ) -> str:
     """Human-readable summary of the training run; with ``benchmark``, its headline too.
 
     ``benchmark`` is :meth:`~transitml.benchmark.BenchmarkResult.to_dict` of the
-    model scored on other sectors, and ``calibration`` its
-    :func:`scored_calibration`.
+    model scored on other sectors, ``calibration`` its
+    :func:`scored_calibration` and ``learning`` its :func:`learning_curve`.
     """
     lines: list[str] = []
     add = lines.append
@@ -281,10 +350,17 @@ def format_training_report(
         f"{sel.get('unlabelled', 0)}   not observed in these sectors: "
         f"{sel.get('not_in_sectors', 0)}"
     )
+    if sel.get("in_benchmark_sectors"):
+        add(f"observed in the benchmark's sectors, so left out: {sel['in_benchmark_sectors']}")
     add(
         f"selected: {sel.get('selected', 0)}   no light curve at MAST: "
         f"{summary.n_without_curve}   trained on: {summary.n_stars}"
     )
+    if sel.get("from_a_later_sector"):
+        add(
+            f"  of which {sel['from_a_later_sector']} from a later sector than their first, "
+            "which MAST had no light curve for"
+        )
     add(
         f"training stars: {summary.n_planets} planets (CP/KP), "
         f"{summary.n_stars - summary.n_planets} false positives (FP/FA), "
@@ -367,6 +443,18 @@ def format_training_report(
             add(
                 f"    {label:<14s}{row['n']:>6d}{_fmt(row['mean_predicted'], '9.3f')}"
                 f"{_fmt(row['observed_rate'], '9.3f')}"
+            )
+    if learning:
+        add("")
+        add("Learning curve: trained on random subsets of the training stars, each with")
+        add("their planet rate, and scored on the stars above (the last row is the model)")
+        add("-" * 72)
+        add(f"  {'training stars':>14s}{'AP':>8s}{'sd':>8s}{'draws':>7s}")
+        for row in learning:
+            sd = f"{row['sd']:8.3f}" if row["n_draws"] > 1 else f"{'-':>8s}"
+            add(
+                f"  {row['n_training']:>14d}{row['average_precision']:8.3f}{sd}"
+                f"{row['n_draws']:>7d}"
             )
     add("=" * 72)
     return "\n".join(lines)

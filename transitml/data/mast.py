@@ -51,6 +51,33 @@ _LIGHTKURVE_HINT = (
     "uses transitml.data.synthetic.SyntheticTESSSource instead."
 )
 
+#: Pipelines whose light curves come from the full-frame images, at their cadence.
+FFI_AUTHORS: frozenset[str] = frozenset({"TESS-SPOC", "QLP"})
+
+
+def ffi_exposure_seconds(sector: int) -> int:
+    """TESS's full-frame-image cadence in ``sector``: 30 minutes, then 10, then 200 seconds."""
+    if sector <= 26:
+        return 1800
+    if sector <= 55:
+        return 600
+    return 200
+
+
+def fetch_exposure_seconds(author: str, exposure_time: int | None, sector: int) -> int | None:
+    """The cadence to ask MAST for when the pipeline wants ``exposure_time``.
+
+    A full-frame-image pipeline's curves come at their sector's cadence, so
+    asking for 30-minute photometry in a sector exposed for 10 minutes finds
+    nothing.  The sector's own cadence is asked for instead when it is faster,
+    and the curve is averaged down afterwards
+    (:func:`~transitml.data.base.bin_light_curve`).  Anything else is asked
+    for as given.
+    """
+    if author in FFI_AUTHORS and exposure_time is not None:
+        return min(exposure_time, ffi_exposure_seconds(sector))
+    return exposure_time
+
 
 class MASTLightCurveSource(LightCurveSource):
     """Stream light curves for a list of labelled targets from the MAST archive.

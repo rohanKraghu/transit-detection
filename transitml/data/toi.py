@@ -45,7 +45,7 @@ import csv
 import math
 import re
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from .injection import tic_number
@@ -328,3 +328,23 @@ def select_benchmark_targets(
         counts["selected"] += 1
         counts["positives" if label == 1 else "negatives"] += 1
     return targets, counts
+
+
+def later_target(target: BenchmarkTarget, sectors: Sequence[int]) -> BenchmarkTarget | None:
+    """The same star in the next of ``sectors`` it was observed in, or ``None``.
+
+    For a star MAST has no light curve for in the sector it was given, so a
+    training set can take it from another of its sectors instead of losing it.
+    """
+    order = list(sectors)
+    if target.sector not in order:
+        return None
+    observed = {s for toi in target.tois for s in toi.sectors}
+    sector = next((s for s in order[order.index(target.sector) + 1 :] if s in observed), None)
+    return None if sector is None else replace(target, sector=sector)
+
+
+def observed_in(tois: Iterable[TOI], sectors: Iterable[int]) -> set[int]:
+    """TIC numbers of the stars with a TOI observed in any of ``sectors``."""
+    wanted = set(sectors)
+    return {toi.tic for toi in tois if wanted.intersection(toi.sectors)}
