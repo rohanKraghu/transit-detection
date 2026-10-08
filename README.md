@@ -1282,11 +1282,11 @@ sectors were scored.
 | Boosting on views, Kepler TCEs + TESS TOIs | **0.817** | **0.850** |
 | Boosting on views, TESS TOIs only | 0.812 | 0.835 |
 | Kepler CNN fine-tuned on TESS TOIs | 0.799 | 0.821 |
-| Boosting on TOI labels, with pixel features | 0.789 | 0.824 |
+| Boosting on TOI labels, with pixel features | 0.798 | 0.837 |
 | Kepler boosting on views, unchanged | 0.767 | 0.805 |
 | Kepler CNN, unchanged | 0.761 | 0.798 |
 | CNN on TESS TOIs only | 0.757 | 0.776 |
-| Boosting on TOI labels, light-curve features | 0.749 | 0.795 |
+| Boosting on TOI labels, light-curve features | 0.753 | 0.791 |
 | TESS model trained on synthetic curves | 0.615 | 0.645 |
 
 What the paired bootstraps say:
@@ -1301,13 +1301,13 @@ What the paired bootstraps say:
   on the TESS views either (0.799 against 0.812).
 * **The views account for most of the gain over the earlier TOI-trained
   model.** Boosting on the views of the same TOIs beats boosting on the
-  pipeline's features by +0.021 to +0.106. Part of that is the catalogue
+  pipeline's features by +0.018 to +0.100. Part of that is the catalogue
   ephemeris the views are given, which the pipeline has to find with BLS.
   But the gap holds on the 540 hosts where BLS found the period (0.835
-  against 0.795), so the views themselves carry information the summary
+  against 0.791), so the views themselves carry information the summary
   features drop.
-* The fine-tuned CNN and the pixel-feature model are level (+0.011, -0.031 to
-  +0.059). The views use no pixel data, so the two could still be combined.
+* The fine-tuned CNN and the pixel-feature model are level (+0.001, -0.040 to
+  +0.050). The views use no pixel data, so the two could still be combined.
 
 At a calibrated probability of 0.5, the fine-tuned CNN keeps 74.9% of planet
 hosts and rejects 70.0% of false positives. The caveat from training on TOI

@@ -9,11 +9,11 @@ Average precision, all stars (chance 0.506)
   boosting on Kepler TCEs + TESS TOIs                0.817
   boosting on views, TESS TOIs only                  0.812
   Kepler CNN fine-tuned on TESS TOIs                 0.799
-  boosting on TOI labels, with pixel features        0.789
+  boosting on TOI labels, with pixel features        0.798
   Kepler boosting on views, unchanged                0.767
   Kepler CNN, unchanged                              0.761
   CNN trained on TESS TOIs only                      0.757
-  boosting on TOI labels, light-curve features       0.749
+  boosting on TOI labels, light-curve features       0.753
   TESS model, trained on synthetic curves            0.615
 
 Paired bootstrap, difference in AP (95% interval)
@@ -22,24 +22,24 @@ Paired bootstrap, difference in AP (95% interval)
   Kepler CNN fine-tuned on TESS TOIs minus cnn trained on tess tois only
       +0.042  (+0.009 to +0.076)
   Kepler CNN fine-tuned on TESS TOIs minus boosting on toi labels, light-curve features
-      +0.050  (+0.005 to +0.103)
+      +0.046  (-0.001 to +0.098)
   boosting on Kepler TCEs + TESS TOIs minus boosting on views, tess tois only
       +0.005  (-0.016 to +0.026)
   boosting on views, TESS TOIs only minus boosting on toi labels, light-curve features
-      +0.063  (+0.021 to +0.106)
+      +0.059  (+0.018 to +0.100)
   boosting on Kepler TCEs + TESS TOIs minus boosting on toi labels, light-curve features
-      +0.068  (+0.027 to +0.111)
+      +0.064  (+0.021 to +0.105)
   Kepler CNN fine-tuned on TESS TOIs minus boosting on toi labels, with pixel features
-      +0.011  (-0.031 to +0.059)
+      +0.001  (-0.040 to +0.050)
 
 Stars where the TESS search found the TOI period (540, 274 planets, chance 0.507)
   boosting on Kepler TCEs + TESS TOIs                0.850
+  boosting on TOI labels, with pixel features        0.837
   boosting on views, TESS TOIs only                  0.835
-  boosting on TOI labels, with pixel features        0.824
   Kepler CNN fine-tuned on TESS TOIs                 0.821
   Kepler boosting on views, unchanged                0.805
   Kepler CNN, unchanged                              0.798
-  boosting on TOI labels, light-curve features       0.795
+  boosting on TOI labels, light-curve features       0.791
   CNN trained on TESS TOIs only                      0.776
   TESS model, trained on synthetic curves            0.645
 
