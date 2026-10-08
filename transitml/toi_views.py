@@ -313,10 +313,10 @@ def format_views_report(r: ViewsResult) -> str:
     return "\n".join(lines) + "\n"
 
 
-def read_run(path: str | Path) -> dict[str, dict[int, float]]:
+def read_run(path: str | Path, kinds: Sequence[str] = INPUT_SETS) -> dict[str, dict[int, float]]:
     """Another run's per-star scores, ``{input set: {tic: score}}``, from its metrics.json."""
     stars = json.loads((Path(path) / "metrics.json").read_text())["stars"]
-    return {kind: {int(s["tic"]): float(s[kind]) for s in stars if kind in s} for kind in INPUT_SETS}
+    return {kind: {int(s["tic"]): float(s[kind]) for s in stars if kind in s} for kind in kinds}
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
