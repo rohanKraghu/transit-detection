@@ -2,37 +2,48 @@
 TRAINED ON REAL LABELS: TOI HOSTS OF SECTORS 1 TO 13
 ========================================================================
 stars in TOI table: 7826   unlabelled (PC/APC): 5151   not observed in these sectors: 1531
-selected: 1144   no light curve at MAST: 299   trained on: 845
-training stars: 458 planets (CP/KP), 387 false positives (FP/FA), planet rate 54.2%
+selected: 1144   no light curve at MAST: 287   trained on: 857
+  of which 12 from a later sector than their first, which MAST had no light curve for
+training stars: 459 planets (CP/KP), 398 false positives (FP/FA), planet rate 53.6%
 model inputs: the 23 light-curve features
 
 5-fold cross-validation on the training stars (out-of-fold scores)
 ------------------------------------------------------------------------
-  random ranking (chance)            AP = 0.542
-  baseline: depth_threshold          AP = 0.658  [0.635, 0.684]   (ROC-AUC 0.663)
-  baseline: bls_snr                  AP = 0.658  [0.634, 0.684]   (ROC-AUC 0.647)
-  model: gradient boosting           AP = 0.804  [0.785, 0.822]   (ROC-AUC 0.762)
+  random ranking (chance)            AP = 0.536
+  baseline: depth_threshold          AP = 0.651  [0.629, 0.678]   (ROC-AUC 0.661)
+  baseline: bls_snr                  AP = 0.650  [0.626, 0.677]   (ROC-AUC 0.644)
+  model: gradient boosting           AP = 0.783  [0.762, 0.804]   (ROC-AUC 0.756)
   (brackets are 68% bootstrap intervals)
 
 Operating threshold
 ------------------------------------------------------------------------
-  score >= 0.4515: calibrated P(planet) >= 0.50 at the training planet rate (54.2%)
-  out of fold: planets kept 0.73, false positives rejected 0.62, precision 0.69
+  score >= 0.4614: calibrated P(planet) >= 0.50 at the training planet rate (53.6%)
+  out of fold: planets kept 0.73, false positives rejected 0.66, precision 0.71
   the survey rule would keep 1.00 of the planets and reject 0.00 of the false positives:
-    max recall subject to Wilson 1-sigma lower bound on CV precision >= 0.50 (bound 0.525 at 845 candidates)
-  calibration: P(planet) = expit(0.653 * log-odds + 0.127)
+    max recall subject to Wilson 1-sigma lower bound on CV precision >= 0.50 (bound 0.519 at 857 candidates)
+  calibration: P(planet) = expit(0.619 * log-odds + 0.096)
 
 Scored, unchanged, on the TOI hosts of sectors 14 to 26 (toi_benchmark.txt)
 ------------------------------------------------------------------------
   746 stars, 376 planets and 370 false positives, none of them trained on; chance AP 0.504
-  model                              AP = 0.741  [0.718, 0.767]   (ROC-AUC 0.740)
-  model with the centroid veto       AP = 0.759  [0.736, 0.785]
-  at the threshold: planets kept 0.69, false positives rejected 0.66
-  calibrated P(planet): Brier score 0.205, against 0.251 for the training planet rate alone
+  model                              AP = 0.745  [0.723, 0.772]   (ROC-AUC 0.750)
+  model with the centroid veto       AP = 0.762  [0.740, 0.789]
+  at the threshold: planets kept 0.70, false positives rejected 0.68
+  calibrated P(planet): Brier score 0.203, against 0.251 for the training planet rate alone
     P(planet)      stars   mean P  planets
-    0.0 - 0.2         61    0.137    0.131
-    0.2 - 0.4        171    0.303    0.357
-    0.4 - 0.6        252    0.500    0.456
-    0.6 - 0.8        178    0.691    0.669
-    0.8 - 1.0         84    0.859    0.869
+    0.0 - 0.2         57    0.151    0.123
+    0.2 - 0.4        180    0.307    0.333
+    0.4 - 0.6        247    0.498    0.462
+    0.6 - 0.8        188    0.691    0.686
+    0.8 - 1.0         74    0.846    0.892
+
+Learning curve: trained on random subsets of the training stars, each with
+their planet rate, and scored on the stars above (the last row is the model)
+------------------------------------------------------------------------
+  training stars      AP      sd  draws
+             100   0.633   0.028     10
+             200   0.683   0.022     10
+             400   0.716   0.017     10
+             800   0.740   0.008     10
+             857   0.745       -      1
 ========================================================================

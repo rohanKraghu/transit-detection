@@ -201,13 +201,13 @@
       "top_k": 20
     }
   },
-  "runtime_seconds": 162.0,
+  "runtime_seconds": 248.0,
   "dataset": {
     "source": "TOI hosts, sectors 1-13",
-    "n_curves": 845,
-    "n_planets": 458,
-    "positive_rate": 0.5420118343195266,
-    "n_train": 845,
+    "n_curves": 857,
+    "n_planets": 459,
+    "positive_rate": 0.5355892648774796,
+    "n_train": 857,
     "n_test": 0
   },
   "training": {
@@ -230,16 +230,17 @@
       "stars_in_table": 7826,
       "unlabelled": 5151,
       "not_in_sectors": 1531,
-      "in_training_set": 0,
       "selected": 1144,
       "positives": 494,
-      "negatives": 650
+      "negatives": 650,
+      "in_benchmark_sectors": 0,
+      "from_a_later_sector": 12
     },
-    "n_without_curve": 299,
-    "n_stars": 845,
-    "n_planets": 458,
-    "n_false_positives": 387,
-    "positive_rate": 0.5420118343195266,
+    "n_without_curve": 287,
+    "n_stars": 857,
+    "n_planets": 459,
+    "n_false_positives": 398,
+    "positive_rate": 0.5355892648774796,
     "feature_names": [
       "bls_sde",
       "bls_depth_snr",
@@ -267,59 +268,59 @@
     ],
     "cross_validation": {
       "n_folds": 5,
-      "chance_average_precision": 0.5420118343195266,
+      "chance_average_precision": 0.5355892648774796,
       "model": {
         "name": "gradient_boosting",
         "description": "out-of-fold scores on the training hosts",
-        "average_precision": 0.8035921516312027,
+        "average_precision": 0.782608444409296,
         "average_precision_ci68": [
-          0.7850801878089596,
-          0.8223471223844323
+          0.762422325837517,
+          0.8040692583957363
         ],
-        "roc_auc": 0.7615066066371032
+        "roc_auc": 0.7555752619305678
       },
       "baselines": [
         {
           "name": "depth_threshold",
           "description": "Rank by the depth of the best BLS box. The naive heuristic: deeper dip = more likely a planet.",
-          "average_precision": 0.6576559063432597,
+          "average_precision": 0.651044933663383,
           "average_precision_ci68": [
-            0.6354095984222963,
-            0.6841208157503259
+            0.629178610182275,
+            0.6782672322013813
           ],
-          "roc_auc": 0.663146135878948
+          "roc_auc": 0.6614499512814618
         },
         {
           "name": "bls_snr",
           "description": "Rank by BLS depth signal-to-noise. The classical single-statistic transit search, and a genuinely strong baseline.",
-          "average_precision": 0.657634555782039,
+          "average_precision": 0.650354169350212,
           "average_precision_ci68": [
-            0.6340199751014288,
-            0.6837013714222662
+            0.6257706584514774,
+            0.677166612723858
           ],
-          "roc_auc": 0.646502600904957
+          "roc_auc": 0.6440207573816796
         }
       ]
     },
     "operating_point": {
-      "threshold": 0.45153946933493244,
-      "rule": "calibrated P(planet) >= 0.50 at the training planet rate (54.2%)",
+      "threshold": 0.46141786181687416,
+      "rule": "calibrated P(planet) >= 0.50 at the training planet rate (53.6%)",
       "threshold_as_probability": 0.5,
-      "cv_planet_recall": 0.7292576419213974,
-      "cv_false_positive_rejection": 0.6201550387596899,
-      "cv_precision": 0.6943866943866944,
+      "cv_planet_recall": 0.7276688453159041,
+      "cv_false_positive_rejection": 0.6582914572864321,
+      "cv_precision": 0.7106382978723405,
       "precision_rule": {
-        "rule": "max recall subject to Wilson 1-sigma lower bound on CV precision >= 0.50 (bound 0.525 at 845 candidates)",
-        "threshold": 0.010187824961855364,
+        "rule": "max recall subject to Wilson 1-sigma lower bound on CV precision >= 0.50 (bound 0.519 at 857 candidates)",
+        "threshold": 0.005538673940952428,
         "cv_planet_recall": 1.0,
         "cv_false_positive_rejection": 0.0,
-        "cv_precision": 0.5420118343195266
+        "cv_precision": 0.5355892648774796
       }
     },
     "calibration": {
-      "slope": 0.6530718621504721,
-      "intercept": 0.12699147663283009,
-      "train_positive_rate": 0.5420118343195266
+      "slope": 0.6188923610447449,
+      "intercept": 0.09570301389322029,
+      "train_positive_rate": 0.5355892648774796
     }
   },
   "environment": {
@@ -330,57 +331,89 @@
     "n_stars": 746,
     "n_planets": 376,
     "chance_average_precision": 0.5040214477211796,
-    "average_precision": 0.7408525690817275,
-    "planet_recall": 0.6888297872340425,
-    "false_positive_rejection": 0.6567567567567567,
+    "average_precision": 0.7454469207486034,
+    "planet_recall": 0.7047872340425532,
+    "false_positive_rejection": 0.6756756756756757,
     "calibration": {
-      "brier": 0.20547254807178186,
-      "brier_training_rate": 0.2514270974321177,
-      "mean_probability": 0.5111187086137077,
+      "brier": 0.20281611144364603,
+      "brier_training_rate": 0.25098035503823946,
+      "mean_probability": 0.5085465732951765,
       "planet_rate": 0.5040214477211796,
       "reliability": [
         {
           "p_low": 0.0,
           "p_high": 0.2,
-          "n": 61,
-          "n_planets": 8,
-          "mean_predicted": 0.13716332388306898,
-          "observed_rate": 0.13114754098360656
+          "n": 57,
+          "n_planets": 7,
+          "mean_predicted": 0.1508891981427085,
+          "observed_rate": 0.12280701754385964
         },
         {
           "p_low": 0.2,
           "p_high": 0.4,
-          "n": 171,
-          "n_planets": 61,
-          "mean_predicted": 0.3031387329303056,
-          "observed_rate": 0.3567251461988304
+          "n": 180,
+          "n_planets": 60,
+          "mean_predicted": 0.30739564810635556,
+          "observed_rate": 0.3333333333333333
         },
         {
           "p_low": 0.4,
           "p_high": 0.6,
-          "n": 252,
-          "n_planets": 115,
-          "mean_predicted": 0.49988440506603166,
-          "observed_rate": 0.45634920634920634
+          "n": 247,
+          "n_planets": 114,
+          "mean_predicted": 0.49804094742078714,
+          "observed_rate": 0.46153846153846156
         },
         {
           "p_low": 0.6,
           "p_high": 0.8,
-          "n": 178,
-          "n_planets": 119,
-          "mean_predicted": 0.6909031556690124,
-          "observed_rate": 0.6685393258426966
+          "n": 188,
+          "n_planets": 129,
+          "mean_predicted": 0.6907352850595133,
+          "observed_rate": 0.6861702127659575
         },
         {
           "p_low": 0.8,
           "p_high": 1.0,
-          "n": 84,
-          "n_planets": 73,
-          "mean_predicted": 0.858800461335146,
-          "observed_rate": 0.8690476190476191
+          "n": 74,
+          "n_planets": 66,
+          "mean_predicted": 0.8455337178486534,
+          "observed_rate": 0.8918918918918919
         }
       ]
-    }
+    },
+    "learning_curve": [
+      {
+        "n_training": 100,
+        "average_precision": 0.6325470636134971,
+        "sd": 0.027941241231319334,
+        "n_draws": 10
+      },
+      {
+        "n_training": 200,
+        "average_precision": 0.6833230492638735,
+        "sd": 0.022262353671760455,
+        "n_draws": 10
+      },
+      {
+        "n_training": 400,
+        "average_precision": 0.7164001818559577,
+        "sd": 0.016712846975571242,
+        "n_draws": 10
+      },
+      {
+        "n_training": 800,
+        "average_precision": 0.740116928500156,
+        "sd": 0.007631773503450966,
+        "n_draws": 10
+      },
+      {
+        "n_training": 857,
+        "average_precision": 0.7454469207486034,
+        "sd": 0.0,
+        "n_draws": 1
+      }
+    ]
   },
   "model": "results/toi_trained/model.joblib"
 }
