@@ -20,7 +20,7 @@ whose coverage is measured by injection.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python run_pipeline.py            # ~3 min on 4 cores
-pytest                            # ~5 min, 518 tests
+pytest                            # ~5 min, 532 tests
 ```
 
 It writes `results/metrics.json`, `results/report.txt`, the trained model
@@ -871,7 +871,8 @@ now grows with the baseline so that the drift stays at what 2000 periods allow
 on one sector, 0.05 days (`grid_baseline_days` in `BLSConfig`): a single
 sector's grid is unchanged, and a year of sectors gets about 42,000 trial
 periods. The centroid test still reads the pixel file of the star's first
-sector with a curve. Features, classifier and threshold rule are the same.
+sector with a curve (the next section tests every sector's). Features,
+classifier and threshold rule are the same.
 
 Average precision on the stars both runs score; the last column is the share
 of 2000 paired bootstrap resamples in which joining the sectors scores higher:
@@ -919,8 +920,8 @@ of 2000 paired bootstrap resamples in which joining the sectors scores higher:
   (0.66 against 0.68, and 0.68 against 0.67).
 - **Where the pixels lag.** For 28 hosts in each direction the first sector
   holds no transit at the ephemeris the joined search found, so their
-  centroid test is empty. Testing the sector with the most transits instead
-  would close that gap.
+  centroid test is empty. Testing every sector's pixels closes that gap
+  (see the next section).
 
 So joining a star's sectors is worth about 0.03 of average precision in both
 directions, less than the 550 later-sector labels added scored on sectors 1
@@ -945,6 +946,109 @@ the runs above. `--pixel-features` gives the model with the centroid test
 --results-dir results/toi_trained/stitched/sectors_14_26` with
 `--train-cache` and `--benchmark-cache` set to
 `results/toi_trained/toi_curves.npz` the other direction.
+
+### Every sector's pixels, tested together
+
+Joining a star's sectors gave the search more transits, but the centroid
+test above still read one pixel file, the first sector's. For 28 hosts in
+each direction that sector holds no transit at the joined search's
+ephemeris, so their test is empty, and on a star seen in ten sectors it
+uses a tenth of the transits the search did. `--centroids-every-sector`
+(with `--stitch`) runs the test on the pixel file of every sector a star
+was joined from, at the same ephemeris, and combines the tests into one
+verdict (`combine_sector_tests` in `transitml/centroid.py`).
+
+The stamps cannot simply be stacked: the spacecraft turns between sectors,
+so the same neighbour sits in a different direction in each stamp, and the
+cached pixel files keep the target's position but not the sky orientation.
+What carries over is how long each sector's offset is and how significant.
+The combined significance is Stouffer's: each sector's p-value turned into a
+one-sided normal deviate, summed, and divided by the square root of their
+number, so an offset seen in every sector adds up while noise in each stays
+noise. The length is the mean of the sectors' lengths weighted by the
+inverse of their bootstrap variance, and the difference-image SNR adds in
+quadrature. A sector enters the offset only when its own test placed the
+dip, inside the 3-pixel window it measured over: a flux-weighted centroid of
+that window can only land outside it when the difference image there is
+noise of both signs rather than a dip. The flag rule is the one for a
+single sector (3 sigma, half a pixel), and so are the model and the
+threshold rule.
+
+That is the second version. The first combined the p-values by Fisher's
+method and kept every sector, and on stars seen in many sectors one wild
+sector decided the verdict: a centroid 12 to 24 pixels out from a 3-pixel
+window, at 4 to 6 sigma, flagged confirmed planets whose other sectors
+showed nothing (10 and 11 planets flagged in the two directions, against 6
+and 7 from the first sector alone, and 6 of the 32 planets seen in seven or
+more of sectors 1 to 13). Fisher's sum lets the smallest p-value dominate by
+design; Stouffer's does not, and that is what "the same offset in every
+sector" asks for. The version below was run once, after that change. With
+Fisher's method the veto scored 0.791 and 0.827.
+
+On every scored host (the two runs score the same stars, from the same
+joined search), with the centroid test from the first sector or from every
+sector; the last column is the share of 2000 paired bootstrap resamples in
+which every sector scores higher:
+
+| Scored on | Inputs | First sector | Every sector | Ahead in |
+|---|---|---|---|---|
+| *766 hosts of sectors 14 to 26 (chance 0.491)* | | | | |
+| | light curve, centroid test as a veto | 0.781 | 0.793 | 99.9% |
+| | light curve and centroid test | 0.796 | 0.802 | 74% |
+| | false positives flagged | 86 (22%) | 124 (32%) | |
+| | planets flagged | 6 (1.6%) | 9 (2.4%) | |
+| *857 hosts of sectors 1 to 13 (chance 0.536)* | | | | |
+| | light curve, centroid test as a veto | 0.821 | 0.828 | 82% |
+| | light curve and centroid test | 0.835 | 0.836 | 51% |
+| | false positives flagged | 94 (24%) | 106 (27%) | |
+| | planets flagged | 7 (1.5%) | 7 (1.5%) | |
+
+- **No host is left without a test.** The 28 empty tests in each direction
+  are gone; 23 and 17 of those hosts now have their dip placed. In all, the
+  test places the dip on 663 of 766 hosts instead of 583, and on 763 of 857
+  instead of 737; 8 and 13 hosts have only centroids outside their window.
+- **As a veto it rejects more false positives for the same planets.** At
+  the frozen threshold the light-curve model with the veto rejects 75% of
+  the false positives of sectors 14 to 26 instead of 72%, keeping 75.8% of
+  the planets instead of 76.1%; on sectors 1 to 13, 77% instead of 76%, with
+  the same 74% of planets. The gain is clear on 14 to 26 and within noise on
+  1 to 13. It comes from stars seen in two or more sectors: on the 277
+  hosts of 14 to 26 seen in two or three, 46% of the false positives are
+  flagged instead of 29%, and the veto's average precision there rises from
+  0.753 to 0.784. Stars seen once are tested as before, except that a
+  centroid outside its window no longer flags one: that unflags one false
+  positive of sectors 1 to 13 (3.3 pixels out) and costs the veto 0.005 on
+  the 519 hosts there seen once.
+- **As features it is not yet worth more.** The pixel model's own
+  cross-validation on its training hosts rises (0.840 to 0.849 trained on
+  sectors 1 to 13, 0.775 to 0.793 on 14 to 26), but on the benchmark it moves
+  by 0.006 and 0.001, which these runs cannot tell from noise. On the 99
+  hosts of 14 to 26 seen in seven or more sectors it rises from 0.849 to
+  0.917, and on the 77 of 1 to 13 from 0.757 to 0.768.
+
+So testing every sector's pixels lets the centroid veto flag 124 false
+positives instead of 86 in one direction and 106 instead of 94 in the other,
+for three more planets flagged in the first and none in the second, and
+leaves the model that reads the test as a feature where it was. The
+remaining weakness is the geometry: without each file's orientation on the
+sky the offsets of different sectors cannot be averaged as vectors, which is
+how the TESS data-validation reports combine them and what would let a real
+neighbour's offset add up in direction as well as in significance. That
+needs the WCS of each pixel file kept in the cache.
+
+To reproduce, after the runs of the section above (the first run downloads
+the pixel file of every other sector of each host, about 2800 more files):
+
+```bash
+python run_pipeline.py --train-sectors 1-13 --benchmark-centroids --stitch \
+    --centroids-every-sector \
+    --benchmark-tois data/toi_benchmark/exofop_toi_2026-10-06.csv --benchmark-sectors 14-26
+```
+
+It writes to `results/toi_trained/stitched/centroids_every_sector/`, with
+`--pixel-features` in `pixels/` below it, and
+`--results-dir results/toi_trained/stitched/centroids_every_sector/sectors_14_26`
+(with the curve and pixel caches set as above) for the other direction.
 
 ---
 
@@ -1931,7 +2035,10 @@ false positives, and as a veto it lifts the TOI benchmark from AP 0.61 to
 PSF is still a circular Gaussian, much tidier than the TESS PRF. The test
 uses only the primary signal and one ephemeris per run, and the model never
 sees it: the synthetic evaluation has no pixels, and the benchmark applies it
-beside the score.
+beside the score. Given several files, `vet` reports each one's test and
+flags the star when any of them flags it; the TOI benchmark's
+`--centroids-every-sector` combines a star's sectors into one verdict
+instead (see "Every sector's pixels, tested together").
 
 ## Vetting a whole sector
 
@@ -2566,7 +2673,7 @@ transit-detection/
 │   ├── dashboard.py            # the batch's self-contained HTML dashboard
 │   ├── real_check.py           # known planets' fits and a real sector, against the archives
 │   └── plots.py                # figures (matplotlib Agg, no display)
-├── tests/                      # 518 tests, ~5 min
+├── tests/                      # 532 tests, ~5 min
 │   ├── test_generator.py       # imbalance is exact; injected physics is consistent
 │   ├── test_preprocess.py      # depth preservation; why the median was rejected
 │   ├── test_features.py        # recovery vs SNR; the vetting statistics fire
@@ -2584,7 +2691,7 @@ transit-detection/
 │   ├── test_benchmark.py       # the real-label benchmark, offline, from a cache
 │   ├── test_benchmark_centroids.py  # the centroid veto on synthetic pixel scenes
 │   ├── test_toi_training.py    # training on TOI labels: threshold, pixels, learning curve
-│   ├── test_toi_stitch.py      # every sector of a host fetched, joined, trained on, scored
+│   ├── test_toi_stitch.py      # every sector of a host fetched, joined, scored, pixels tested
 │   ├── test_cadence.py         # later sectors' faster photometry averaged to 30 minutes
 │   ├── test_stars.py           # host-star parameters and the occultation allowance
 │   ├── test_files.py           # CSV and npz input
@@ -2599,6 +2706,7 @@ transit-detection/
 │   ├── test_tpf.py             # pixel files: npz round trip, stubbed download
 │   ├── test_synthetic_tpf.py   # synthetic pixels put the light where it belongs
 │   ├── test_centroid.py        # blends flagged, on-target not; bad input survives
+│   ├── test_centroid_sectors.py  # one verdict from several sectors; a wild one cannot decide
 │   ├── test_vet_centroid.py    # centroid section in JSON and PNG; score unchanged
 │   ├── test_batch.py           # ranking, caches, retries, centroid test, dashboard
 │   ├── test_real_check.py      # published-value comparisons and the TOI ranking, offline
