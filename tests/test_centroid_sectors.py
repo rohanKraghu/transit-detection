@@ -6,6 +6,7 @@ from dataclasses import replace
 
 import numpy as np
 import pytest
+from scipy import stats
 
 import transitml.benchmark as bench
 from transitml.benchmark import (
@@ -21,6 +22,8 @@ from transitml.centroid import (
     centroid_test,
     combine_sector_tests,
     combined_pixel_files,
+    sector_combination,
+    sky_rotation,
 )
 from transitml.data.base import stitch_light_curves
 from transitml.data.synthetic_tpf import blend_scenario
@@ -31,10 +34,21 @@ from transitml.data.tpf import load_tpf, save_tpf
 TURNED = [(1.6, 0.8), (-0.8, 1.6), (-1.6, -0.8), (0.8, -1.6)]
 
 
+def turn(degrees: float) -> np.ndarray:
+    a = np.radians(degrees)
+    return np.array([[np.cos(a), -np.sin(a)], [np.sin(a), np.cos(a)]])
+
+
+#: Each stamp of TURNED is turned a further quarter; its WCS turns it back, so
+#: the neighbour sits at (1.6, 0.8) pixels east and north in every sector.
+SKY = [tuple(map(tuple, 21.0 * turn(-90.0 * k))) for k in range(len(TURNED))]
+
+
 def sector_tests(kind: str, seed: int, **scene) -> list[dict]:
     tests = []
     for k, offset in enumerate(TURNED):
         tpf, truth = blend_scenario(kind, neighbour_offset=offset, seed=seed + k, **scene)
+        tpf = replace(tpf, sky_matrix=SKY[k])
         result = centroid_test(tpf, truth["period"], truth["epoch"], truth["duration"])
         tests.append({name: getattr(result, name) for name in SECTOR_CENTROID_FIELDS})
     return tests
@@ -143,6 +157,132 @@ def test_combined_pixel_files_counts_only_combined_tests():
     assert combined_pixel_files([None, {"n_sectors": 3}, {"n_sectors": 1}]) == 4
 
 
+def test_sky_rotation_is_the_turn_of_the_sky_matrix():
+    np.testing.assert_allclose(sky_rotation(SKY[1]), turn(-90.0), atol=1e-12)
+    # Pixels that are not quite square, and a mirrored axis, still give a pure turn.
+    mirrored = np.array([[-20.1, 0.4], [0.3, 19.8]])
+    rotation = sky_rotation(mirrored)
+    np.testing.assert_allclose(rotation @ rotation.T, np.eye(2), atol=1e-12)
+    np.testing.assert_allclose(rotation, [[-1.0, 0.0], [0.0, 1.0]], atol=0.03)
+
+
+def test_each_test_turns_its_offset_onto_the_sky():
+    tpf, truth = blend_scenario("blend", neighbour_offset=TURNED[1], seed=1)
+    ephemeris = (truth["period"], truth["epoch"], truth["duration"])
+    assert centroid_test(tpf, *ephemeris).offset_sky_pixels is None
+    result = centroid_test(replace(tpf, sky_matrix=SKY[1]), *ephemeris)
+    np.testing.assert_allclose(
+        result.offset_sky_pixels, turn(-90.0) @ np.array(result.offset_pixels), atol=1e-12
+    )
+    # Turned onto the sky the neighbour is east and north, as it is on the sky.
+    east, north = result.offset_sky_pixels
+    assert east > 1.0 and north > 0.3
+    cov = np.array(result.offset_sky_covariance)
+    np.testing.assert_allclose(cov, cov.T)
+    assert np.sqrt(np.diag(cov)) == pytest.approx(result.offset_error_pixels[::-1], rel=1e-9)
+    assert "offset_sky_pixels" in result.to_dict()
+
+
+def test_one_sector_on_the_sky_gives_back_its_own_numbers():
+    (test,) = sector_tests("blend", seed=3)[:1]
+    combined = combine_sector_tests([test], sky=True)
+    assert combined["offset_sigma"] == pytest.approx(test["offset_sigma"], rel=1e-9)
+    assert combined["offset_distance_pixels"] == pytest.approx(test["offset_distance_pixels"])
+    assert combined["offset_sky_pixels"] == pytest.approx(test["offset_sky_pixels"])
+    assert combined["combination"] == "sky" and combined["significant"] == test["significant"]
+
+
+def test_a_faint_blend_adds_up_on_the_sky():
+    tests = sector_tests("blend", seed=0, binary_depth=0.009)
+    assert not any(t["significant"] for t in tests)
+    sky = combine_sector_tests(tests, sky=True)
+    assert sky["significant"] and sky["n_sectors_placed"] == 4
+    # Pointing at the neighbour, 1.8 pixels east-north-east (edge pull shortens it).
+    east, north = sky["offset_sky_pixels"]
+    assert np.degrees(np.arctan2(north, east)) == pytest.approx(26.6, abs=15.0)
+    assert 1.2 < sky["offset_distance_pixels"] < 2.5
+    assert sky["offset_sigma"] > combine_sector_tests(tests)["offset_sigma"]
+
+
+@pytest.mark.parametrize("seed", [0, 10, 20])
+def test_planets_on_their_target_stay_unflagged_on_the_sky(seed):
+    combined = combine_sector_tests(sector_tests("on_target", seed=seed), sky=True)
+    assert combined["status"] == "ok" and not combined["significant"]
+
+
+def _sector(offset, cov, sigma, distance=None):
+    """A sector's test from its offset on the sky and covariance."""
+    return {
+        "status": "ok", "offset_sigma": sigma,
+        "offset_distance_pixels": float(np.hypot(*offset)) if distance is None else distance,
+        "offset_error_pixels": tuple(np.sqrt(np.diag(cov))), "difference_snr": 10.0,
+        "n_transits": 5, "offset_sky_pixels": tuple(offset),
+        "offset_sky_covariance": tuple(map(tuple, cov)),
+    }
+
+
+def test_an_offset_fixed_to_the_detector_cancels_on_the_sky():
+    """The same offset in every stamp points four ways on the sky."""
+    cov = 0.04 * np.eye(2)
+    tests = [_sector(turn(-90.0 * k) @ [0.6, 0.0], cov, sigma=2.5) for k in range(4)]
+    assert combine_sector_tests(tests)["significant"]  # Stouffer sees only lengths
+    sky = combine_sector_tests(tests, sky=True)
+    assert sky["offset_sigma"] < 1.0 and not sky["significant"]
+    assert sky["offset_distance_pixels"] == pytest.approx(0.0, abs=1e-12)
+
+
+@pytest.mark.parametrize("transits", [(4, 5, 9), (5, 5, 5, 5, 5), (3, 3, 3, 9, 9)])
+def test_noise_on_the_sky_stays_noise(transits):
+    """Under no offset, the combined sigma keeps its nominal false-alarm rate.
+
+    Each sector's offset is the mean of its transits' and its covariance their
+    sample covariance over their number, as the transit bootstrap estimates
+    it, under a different elongated noise in each.  Weighting by the inverse
+    of those covariances would reach 2 sigma 15 to 54% of the time here.
+    """
+    rng = np.random.default_rng(len(transits))
+    rates = []
+    for _ in range(4000):
+        tests = []
+        for n in transits:
+            shape = turn(rng.uniform(0.0, 180.0)) @ np.diag(rng.uniform(0.5, 2.0, 2))
+            x = rng.standard_normal((n, 2)) @ shape.T
+            offset, cov = x.mean(axis=0), np.cov(x, rowvar=False) / n
+            chi2 = float(offset @ np.linalg.solve(cov, offset))
+            log_p = stats.f.logsf(chi2 * (n - 2) / (2 * (n - 1)), 2, n - 2)
+            tests.append(_sector(offset, cov, _gaussian_sigma_from_log_p(log_p), distance=0.5))
+        rates.append(combine_sector_tests(tests, sky=True)["offset_sigma"] >= 2.0)
+    assert np.mean(rates) == pytest.approx(0.0455, abs=0.012)
+
+
+def test_the_offset_on_the_sky_is_weighted_by_inverse_covariance():
+    tests = [
+        _sector([1.0, 0.0], np.diag([0.01, 0.04]), sigma=5.0),
+        _sector([0.0, 1.0], np.diag([0.04, 0.01]), sigma=5.0),
+    ]
+    sky = combine_sector_tests(tests, sky=True)
+    assert sky["offset_sky_pixels"] == pytest.approx((0.8, 0.8))
+
+
+def test_sectors_without_their_orientation_are_left_off_the_sky():
+    placed = _sector([1.2, 0.4], 0.04 * np.eye(2), sigma=5.0)
+    unknown = {**placed, "offset_sky_pixels": None, "offset_sky_covariance": None}
+    outside = _sector([9.0, 0.0], 0.04 * np.eye(2), sigma=6.0)
+    combined = combine_sector_tests([unknown, outside, placed], sky=True)
+    assert combined["n_sectors_placed"] == 1
+    assert combined["offset_sky_pixels"] == pytest.approx((1.2, 0.4))
+    alone = combine_sector_tests([unknown], sky=True)
+    assert alone["status"] == "no_sky_orientation" and alone["n_sectors_placed"] == 0
+    assert not alone["significant"] and alone["offset_sky_pixels"] is None
+    assert combine_sector_tests([unknown])["n_sectors_placed"] == 1
+
+
+def test_sector_combination_says_how_tests_were_combined():
+    assert sector_combination([None, {"status": "ok"}]) is None
+    assert sector_combination([None, {"n_sectors": 2, "combination": "stouffer"}]) == "stouffer"
+    assert sector_combination([{"n_sectors": 2, "combination": "sky"}]) == "sky"
+
+
 @pytest.fixture(scope="module")
 def three_sectors(tmp_path_factory):
     """A faint blend seen in three sectors, each stamp turned, its light curves joined."""
@@ -155,6 +295,7 @@ def three_sectors(tmp_path_factory):
         # Sectors a whole number of periods apart keep the eclipses on the ephemeris.
         tpf.time = tpf.time + 9 * truth["period"] * k
         tpf.target_id = "TIC 4242"
+        tpf.sky_matrix = SKY[k]
         save_tpf(tpf, tpf_cache_path(cache, "TIC 4242", 20 + k))
         curves.append(replace(tpf.to_light_curve(), label=0, meta={"kind": "real", "sector": 20 + k}))
     return cache, stitch_light_curves(curves)
@@ -178,6 +319,9 @@ def test_centroid_tests_combine_a_list_of_pixel_files(
     assert every["n_sectors"] == 3 and every["n_sectors_placed"] >= 2
     assert every["significant"] and not first["significant"]
     assert every["difference_snr"] > first["difference_snr"]
+    (sky,) = centroid_tests(dataset, paths, n_jobs=1, sky=True)
+    assert sky["combination"] == "sky" and sky["significant"]
+    assert sky["n_sectors_placed"] == every["n_sectors_placed"]
 
 
 def test_sector_pixel_files_are_fetched_once_each(three_sectors, tmp_path, monkeypatch):
@@ -198,3 +342,29 @@ def test_sector_pixel_files_are_fetched_once_each(three_sectors, tmp_path, monke
     again = load_or_fetch_sector_tpfs({"TIC 4242": [20, 22, 23]}, fresh, n_workers=1)
     assert len(asked) == 3, "a rerun must not touch the network"
     assert again["TIC 4242"] == [tpf_cache_path(fresh, "TIC 4242", s) for s in (20, 22)]
+    assert load_or_fetch_sector_tpfs({"TIC 4242": [20, 22]}, fresh, n_workers=1, sky=True)
+    assert len(asked) == 3, "files that know their orientation are not fetched again"
+
+
+def test_files_cached_without_their_orientation_are_fetched_again(
+    three_sectors, tmp_path, monkeypatch
+):
+    cache, _ = three_sectors
+    fresh = tmp_path / "toi_tpfs"
+    for s in (20, 21):
+        save_tpf(replace(load_tpf(tpf_cache_path(cache, "TIC 4242", s)), sky_matrix=None),
+                 tpf_cache_path(fresh, "TIC 4242", s))
+    asked: list[int] = []
+
+    def fake_download(target_id, *, author, exposure_time, sector):
+        asked.append(sector)
+        return [load_tpf(tpf_cache_path(cache, target_id, sector))] if sector == 20 else []
+
+    monkeypatch.setattr(bench, "download_tpfs", fake_download)
+    stars = {"TIC 4242": [20, 21]}
+    assert load_or_fetch_sector_tpfs(stars, fresh, n_workers=1) and asked == []
+    paths = load_or_fetch_sector_tpfs(stars, fresh, n_workers=1, sky=True)
+    assert sorted(asked) == [20, 21]
+    # The one MAST answered for now knows its orientation; the other is kept as it was.
+    np.testing.assert_allclose(load_tpf(paths["TIC 4242"][0]).sky_matrix, SKY[0])
+    assert load_tpf(paths["TIC 4242"][1]).sky_matrix is None

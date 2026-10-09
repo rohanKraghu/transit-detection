@@ -147,6 +147,19 @@ def _significance(
 ) -> tuple[float, NDArray[np.float64]]:
     """``(sigma, per-axis 1-sigma error)`` of a 2-vector under its bootstrap distribution.
 
+    See :func:`_significance_and_covariance`, which also returns the covariance.
+    """
+    sigma, errors, _ = _significance_and_covariance(offset, samples, n_units)
+    return sigma, errors
+
+
+def _significance_and_covariance(
+    offset: NDArray[np.float64],
+    samples: NDArray[np.float64],
+    n_units: float | None = None,
+) -> tuple[float, NDArray[np.float64], NDArray[np.float64]]:
+    """``(sigma, per-axis 1-sigma error, covariance)`` of a 2-vector under its bootstrap.
+
     Bootstrap samples further than 5 robust sigma from the median on either
     axis are dropped first: when the summed difference flux in a resample
     comes close to zero its centroid diverges, and a handful of such samples
@@ -160,16 +173,16 @@ def _significance(
     bootstrap's small-sample bias) and the distance is referred to Hotelling's
     T-squared distribution, ``F(2, n - 2)``, instead of a chi-square.
     """
-    nan2 = np.full(2, np.nan)
+    nan2, nan22 = np.full(2, np.nan), np.full((2, 2), np.nan)
     samples = samples[np.all(np.isfinite(samples), axis=1)]
     if samples.shape[0] < 10 or not np.all(np.isfinite(offset)):
-        return float("nan"), nan2
+        return float("nan"), nan2, nan22
     median = np.median(samples, axis=0)
     mad = 1.4826 * np.median(np.abs(samples - median), axis=0)
     keep = np.all(np.abs(samples - median) <= 5.0 * np.maximum(mad, 1e-12), axis=1)
     samples = samples[keep]
     if samples.shape[0] < 10:
-        return float("nan"), nan2
+        return float("nan"), nan2, nan22
     cov = np.cov(samples, rowvar=False)
     if n_units is not None:
         cov = cov * n_units / (n_units - 1.0)
@@ -177,12 +190,12 @@ def _significance(
     try:
         chi2 = float(offset @ np.linalg.solve(cov, offset))
     except np.linalg.LinAlgError:
-        return float("nan"), errors
+        return float("nan"), errors, cov
     if n_units is None:
-        return gaussian_sigma_2d(chi2), errors
+        return gaussian_sigma_2d(chi2), errors, cov
     f_stat = chi2 * (n_units - 2.0) / (2.0 * (n_units - 1.0))
     log_p = float(stats.f.logsf(f_stat, 2, n_units - 2))
-    return _gaussian_sigma_from_log_p(log_p), errors
+    return _gaussian_sigma_from_log_p(log_p), errors, cov
 
 
 def _satterthwaite_units(counts: list[tuple[int, int]]) -> float:
@@ -224,6 +237,11 @@ class CentroidResult:
     difference_centroid: tuple[float, float] | None = None
     offset_pixels: tuple[float, float] | None = None
     offset_error_pixels: tuple[float, float] | None = None
+    #: The offset and its bootstrap covariance turned onto the sky, ``(east,
+    #: north)`` in pixels, when the pixel file knows its orientation.  Each
+    #: sector's stamp is turned differently, so this is what adds up across sectors.
+    offset_sky_pixels: tuple[float, float] | None = None
+    offset_sky_covariance: tuple[tuple[float, float], tuple[float, float]] | None = None
     offset_distance_pixels: float = float("nan")
     offset_arcsec: float = float("nan")
     offset_sigma: float = float("nan")
@@ -285,6 +303,21 @@ def _centroid(image, cols, rows, mask):
 
 def _as_tuple(v) -> tuple[float, float] | None:
     return None if v is None else (float(v[0]), float(v[1]))
+
+
+def _as_matrix(m) -> tuple[tuple[float, float], tuple[float, float]]:
+    return ((float(m[0][0]), float(m[0][1])), (float(m[1][0]), float(m[1][1])))
+
+
+def sky_rotation(sky_matrix) -> NDArray[np.float64]:
+    """The rotation part of a pixel file's ``sky_matrix``: stamp ``(column, row)``
+    to ``(east, north)``, lengths kept in pixels.
+
+    The orthogonal factor of the matrix's polar decomposition, so an offset
+    keeps its length in pixels (and its significance) when turned onto the sky.
+    """
+    u, _, vt = np.linalg.svd(np.asarray(sky_matrix, dtype=np.float64))
+    return u @ vt
 
 
 def centroid_test(
@@ -492,7 +525,14 @@ def centroid_test(
         offset_boot = boot[:, 0:2] - reference
     else:
         offset_boot = boot[:, 0:2] - boot[:, 2:4]
-    offset_sigma, offset_err = _significance(offset, offset_boot, units)
+    offset_sigma, offset_err, offset_cov = _significance_and_covariance(
+        offset, offset_boot, units
+    )
+    sky_offset = sky_cov = None
+    if tpf.sky_matrix is not None and np.all(np.isfinite(offset_cov)):
+        turn = sky_rotation(tpf.sky_matrix)
+        sky_offset = _as_tuple(turn @ offset)
+        sky_cov = _as_matrix(turn @ offset_cov @ turn.T)
     from_oot = diff_c - oot_c
     from_oot_sigma, _ = _significance(from_oot, boot[:, 0:2] - boot[:, 2:4], units)
     shift_sigma, _ = _significance(shift, boot[:, 6:8], units)
@@ -539,6 +579,8 @@ def centroid_test(
         difference_centroid=_as_tuple(diff_c),
         offset_pixels=_as_tuple(offset),
         offset_error_pixels=_as_tuple(offset_err),
+        offset_sky_pixels=sky_offset,
+        offset_sky_covariance=sky_cov,
         offset_distance_pixels=distance,
         offset_arcsec=distance * TESS_PIXEL_SCALE_ARCSEC,
         offset_sigma=offset_sigma,
@@ -555,15 +597,20 @@ def centroid_test(
 
 
 def combine_sector_tests(
-    tests: Sequence[Mapping[str, Any]], config: CentroidConfig | None = None
+    tests: Sequence[Mapping[str, Any]],
+    config: CentroidConfig | None = None,
+    *,
+    sky: bool = False,
 ) -> dict[str, Any]:
     """One verdict from the centroid tests of one star in several sectors.
 
     Each sector's test runs on its own pixel file at the same ephemeris.  The
-    stamps are not aligned with one another (the spacecraft turns between
-    sectors, so a pixel axis points somewhere else on the sky), so the offset
-    vectors are not averaged; what carries over between sectors is how long
-    the offset is and how significant:
+    stamps are not aligned with one another: the spacecraft turns between
+    sectors, so a pixel axis points somewhere else on the sky.  Two ways of
+    combining them follow from that.
+
+    Without ``sky``, the offset vectors are not averaged; what carries over
+    between sectors is how long the offset is and how significant:
 
     * the significance is Stouffer's combination of the sectors' p-values:
       each turned into a one-sided normal deviate, summed and divided by the
@@ -572,21 +619,47 @@ def combine_sector_tests(
       does not decide it (Fisher's ``-2 sum ln p`` lets the smallest p-value
       do just that);
     * the length is the mean of the sectors' lengths, each weighted by the
-      inverse of its bootstrap variance (the mean of its two axes');
-    * the difference-image SNR is the sectors' SNRs added in quadrature.
+      inverse of its bootstrap variance (the mean of its two axes').
+
+    With ``sky``, each sector's offset and its bootstrap covariance are first
+    turned onto the sky (``offset_sky_pixels`` and ``offset_sky_covariance``,
+    from the pixel file's WCS), and the offsets are combined as vectors, as
+    the Kepler and TESS data-validation reports combine them.  A neighbour in
+    one direction on the sky then adds up in every sector, while offsets that
+    point a different way each time (noise, and whatever is fixed to the
+    detector rather than the sky) cancel:
+
+    * the significance is Stouffer's method in two dimensions: each sector's
+      offset is whitened by its own covariance and given the length of a
+      two-dimensional normal deviate with that sector's own p-value (so each
+      keeps the Hotelling calibration of a single sector), the vectors are
+      summed and divided by the square root of their number, and the sum's
+      squared length is read as a chi-square with two degrees of freedom.
+      Weighting the vectors by the inverse of their bootstrap covariances
+      instead, the textbook way, rejects far more often than it should: a
+      covariance estimated from five transits has an inverse four times too
+      large on average, and those errors add up over sectors (with five
+      sectors of five transits, 15% of pure-noise stars reach 3 sigma);
+    * the length is that of the mean of the sectors' vectors weighted by the
+      inverse of their covariances, which is not inflated by noise the way a
+      mean of lengths is.
+
+    Either way the difference-image SNR is the sectors' SNRs added in
+    quadrature.
 
     ``tests`` are dicts of :class:`CentroidResult` fields (at least
     ``status``, ``offset_sigma``, ``offset_distance_pixels``,
-    ``offset_error_pixels``, ``difference_snr`` and ``n_transits``).  A
-    sector enters the offset when its difference image detects the dip
-    (status ``"ok"``), its significance and error are measured, and its
-    centroid lies within the ``window_radius`` it was measured over: a
-    flux-weighted centroid of that window can only land outside it when the
-    difference image there is not a dip but noise of both signs, and such a
-    sector would otherwise flag the star from a centroid 10 or 20 pixels away.
-    Every sector with an SNR enters the SNR.  The star's dip is placed
-    (status ``"ok"``) when any sector placed it, and flagged by the rule for
-    one sector: at least ``significance_sigma`` and at least
+    ``offset_error_pixels``, ``difference_snr`` and ``n_transits``, and with
+    ``sky`` also ``offset_sky_pixels`` and ``offset_sky_covariance``).  A sector enters the offset when its difference image
+    detects the dip (status ``"ok"``), its significance and error (with
+    ``sky``, its offset on the sky) are measured, and its centroid lies
+    within the ``window_radius`` it was measured over: a flux-weighted
+    centroid of that window can only land outside it when the difference
+    image there is not a dip but noise of both signs, and such a sector would
+    otherwise flag the star from a centroid 10 or 20 pixels away.  Every
+    sector with an SNR enters the SNR.  The star's dip is placed (status
+    ``"ok"``) when any sector placed it, and flagged by the rule for one
+    sector: at least ``significance_sigma`` and at least
     ``min_offset_pixels``.  One sector placed inside its window gives back
     its own numbers.
     """
@@ -599,12 +672,21 @@ def combine_sector_tests(
         and t["offset_error_pixels"] is not None
         and np.all(np.isfinite(t["offset_error_pixels"]))
     ]
+    unturned = bool(measured)
+    if sky:
+        measured = [t for t in measured if _on_sky(t)]
     placed = [t for t in measured if t["offset_distance_pixels"] <= config.window_radius]
     snrs = np.array([t["difference_snr"] for t in tests], dtype=float)
     snrs = snrs[np.isfinite(snrs)]
     snr = float(np.sqrt(np.sum(snrs**2))) if snrs.size else float("nan")
     sigma = distance = float("nan")
-    if placed:
+    sky_offset = None
+    if placed and sky:
+        offset, sigma = _sky_mean(placed)
+        distance = float(np.hypot(*offset))
+        sky_offset = _as_tuple(offset)
+        status = "ok"
+    elif placed:
         # Each sector's P(|z| > s), as a one-sided normal deviate; a p-value of
         # exactly one (an offset of exactly zero) is kept finite.
         log_p = np.array(
@@ -621,6 +703,8 @@ def combine_sector_tests(
         status = "ok"
     elif measured:
         status = "centroid_outside_window"
+    elif unturned:
+        status = "no_sky_orientation"
     else:
         statuses = [str(t["status"]) for t in tests]
         status = (
@@ -631,7 +715,7 @@ def combine_sector_tests(
     significant = bool(
         placed and sigma >= config.significance_sigma and distance >= config.min_offset_pixels
     )
-    return {
+    out = {
         "status": status,
         "significant": significant,
         "offset_distance_pixels": distance,
@@ -641,7 +725,43 @@ def combine_sector_tests(
         "n_transits": int(sum(t["n_transits"] for t in tests)),
         "n_sectors": len(tests),
         "n_sectors_placed": len(placed),
+        "combination": "sky" if sky else "stouffer",
     }
+    if sky:
+        out["offset_sky_pixels"] = sky_offset
+    return out
+
+
+def _on_sky(test: Mapping[str, Any]) -> bool:
+    """Whether a sector's test carries its offset turned onto the sky."""
+    offset, cov = test.get("offset_sky_pixels"), test.get("offset_sky_covariance")
+    return bool(
+        offset is not None
+        and cov is not None
+        and np.all(np.isfinite(offset))
+        and np.all(np.isfinite(cov))
+        and np.linalg.det(np.asarray(cov, dtype=float)) > 0
+    )
+
+
+def _sky_mean(placed: Sequence[Mapping[str, Any]]) -> tuple[NDArray[np.float64], float]:
+    """``(offset, sigma)`` of the sectors' offsets on the sky (see :func:`combine_sector_tests`)."""
+    offsets = np.array([t["offset_sky_pixels"] for t in placed], dtype=float)
+    covariances = np.array([t["offset_sky_covariance"] for t in placed], dtype=float)
+    deviates = []
+    for offset, cov, test in zip(offsets, covariances, placed):
+        values, vectors = np.linalg.eigh(cov)
+        whitened = vectors @ ((vectors.T @ offset) / np.sqrt(values))
+        norm = float(np.hypot(*whitened))
+        # P(|z| > s) of the sector's own test is P(chi2_2 > r**2) = exp(-r**2 / 2);
+        # a p-value that underflows to zero is held at a sigma of about 1400.
+        log_p = math.log(2.0) + float(stats.norm.logcdf(-test["offset_sigma"]))
+        length = math.sqrt(-2.0 * min(max(log_p, -1e6), 0.0))
+        deviates.append(whitened * (length / norm) if norm > 0 else np.zeros(2))
+    total = np.sum(deviates, axis=0) / math.sqrt(len(placed))
+    precisions = np.linalg.inv(covariances)
+    offset = np.linalg.solve(precisions.sum(axis=0), np.einsum("kij,kj->i", precisions, offsets))
+    return offset, gaussian_sigma_2d(float(total @ total))
 
 
 def combined_pixel_files(tests: Sequence[Mapping[str, Any] | None]) -> int | None:
@@ -651,4 +771,13 @@ def combined_pixel_files(tests: Sequence[Mapping[str, Any] | None]) -> int | Non
     """
     counts = [t["n_sectors"] for t in tests if t is not None and "n_sectors" in t]
     return int(sum(counts)) if counts else None
+
+
+def sector_combination(tests: Sequence[Mapping[str, Any] | None]) -> str | None:
+    """How :func:`combine_sector_tests` combined ``tests``: ``"sky"`` or ``"stouffer"``.
+
+    ``None`` when none of ``tests`` was combined across sectors.
+    """
+    kinds = {t.get("combination", "stouffer") for t in tests if t is not None and "n_sectors" in t}
+    return "sky" if "sky" in kinds else kinds.pop() if kinds else None
 
