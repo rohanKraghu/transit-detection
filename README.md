@@ -3046,6 +3046,13 @@ on. Sizes are rough: S is a few hours, M a day or two, L longer.
   across sectors), but AP is unchanged within noise (veto 0.794 and 0.827
   against 0.793 and 0.828), so `--sky-offsets` stays an option, not the
   default.
+- Later sectors joined (`run_pipeline.py --stitch --join-sectors 27-102`):
+  each TOI host's sectors 27 to 102 are added to its curve, with a windowed
+  BLS search for multi-year curves and detrending solved segment by segment
+  (a 34-sector star in 5 s instead of 400). The catalogued period is found
+  for 85% and 86% of hosts instead of 81% and 82%, and light-curve AP rises
+  from 0.766 to 0.825 on sectors 14 to 26 and 0.793 to 0.858 on 1 to 13
+  (0.793 to 0.848 and 0.828 to 0.873 with the centroid veto).
 
 **Next**
 
@@ -3054,7 +3061,7 @@ to next:
 
 | Item | Why | Size |
 | --- | --- | --- |
-| Period recovery with later sectors, in progress | The search still misses the catalogued period for 18% of hosts even with every sector of the first two years joined; joining sectors 27 to 102 gives it more transits to find | M |
+| Periods lost to long-period fits, in progress | With every sector joined, the whole-curve fit sometimes prefers a period over 50 days to the planet's (12 and 6 of the 20 periods lost in each direction), and why is not yet known | M |
 
 ## References
 
