@@ -3109,19 +3109,24 @@ on. Sizes are rough: S is a few hours, M a day or two, L longer.
 - Later sectors joined (`run_pipeline.py --stitch --join-sectors 27-102`):
   each TOI host's sectors 27 to 102 are added to its curve, with a windowed
   BLS search for multi-year curves and detrending solved segment by segment
-  (a 34-sector star in 5 s instead of 400). The catalogued period is found
-  for 85% and 86% of hosts instead of 81% and 82%, and light-curve AP rises
-  from 0.766 to 0.825 on sectors 14 to 26 and 0.793 to 0.858 on 1 to 13
-  (0.793 to 0.848 and 0.828 to 0.873 with the centroid veto).
+  (a 34-sector star in 5 s instead of 400). With the search fix below, the
+  catalogued period is found for 88% and 87% of hosts instead of 81% and
+  82%, and light-curve AP rises from 0.766 to 0.811 on sectors 14 to 26 and
+  0.793 to 0.857 on 1 to 13 (0.793 to 0.837 and 0.828 to 0.875 with the
+  centroid veto).
+- One deep event against many transits: over years of gappy data a long
+  trial period can put one deep event in transit and the rest in gaps, so
+  the windowed search now ranks periods by their SNR with the strongest
+  transit left out. TOIs under 50 days given a period over 50 fell from 25
+  to 4 and 19 to 3, and periods found rose from 85.2% to 87.9% and 86.1% to
+  87.4%; the ranking is unchanged within noise.
 
 **Next**
 
 Every item on the original roadmap is built. What the results above point
 to next:
 
-| Item | Why | Size |
-| --- | --- | --- |
-| Periods lost to long-period fits, in progress | With every sector joined, the whole-curve fit sometimes prefers a period over 50 days to the planet's (12 and 6 of the 20 periods lost in each direction), and why is not yet known | M |
+Nothing is in progress; the next step has not been chosen yet.
 
 ## References
 
