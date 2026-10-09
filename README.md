@@ -3123,10 +3123,8 @@ on. Sizes are rough: S is a few hours, M a day or two, L longer.
 
 **Next**
 
-Every item on the original roadmap is built. What the results above point
-to next:
-
-Nothing is in progress; the next step has not been chosen yet.
+Every item on the original roadmap is built, and nothing is in progress;
+the next step has not been chosen yet.
 
 ## References
 
