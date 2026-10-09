@@ -3061,7 +3061,7 @@ to next:
 
 | Item | Why | Size |
 | --- | --- | --- |
-| Periods lost to long-period aliases, in progress | With every sector joined, the whole-curve refit sometimes prefers a period over 50 days to the planet's: 12 and 6 of the 20 periods lost in each direction | M |
+| Periods lost to long-period fits, in progress | With every sector joined, the whole-curve fit sometimes prefers a period over 50 days to the planet's (12 and 6 of the 20 periods lost in each direction), and why is not yet known | M |
 
 ## References
 
