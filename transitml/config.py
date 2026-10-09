@@ -259,7 +259,12 @@ class BLSConfig:
     min_period_days: float = 0.5
     #: Capped so at least two transits fit inside the baseline.
     max_period_fraction_of_baseline: float = 0.5
+    #: Trial periods on a baseline of up to ``grid_baseline_days``.
     n_periods: int = 2000
+    #: One TESS sector at most.  A longer baseline, several sectors joined,
+    #: gets proportionally more trial periods, so that between neighbouring
+    #: ones a transit's phase drifts no further over it than on this one.
+    grid_baseline_days: float = 29.5
     durations_days: tuple[float, ...] = (0.04, 0.07, 0.11, 0.16, 0.24)
     #: ``"bls"`` (box least squares) or ``"tls"`` (Transit Least Squares, which
     #: uses its own period and duration grids between the same period limits).

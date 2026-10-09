@@ -46,7 +46,8 @@ trains on the labelled TOI hosts of sectors 1 to 13 and benchmarks the model on
 those of sectors 14 to 26, none of them trained on; ``--pixel-features`` also
 gives it the centroid test, and ``--learning-curve`` scores models trained on
 fewer of the hosts too, to show whether more labels would help.  Writes to
-``results/toi_trained/``.
+``results/toi_trained/``.  ``--stitch`` searches every host on all of its
+sectors in range, joined, instead of on one (``results/toi_trained/stitched/``).
 """
 
 from __future__ import annotations
@@ -229,6 +230,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "toi_tpfs/ beside --benchmark-cache.",
     )
     bench.add_argument(
+        "--stitch",
+        action="store_true",
+        help="Search each TOI host on every one of the sectors it was observed in, joined "
+        "into one curve, instead of on the first that has a curve (training hosts too); "
+        "writes to a stitched/ subdirectory of the results.",
+    )
+    bench.add_argument(
         "--benchmark-comments",
         type=Path,
         default=None,
@@ -321,6 +329,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             args.benchmark_cache = args.results_dir / "toi_curves.npz"
         if args.train_tpfs is None:
             args.train_tpfs = Path(args.train_cache).parent / "toi_tpfs"
+        if args.stitch:
+            if default_results:
+                args.results_dir = args.results_dir / "stitched"
+            if default_figures:
+                args.figures_dir = args.figures_dir / "stitched"
         if args.pixel_features:
             args.benchmark_centroids = True
             if default_results:
@@ -331,6 +344,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         parser.error("--pixel-features needs --train-sectors: only TOI hosts come with pixels")
     elif args.learning_curve:
         parser.error("--learning-curve needs --train-sectors: it trains on TOI hosts")
+    if args.stitch and args.benchmark_tois is None:
+        parser.error("--stitch joins the sectors of TOI hosts; it needs --benchmark-tois")
     if args.search == "tls":
         # Beside the BLS run of the same data: results/tls/, results/systematics/tls/, ...
         if default_results:
@@ -450,6 +465,8 @@ class TOIHosts:
     #: One centroid test per dataset row, when asked for; the dataset then
     #: carries them as features too.
     centroids: list[dict[str, Any] | None] | None = None
+    #: Each star searched on all of its sectors, joined (``--stitch``).
+    stitched: bool = False
 
 
 def load_toi_hosts(
@@ -470,13 +487,15 @@ def load_toi_hosts(
     observed in the benchmark's sectors.  A benchmark star is scored on the
     first of the sectors it was observed in; a training star MAST has no light
     curve for there is taken from its next sector in ``spec`` instead, since a
-    training set loses nothing by that.
+    training set loses nothing by that.  With ``--stitch``, every star is
+    searched on all of its sectors in ``spec`` that have a curve, joined.
     """
     from transitml.benchmark import (
         build_benchmark_dataset,
         centroid_tests,
         fetch_with_fallback,
         load_or_fetch_curves,
+        load_or_fetch_stitched,
         load_or_fetch_tpfs,
         with_centroid_features,
         with_tic_stars,
@@ -509,8 +528,18 @@ def load_toi_hosts(
             n_workers=args.download_workers,
         )
 
-    if training:
-        fetched, curves = fetch_with_fallback(targets, sectors, fetch)
+    if training or args.stitch:
+        if args.stitch:
+            fetched, curves = load_or_fetch_stitched(
+                targets,
+                sectors,
+                cache,
+                author=args.author,
+                exposure_time=args.exposure_time,
+                n_workers=args.download_workers,
+            )
+        else:
+            fetched, curves = fetch_with_fallback(targets, sectors, fetch)
         have = {lc.target_id for lc in curves}
         selection["from_a_later_sector"] = sum(
             1 for first, last in zip(targets, fetched) if last != first and last.target_id in have
@@ -547,6 +576,7 @@ def load_toi_hosts(
         dataset=dataset,
         n_without_curve=len(targets) - len(curves),
         centroids=tests,
+        stitched=args.stitch,
     )
 
 
@@ -611,6 +641,7 @@ def run_toi_benchmark(
         centroids=hosts.centroids,
         comments=comments,
         importance_repeats=importance_repeats,
+        stitched=hosts.stitched,
     )
     report = format_benchmark_report(result)
     print()
@@ -685,6 +716,7 @@ def run_toi_training(args: argparse.Namespace, config: Config, started: float) -
         precision_lcb_z=evaluation.precision_lcb_z,
         seed=config.seed,
         centroids=hosts.centroids,
+        stitched=hosts.stitched,
     )
     print()
     print(format_training_report(summary))

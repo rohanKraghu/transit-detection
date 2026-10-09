@@ -73,6 +73,46 @@ def test_period_grid_reaches_half_the_stitched_baseline():
     assert result["periods"].max() == pytest.approx(grid[-1])
 
 
+def test_a_longer_baseline_gets_proportionally_more_trial_periods():
+    config = BLSConfig()
+    # One sector keeps the configured grid, whatever its length.
+    for baseline in (20.0, 27.4, 28.7, config.grid_baseline_days):
+        assert period_grid(baseline, config).size == config.n_periods
+    one = period_grid(config.grid_baseline_days, config)
+    allowed = config.grid_baseline_days * np.log(one[1] / one[0])
+    assert allowed == pytest.approx(0.05, abs=1e-3)  # days
+    # Two sectors, then a year: between neighbouring trials a transit's phase
+    # drifts no further than on one sector, at every period.
+    for baseline in (54.8, 355.0):
+        grid = period_grid(baseline, config)
+        assert grid.size > config.n_periods
+        assert grid[-1] == pytest.approx(0.5 * baseline)
+        drift = baseline * np.log(grid[1:] / grid[:-1])
+        assert drift.max() <= allowed * (1 + 1e-9)
+    assert period_grid(355.0, config).size > 15 * config.n_periods
+    # A coarse grid asked for stays coarse in the same proportion.
+    coarse = BLSConfig(n_periods=400)
+    assert period_grid(27.4, coarse).size == 400
+    assert period_grid(355.0, coarse).size < period_grid(355.0, config).size / 4
+
+
+def test_a_year_of_sectors_finds_a_long_period_one_sector_cannot():
+    """A 40-day planet transits once per sector at most; joined, BLS finds it."""
+    period, epoch = 40.0, 5.0
+    rng = np.random.default_rng(3)
+    curves = []
+    for k in range(5):
+        time = np.arange(27.4 * k, 27.4 * k + 26.0, 30.0 / 1440.0)
+        flux = 1.0 + rng.normal(0.0, 5e-4, time.size)
+        flux[transit_mask(time, period, epoch, 0.25, 0.5)] -= 2e-3
+        curves.append(LightCurve("TIC 1", time, flux, np.full(time.size, 5e-4), meta={"sector": k}))
+    stitched = flatten(stitch_light_curves(curves))
+    found = run_bls(stitched, BLSConfig())
+    assert found["period"] == pytest.approx(period, rel=2e-3)
+    single = run_bls(flatten(curves[0]), BLSConfig())
+    assert single["periods"].max() < period
+
+
 def test_no_spline_basis_function_spans_a_sector_gap():
     """Each sector, and each side of a multi-week gap, gets its own spline segment."""
     a, b = sector(0.0, seed=1), sector(80.0, seed=2)  # a seven-week gap
