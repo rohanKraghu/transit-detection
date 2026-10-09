@@ -47,7 +47,9 @@ those of sectors 14 to 26, none of them trained on; ``--pixel-features`` also
 gives it the centroid test, and ``--learning-curve`` scores models trained on
 fewer of the hosts too, to show whether more labels would help.  Writes to
 ``results/toi_trained/``.  ``--stitch`` searches every host on all of its
-sectors in range, joined, instead of on one (``results/toi_trained/stitched/``).
+sectors in range, joined, instead of on one (``results/toi_trained/stitched/``),
+and ``--centroids-every-sector`` then runs the centroid test on each of those
+sectors' pixels and combines them (``stitched/centroids_every_sector/``).
 """
 
 from __future__ import annotations
@@ -237,6 +239,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "writes to a stitched/ subdirectory of the results.",
     )
     bench.add_argument(
+        "--centroids-every-sector",
+        action="store_true",
+        help="With --stitch: run the centroid test on the pixel file of every sector a host "
+        "was joined from and combine the tests, instead of on its first sector only; "
+        "writes to a centroids_every_sector/ subdirectory of the stitched results.",
+    )
+    bench.add_argument(
         "--benchmark-comments",
         type=Path,
         default=None,
@@ -334,6 +343,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                 args.results_dir = args.results_dir / "stitched"
             if default_figures:
                 args.figures_dir = args.figures_dir / "stitched"
+            if args.centroids_every_sector:
+                if default_results:
+                    args.results_dir = args.results_dir / "centroids_every_sector"
+                if default_figures:
+                    args.figures_dir = args.figures_dir / "centroids_every_sector"
         if args.pixel_features:
             args.benchmark_centroids = True
             if default_results:
@@ -346,6 +360,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         parser.error("--learning-curve needs --train-sectors: it trains on TOI hosts")
     if args.stitch and args.benchmark_tois is None:
         parser.error("--stitch joins the sectors of TOI hosts; it needs --benchmark-tois")
+    if args.centroids_every_sector and not args.stitch:
+        parser.error("--centroids-every-sector tests the sectors --stitch joins; give --stitch")
+    if args.centroids_every_sector and not args.benchmark_centroids:
+        parser.error(
+            "--centroids-every-sector changes the centroid test; give --benchmark-centroids "
+            "or --pixel-features"
+        )
     if args.search == "tls":
         # Beside the BLS run of the same data: results/tls/, results/systematics/tls/, ...
         if default_results:
@@ -495,6 +516,7 @@ def load_toi_hosts(
         centroid_tests,
         fetch_with_fallback,
         load_or_fetch_curves,
+        load_or_fetch_sector_tpfs,
         load_or_fetch_stitched,
         load_or_fetch_tpfs,
         with_centroid_features,
@@ -558,15 +580,30 @@ def load_toi_hosts(
     )
     tests = None
     if centroids:
-        scored = {lc.target_id for lc in curves}
-        paths = load_or_fetch_tpfs(
-            [t for t in targets if t.target_id in scored],
-            tpfs,
-            author=args.author,
-            exposure_time=args.exposure_time,
-            n_workers=args.download_workers,
-        )
-        print(f"  {len(paths)} have a target pixel file; running the centroid test ...")
+        download = {
+            "author": args.author,
+            "exposure_time": args.exposure_time,
+            "n_workers": args.download_workers,
+        }
+        paths: dict[str, Path] | dict[str, list[Path]]
+        if args.centroids_every_sector:
+            # Every sector the star's curve was joined from; one sector has no list.
+            joined = {
+                lc.target_id: [int(s) for s in lc.meta.get("sectors", [lc.meta["sector"]])]
+                for lc in curves
+            }
+            paths = load_or_fetch_sector_tpfs(joined, tpfs, **download)
+            n_files = sum(len(p) for p in paths.values())
+            print(
+                f"  {len(paths)} have a target pixel file, {n_files} in all; running the "
+                "centroid test on each sector and combining them ..."
+            )
+        else:
+            scored = {lc.target_id for lc in curves}
+            paths = load_or_fetch_tpfs(
+                [t for t in targets if t.target_id in scored], tpfs, **download
+            )
+            print(f"  {len(paths)} have a target pixel file; running the centroid test ...")
         tests = centroid_tests(dataset, paths, n_jobs=args.n_jobs)
         dataset = with_centroid_features(dataset, tests)
     return TOIHosts(
