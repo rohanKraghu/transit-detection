@@ -2937,9 +2937,9 @@ on. Sizes are rough: S is a few hours, M a day or two, L longer.
 Every item on the original roadmap is built. What the results above point
 to next:
 
-The next step is being chosen. The search still misses the catalogued period
-for 18% of hosts even with every sector joined, so period recovery is the
-likely candidate.
+| Item | Why | Size |
+| --- | --- | --- |
+| Period recovery with later sectors, in progress | The search still misses the catalogued period for 18% of hosts even with every sector of the first two years joined; joining sectors 27 to 102 gives it more transits to find | M |
 
 ## References
 
