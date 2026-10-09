@@ -41,6 +41,7 @@ from .centroid import (
     centroid_test,
     combine_sector_tests,
     combined_pixel_files,
+    sector_combination,
 )
 from .config import BLSConfig, PreprocessConfig
 from .data.base import (
@@ -58,7 +59,13 @@ from .data.toi import (
     false_positive_reason,
     later_target,
 )
-from .data.tpf import bin_target_pixels, download_tpfs, load_tpf, save_tpf
+from .data.tpf import (
+    bin_target_pixels,
+    download_tpfs,
+    has_sky_matrix,
+    load_tpf,
+    save_tpf,
+)
 from .evaluate import (
     N_BOOTSTRAP,
     CurveScores,
@@ -346,16 +353,21 @@ def load_or_fetch_sector_tpfs(
     author: str = "TESS-SPOC",
     exposure_time: int | None = 1800,
     n_workers: int = 8,
+    sky: bool = False,
 ) -> dict[str, list[Path]]:
     """Each star's pixel files in every one of its ``sectors``, downloading only what is missing.
 
     For stars searched on several sectors joined.  Kept and remembered as
     :func:`load_or_fetch_tpfs` keeps them; returns ``{target_id: [path, ...]}``
     in the order of each star's sectors, without the sectors MAST has no file
-    for and the stars it has none for at all.
+    for and the stars it has none for at all.  With ``sky``, a file cached
+    before pixel files kept their orientation on the sky (format 1) is
+    fetched again; if that fails it is kept as it is.
     """
     pairs = [(target_id, int(s)) for target_id, star in sectors.items() for s in star]
-    found = _load_or_fetch_tpf_files(pairs, cache_dir, author, exposure_time, n_workers)
+    found = _load_or_fetch_tpf_files(
+        pairs, cache_dir, author, exposure_time, n_workers, refetch_without_sky=sky
+    )
     out: dict[str, list[Path]] = {}
     for pair in pairs:
         if pair in found:
@@ -369,6 +381,7 @@ def _load_or_fetch_tpf_files(
     author: str,
     exposure_time: int | None,
     n_workers: int,
+    refetch_without_sky: bool = False,
 ) -> dict[tuple[str, int], Path]:
     """``{(target_id, sector): path}`` for every pair with a pixel file, fetching the new ones."""
     cache_dir = Path(cache_dir)
@@ -376,7 +389,10 @@ def _load_or_fetch_tpf_files(
     tried = set(json.loads(tried_path.read_text())) if tried_path.exists() else set()
     paths = {pair: tpf_cache_path(cache_dir, *pair) for pair in pairs}
     missing = [
-        pair for pair in paths if not paths[pair].exists() and f"{pair[0]}:{pair[1]}" not in tried
+        pair
+        for pair, path in paths.items()
+        if (not path.exists() and f"{pair[0]}:{pair[1]}" not in tried)
+        or (refetch_without_sky and path.exists() and not has_sky_matrix(path))
     ]
     if missing:
         cache_dir.mkdir(parents=True, exist_ok=True)
@@ -411,7 +427,12 @@ CENTROID_FIELDS: tuple[str, ...] = (
 
 
 #: What :func:`~transitml.centroid.combine_sector_tests` needs of each sector's test.
-SECTOR_CENTROID_FIELDS: tuple[str, ...] = (*CENTROID_FIELDS, "offset_error_pixels")
+SECTOR_CENTROID_FIELDS: tuple[str, ...] = (
+    *CENTROID_FIELDS,
+    "offset_error_pixels",
+    "offset_sky_pixels",
+    "offset_sky_covariance",
+)
 
 
 def _centroid_one(
@@ -432,6 +453,7 @@ def centroid_tests(
     *,
     config: CentroidConfig | None = None,
     n_jobs: int = -1,
+    sky: bool = False,
 ) -> list[dict[str, Any] | None]:
     """The centroid test of every star in ``dataset``, on its own search ephemeris.
 
@@ -440,8 +462,9 @@ def centroid_tests(
     so each star gets the test ``vet --centroids`` would give it.  ``None``
     for a star without a pixel file.  A star given a list of pixel files (one
     per sector, for a star searched on its sectors joined) is tested on each
-    and the tests combined by :func:`~transitml.centroid.combine_sector_tests`,
-    which also says how many sectors were tested and how many placed the dip.
+    and the tests combined by :func:`~transitml.centroid.combine_sector_tests`
+    (with ``sky``, as offsets on the sky), which also says how many sectors
+    were tested and how many placed the dip.
     """
     meta = dataset.meta
     ids = meta["target_id"].astype(str).tolist()
@@ -467,7 +490,7 @@ def centroid_tests(
         else:
             out[i] = result
     for i, tests in sectors.items():
-        out[i] = combine_sector_tests(tests, config)
+        out[i] = combine_sector_tests(tests, config, sky=sky)
     return out
 
 
@@ -546,12 +569,15 @@ class CentroidVeto:
     floors: list[dict[str, Any]]
     #: Pixel files tested, when each star's sectors were tested and combined.
     n_pixel_files: int | None = None
+    #: How they were combined (``"stouffer"`` or ``"sky"``), when they were.
+    combination: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "min_offset_pixels": self.min_offset_pixels,
             "n_with_pixels": self.n_with_pixels,
             **({"n_pixel_files": self.n_pixel_files} if self.n_pixel_files is not None else {}),
+            **({"combination": self.combination} if self.combination is not None else {}),
             "status": self.status,
             "flagged": self.flagged,
             "model": self.model.to_dict(),
@@ -640,6 +666,7 @@ def _centroid_veto(
         false_positive_rejection=_rate(~kept_after, negatives),
         floors=floors,
         n_pixel_files=combined_pixel_files(tests),
+        combination=sector_combination(tests),
     )
 
 
@@ -1125,10 +1152,17 @@ def _centroid_section(add, result: BenchmarkResult) -> None:
             f"  each tested in every sector it was joined from ({veto.n_pixel_files} pixel "
             "files) and the tests combined:"
         )
-        add(
-            "  significance by Stouffer's method, offset length weighted by its error, "
-            "SNR in quadrature,"
-        )
+        if veto.combination == "sky":
+            add(
+                "  each sector's offset turned onto the sky with its file's WCS and the "
+                "offsets added as"
+            )
+            add("  vectors (Stouffer's method in two dimensions), SNR in quadrature,")
+        else:
+            add(
+                "  significance by Stouffer's method, offset length weighted by its error, "
+                "SNR in quadrature,"
+            )
         add("  a sector whose centroid falls outside its window left out")
     add(
         "  flagged as off target (difference-image centroid at least 3 sigma and "

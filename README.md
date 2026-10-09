@@ -20,7 +20,7 @@ whose coverage is measured by injection.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python run_pipeline.py            # ~3 min on 4 cores
-pytest                            # ~5 min, 532 tests
+pytest                            # ~5 min, 549 tests
 ```
 
 It writes `results/metrics.json`, `results/report.txt`, the trained model
@@ -960,7 +960,8 @@ verdict (`combine_sector_tests` in `transitml/centroid.py`).
 
 The stamps cannot simply be stacked: the spacecraft turns between sectors,
 so the same neighbour sits in a different direction in each stamp, and the
-cached pixel files keep the target's position but not the sky orientation.
+cached pixel files kept the target's position but not the sky orientation
+(the next section adds it).
 What carries over is how long each sector's offset is and how significant.
 The combined significance is Stouffer's: each sector's p-value turned into a
 one-sided normal deviate, summed, and divided by the square root of their
@@ -1029,12 +1030,11 @@ which every sector scores higher:
 So testing every sector's pixels lets the centroid veto flag 124 false
 positives instead of 86 in one direction and 106 instead of 94 in the other,
 for three more planets flagged in the first and none in the second, and
-leaves the model that reads the test as a feature where it was. The
-remaining weakness is the geometry: without each file's orientation on the
-sky the offsets of different sectors cannot be averaged as vectors, which is
-how the TESS data-validation reports combine them and what would let a real
-neighbour's offset add up in direction as well as in significance. That
-needs the WCS of each pixel file kept in the cache.
+leaves the model that reads the test as a feature where it was. What it
+leaves out is the geometry: without each file's orientation on the sky the
+offsets of different sectors cannot be added as vectors, which is how the
+TESS data-validation reports combine them. The next section adds that, and
+finds it changes little.
 
 To reproduce, after the runs of the section above (the first run downloads
 the pixel file of every other sector of each host, about 2800 more files):
@@ -1049,6 +1049,92 @@ It writes to `results/toi_trained/stitched/centroids_every_sector/`, with
 `--pixel-features` in `pixels/` below it, and
 `--results-dir results/toi_trained/stitched/centroids_every_sector/sectors_14_26`
 (with the curve and pixel caches set as above) for the other direction.
+
+### Offsets on the sky
+
+Pixel files now keep their orientation on the sky: `sky_matrix`, the
+arcseconds east and north per stamp column and row at the target, from each
+file's WCS (format 2 of the pixel cache). With it each sector's offset and
+its bootstrap covariance are turned onto the sky (`offset_sky_pixels`, east
+and north in pixels), and `--sky-offsets` (with `--centroids-every-sector`)
+adds the sectors' offsets as vectors: a neighbour in one direction on the
+sky adds up in every sector, while an offset that points a different way
+each time cancels. The 4,400 cached pixel files of sectors 1 to 26 were
+fetched again to give them their orientation, and their pixels came back
+identical.
+
+The orientation is right. At each TOI's catalogue ephemeris, the false
+positives placed off target whose offset reaches 2 sigma in two or more
+sectors (58 in sectors 14 to 26, 36 in 1 to 13) have offsets that line up on
+the sky but not in the raw stamps: the mean resultant length of their unit
+offset vectors, 1 for a single direction, is 0.99 and 0.98 on the sky
+against 0.54 and 0.77 in stamp axes.
+
+The textbook combination, the mean weighted by the inverse covariances with
+the inverse of their sum as its covariance, is far too sure of itself here.
+A covariance estimated from five transits has an inverse four times too
+large on average, and those errors add up over sectors: in simulation, with
+five sectors of five transits and no offset at all, 15% of stars reach 3
+sigma (nominal 0.27%). So the significance is Stouffer's method in two
+dimensions instead. Each sector's offset is whitened by its own covariance
+and given the length of a two-dimensional normal deviate with that sector's
+own p-value, so each keeps the Hotelling calibration of a single sector;
+the vectors are summed on the sky and divided by the square root of their
+number, and the sum's squared length is read as a chi-square with two
+degrees of freedom. In the same simulation, for two to thirteen sectors of
+three to nine transits, 0.17 to 0.33% of stars reach 3 sigma and 4.0 to
+4.8% reach 2 sigma (nominal 4.55%). The length is that of the
+inverse-covariance mean, which noise does not inflate the way it inflates a
+mean of lengths. The window rule, the flag rule, the model and the
+threshold rule are those of the section above.
+
+On every scored host, with the sectors combined by length and significance
+(the section above) or as vectors on the sky; the last column is the share
+of 2000 paired bootstrap resamples in which the sky scores higher:
+
+| Scored on | Inputs | Length and significance | On the sky | Ahead in |
+|---|---|---|---|---|
+| *766 hosts of sectors 14 to 26 (chance 0.491)* | | | | |
+| | light curve, centroid test as a veto | 0.793 | 0.794 | 73% |
+| | light curve and centroid test | 0.802 | 0.808 | 79% |
+| | false positives flagged | 124 (32%) | 124 (32%) | |
+| | planets flagged | 9 (2.4%) | 9 (2.4%) | |
+| *857 hosts of sectors 1 to 13 (chance 0.536)* | | | | |
+| | light curve, centroid test as a veto | 0.828 | 0.827 | 24% |
+| | light curve and centroid test | 0.836 | 0.845 | 93% |
+| | false positives flagged | 106 (27%) | 110 (28%) | |
+| | planets flagged | 7 (1.5%) | 8 (1.7%) | |
+
+- **As a veto it makes no difference.** In sectors 14 to 26 the same 9
+  planets and 124 false positives are flagged (two false positives traded
+  each way); in 1 to 13 four more false positives and one more planet, seen
+  in 11 sectors. The stars the veto flags have offsets long and consistent
+  enough that how their sectors are combined hardly matters.
+- **The vectors sharpen the planets' side, below the floor.** Of the 347
+  hosts of 14 to 26 with the dip placed in two or more sectors, the planets
+  reaching 3 sigma fall from 67 to 42 while the false positives stay at 105
+  of 108, and the planets' median offset shortens from 0.22 to 0.14 pixel.
+  Their significant offsets keep to the stamp axes (mean resultant length
+  0.84 in the stamps, 0.67 on the sky), a property of the detector and not
+  of a neighbour, so they cancel on the sky. The half-pixel floor had
+  already kept those planets unflagged. In 1 to 13 the planets' offsets line
+  up on the sky as well (0.94), and nothing changes there.
+- **As features it is within noise.** The pixel model gains 0.006 and 0.009
+  on the benchmark, in 79% and 93% of paired resamples, but its own
+  cross-validation falls in one direction (0.849 to 0.837 trained on
+  sectors 1 to 13) and rises in the other (0.793 to 0.802).
+
+So the orientation is right and the vectors behave as they should, but the
+length-and-significance combination of the section above had already got
+what the pixels give the veto, and the vectors add to the pixel model no
+more than noise can explain. `--sky-offsets` stays an option, not the
+default.
+
+To reproduce, add `--sky-offsets` to the commands of the section above. It
+writes to `results/toi_trained/stitched/sky_offsets/` (`pixels/`,
+`sectors_14_26/` and `sectors_14_26/pixels/` below it), and fetches again
+any pixel file cached before format 2 (through lightkurve, about 20
+seconds a file).
 
 ---
 
@@ -2641,7 +2727,7 @@ transit-detection/
 │   │   ├── tic.py              # host temperatures and densities from the TIC
 │   │   ├── kepler.py           # Kepler DR25 TCE labels and MAST light curves
 │   │   ├── files.py            # CSV and npz light-curve files
-│   │   ├── tpf.py              # target pixel files: container, npz, lightkurve
+│   │   ├── tpf.py              # target pixel files: container, npz, sky orientation, lightkurve
 │   │   ├── synthetic_tpf.py    # synthetic pixels: on-target transits and blends
 │   │   └── loader.py           # source -> feature matrix, parallel over curves
 │   ├── preprocess.py           # robust spline + rotation detrending
@@ -2673,7 +2759,7 @@ transit-detection/
 │   ├── dashboard.py            # the batch's self-contained HTML dashboard
 │   ├── real_check.py           # known planets' fits and a real sector, against the archives
 │   └── plots.py                # figures (matplotlib Agg, no display)
-├── tests/                      # 532 tests, ~5 min
+├── tests/                      # 549 tests, ~5 min
 │   ├── test_generator.py       # imbalance is exact; injected physics is consistent
 │   ├── test_preprocess.py      # depth preservation; why the median was rejected
 │   ├── test_features.py        # recovery vs SNR; the vetting statistics fire
@@ -2703,10 +2789,10 @@ transit-detection/
 │   ├── test_tess_finetune.py   # fine-tuning and its comparison, offline
 │   ├── test_toi_views.py       # view inputs, pixels at the catalogue ephemeris, comparison
 │   ├── test_bls_views.py       # hosts searched as the pipeline does, inputs, comparison
-│   ├── test_tpf.py             # pixel files: npz round trip, stubbed download
+│   ├── test_tpf.py             # pixel files: npz round trip, orientation from the WCS, stubbed download
 │   ├── test_synthetic_tpf.py   # synthetic pixels put the light where it belongs
 │   ├── test_centroid.py        # blends flagged, on-target not; bad input survives
-│   ├── test_centroid_sectors.py  # one verdict from several sectors; a wild one cannot decide
+│   ├── test_centroid_sectors.py  # one verdict from several sectors, by length or on the sky
 │   ├── test_vet_centroid.py    # centroid section in JSON and PNG; score unchanged
 │   ├── test_batch.py           # ranking, caches, retries, centroid test, dashboard
 │   ├── test_real_check.py      # published-value comparisons and the TOI ranking, offline

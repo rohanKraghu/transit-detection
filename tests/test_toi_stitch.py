@@ -116,8 +116,15 @@ def test_stitch_flag_and_its_defaults(tmp_path):
         [*base, "--stitch", "--benchmark-centroids", "--centroids-every-sector"]
     )
     assert veto.results_dir == args.results_dir / "centroids_every_sector"
+    sky = run_pipeline.parse_args(
+        [*base, "--stitch", "--pixel-features", "--centroids-every-sector", "--sky-offsets"]
+    )
+    assert sky.results_dir == args.results_dir / "sky_offsets" / "pixels"
+    assert sky.figures_dir == args.figures_dir / "sky_offsets" / "pixels"
+    assert not veto.sky_offsets
     for wrong in (["--centroids-every-sector", "--benchmark-centroids"],  # nothing joined
-                  ["--stitch", "--centroids-every-sector"]):  # no centroid test to change
+                  ["--stitch", "--centroids-every-sector"],  # no centroid test to change
+                  ["--stitch", "--benchmark-centroids", "--sky-offsets"]):  # one sector each
         with pytest.raises(SystemExit):
             run_pipeline.parse_args([*base, *wrong])
 

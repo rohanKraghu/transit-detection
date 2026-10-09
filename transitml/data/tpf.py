@@ -36,8 +36,8 @@ from .base import LightCurve
 #: TESS plate scale, arcseconds per pixel.
 TESS_PIXEL_SCALE_ARCSEC = 21.0
 
-#: Bumped if the npz layout below ever changes.
-TPF_FORMAT_VERSION = 1
+#: Bumped if the npz layout below ever changes.  Version 2 added ``sky_matrix``.
+TPF_FORMAT_VERSION = 2
 
 _LIGHTKURVE_HINT = (
     "Downloading target pixel files requires `lightkurve` and outbound network "
@@ -69,6 +69,13 @@ class TargetPixelData:
     target_position:
         Catalogue position of the target in stamp pixels, ``(column, row)``,
         when known (from the TPF's WCS).  ``None`` otherwise.
+    sky_matrix:
+        How a small step in the stamp maps onto the sky at the target, from
+        the TPF's WCS: ``((east per column, east per row), (north per column,
+        north per row))`` in arcseconds per pixel, so ``sky_matrix @ (dc, dr)``
+        is an offset ``(east, north)``.  Each sector's stamp is turned
+        differently on the sky, and this is what lets offsets measured in
+        different sectors be compared.  ``None`` when unknown.
     meta:
         Free-form provenance (sector, camera, CCD, ...).  Must be
         JSON-serialisable to survive :func:`save_tpf`.
@@ -82,6 +89,7 @@ class TargetPixelData:
     column0: int = 0
     row0: int = 0
     target_position: tuple[float, float] | None = None
+    sky_matrix: tuple[tuple[float, float], tuple[float, float]] | None = None
     meta: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -115,6 +123,19 @@ class TargetPixelData:
             col, row = (float(v) for v in self.target_position)
             self.target_position = (
                 (col, row) if np.isfinite(col) and np.isfinite(row) else None
+            )
+        if self.sky_matrix is not None:
+            matrix = np.asarray(self.sky_matrix, dtype=np.float64)
+            if matrix.shape != (2, 2):
+                raise ValueError(f"{self.target_id}: sky_matrix must be 2 x 2")
+            finite = np.all(np.isfinite(matrix)) and abs(np.linalg.det(matrix)) > 0
+            self.sky_matrix = (
+                (
+                    (float(matrix[0, 0]), float(matrix[0, 1])),
+                    (float(matrix[1, 0]), float(matrix[1, 1])),
+                )
+                if finite
+                else None
             )
 
     @property
@@ -223,6 +244,10 @@ def save_tpf(tpf: TargetPixelData, path: str | Path) -> Path:
             else (np.nan, np.nan),
             dtype=np.float64,
         ),
+        "sky_matrix": np.array(
+            tpf.sky_matrix if tpf.sky_matrix is not None else np.full((2, 2), np.nan),
+            dtype=np.float64,
+        ),
         "meta": np.array(json.dumps(tpf.meta, default=str), dtype=str),
     }
     if tpf.flux_err is not None:
@@ -256,8 +281,18 @@ def load_tpf(path: str | Path) -> TargetPixelData:
             column0=column0,
             row0=row0,
             target_position=(float(position[0]), float(position[1])),
+            sky_matrix=data.get("sky_matrix"),
             meta=json.loads(str(data["meta"])),
         )
+
+
+def has_sky_matrix(path: str | Path) -> bool:
+    """Whether a saved pixel file knows its orientation on the sky (format 2 on).
+
+    Reads only the archive's index and one 2 x 2 array, not the flux cube.
+    """
+    with np.load(path, allow_pickle=False) as data:
+        return "sky_matrix" in data and bool(np.all(np.isfinite(data["sky_matrix"])))
 
 
 # --------------------------------------------------------------------------
@@ -280,6 +315,27 @@ def _target_position(lk_tpf) -> tuple[float, float] | None:
     except Exception:  # noqa: BLE001 - missing header keys or WCS vary by product
         return None
     return (float(x), float(y)) if np.isfinite(x) and np.isfinite(y) else None
+
+
+def _sky_matrix(lk_tpf, position: tuple[float, float] | None, shape: tuple[int, int]):
+    """Arcseconds ``(east, north)`` per stamp pixel ``(column, row)`` at the target.
+
+    Central differences of the TPF's WCS over one pixel either side of the
+    target (of the stamp centre when the target's position is unknown).
+    """
+    if position is None:
+        position = ((shape[1] - 1) / 2.0, (shape[0] - 1) / 2.0)
+    x, y = position
+    steps = np.array([[x + 0.5, y], [x - 0.5, y], [x, y + 0.5], [x, y - 0.5]])
+    try:
+        world = np.asarray(lk_tpf.wcs.all_pix2world(steps, 0), dtype=np.float64)
+    except Exception:  # noqa: BLE001 - missing header keys or WCS vary by product
+        return None
+    d_ra = (world[[0, 2], 0] - world[[1, 3], 0] + 180.0) % 360.0 - 180.0
+    d_dec = world[[0, 2], 1] - world[[1, 3], 1]
+    cos_dec = np.cos(np.radians(world[:, 1].mean()))
+    matrix = 3600.0 * np.array([d_ra * cos_dec, d_dec])
+    return matrix if np.all(np.isfinite(matrix)) else None
 
 
 def from_lightkurve(lk_tpf, target_id: str | None = None) -> TargetPixelData:
@@ -325,6 +381,7 @@ def from_lightkurve(lk_tpf, target_id: str | None = None) -> TargetPixelData:
         "tess_mag": getter("TESSMAG"),
     }
     meta = {k: (v.item() if hasattr(v, "item") else v) for k, v in meta.items()}
+    position = _target_position(lk_tpf)
     return TargetPixelData(
         target_id=target_id or str(getattr(lk_tpf, "targetid", "unknown")),
         time=time[unique],
@@ -333,7 +390,8 @@ def from_lightkurve(lk_tpf, target_id: str | None = None) -> TargetPixelData:
         aperture=aperture.astype(bool),
         column0=int(getattr(lk_tpf, "column", 0)),
         row0=int(getattr(lk_tpf, "row", 0)),
-        target_position=_target_position(lk_tpf),
+        target_position=position,
+        sky_matrix=_sky_matrix(lk_tpf, position, flux.shape[1:]),
         meta=meta,
     )
 
