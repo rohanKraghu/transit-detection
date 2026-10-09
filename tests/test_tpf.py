@@ -12,6 +12,7 @@ from transitml.data.tpf import (
     TargetPixelData,
     download_tpfs,
     from_lightkurve,
+    has_sky_matrix,
     load_tpf,
     save_tpf,
 )
@@ -79,6 +80,24 @@ def test_npz_round_trip_without_errors_or_position(tmp_path):
     tpf.target_position = None
     back = load_tpf(save_tpf(tpf, tmp_path / "t.npz"))
     assert back.flux_err is None and back.target_position is None
+
+
+def test_sky_matrix_round_trip_and_files_from_before_it(tmp_path):
+    turned = ((14.8, -14.9), (14.9, 14.8))
+    path = save_tpf(small_tpf(sky_matrix=turned), tmp_path / "t.npz")
+    assert load_tpf(path).sky_matrix == turned and has_sky_matrix(path)
+    unknown = save_tpf(small_tpf(), tmp_path / "unknown.npz")
+    assert load_tpf(unknown).sky_matrix is None and not has_sky_matrix(unknown)
+    # A file saved before pixel files kept their orientation (format 1).
+    with np.load(path) as data:
+        old = {k: data[k] for k in data.files if k != "sky_matrix"}
+    old["format_version"] = np.int64(1)
+    np.savez_compressed(tmp_path / "old.npz", **old)
+    assert load_tpf(tmp_path / "old.npz").sky_matrix is None
+    assert not has_sky_matrix(tmp_path / "old.npz")
+    with pytest.raises(ValueError, match="2 x 2"):
+        small_tpf(sky_matrix=(1.0, 2.0))
+    assert small_tpf(sky_matrix=((1.0, 2.0), (2.0, 4.0))).sky_matrix is None  # singular
 
 
 def test_load_refuses_a_light_curve_cache(tmp_path):
@@ -160,6 +179,28 @@ def test_conversion_from_a_lightkurve_tpf():
     assert (tpf.column0, tpf.row0) == (512, 1024)
     assert tpf.target_position == (1.5, 1.25)
     assert tpf.meta["sector"] == 14 and tpf.meta["tess_mag"] == 9.5
+
+
+def test_sky_matrix_comes_from_the_wcs():
+    """Arcseconds east and north per stamp column and row, at the target."""
+    from astropy.wcs import WCS
+
+    angle, scale = np.radians(35.0), 21.0 / 3600.0
+    wcs = WCS(naxis=2)
+    wcs.wcs.ctype = ["RA---TAN", "DEC--TAN"]
+    wcs.wcs.crval = [150.0, -40.0]
+    wcs.wcs.crpix = [2.5, 2.0]  # stamp pixel (1.5, 1.0), 0-based
+    # East to the left, as on the sky seen from inside: the usual FITS orientation.
+    wcs.wcs.cd = scale * np.array(
+        [[-np.cos(angle), np.sin(angle)], [np.sin(angle), np.cos(angle)]]
+    )
+    lk_tpf = FakeLightkurveTPF()
+    lk_tpf.wcs, lk_tpf.ra, lk_tpf.dec = wcs, 150.0, -40.0
+    tpf = from_lightkurve(lk_tpf, "TIC 99")
+    assert tpf.target_position == pytest.approx((1.5, 1.0))
+    np.testing.assert_allclose(tpf.sky_matrix, 3600.0 * wcs.wcs.cd, rtol=1e-4)
+    # Without a WCS that answers, the orientation is unknown, not a guess.
+    assert from_lightkurve(FakeLightkurveTPF(), "TIC 99").sky_matrix is None
 
 
 def test_conversion_falls_back_to_a_threshold_aperture():
