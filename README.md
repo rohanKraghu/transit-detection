@@ -2717,6 +2717,13 @@ on. Sizes are rough: S is a few hours, M a day or two, L longer.
   0.846 on 1 to 13, every interval crossing zero) and add nothing to them.
   So the catalogue ephemeris was most of the views' lead, and the
   pipeline's features with the centroid test remain the vetter.
+- Every sector of a star, searched together (`run_pipeline.py --stitch`):
+  each TOI host is searched on all its sectors joined, with a BLS grid that
+  grows with the baseline (about 42,000 periods for a year). The catalogued
+  period is found for 82% of hosts instead of 73% (sectors 14 to 26) and
+  77% (1 to 13); light-curve AP on the same stars rises from 0.745 to 0.776
+  and 0.764 to 0.796, and with the centroid test as features from 0.792 to
+  0.804 and 0.807 to 0.838.
 
 **Next**
 
@@ -2725,7 +2732,7 @@ to next:
 
 | Item | Why | Size |
 | --- | --- | --- |
-| Every sector of each star, searched together, in progress | One sector's search finds the catalogued period for 73% of planets, and a planet whose period it misses is kept only 4 to 7% of the time. Most misses are long-period TOIs or stars observed in several sectors, which one sector cannot show | M |
+| Centroid test across every sector of a star, in progress | The pixel test still uses one sector: for 28 hosts in each direction that sector holds no transit, so the test is empty, and the model with the centroid test gained least from joining sectors | M |
 
 ## References
 
