@@ -2937,8 +2937,9 @@ on. Sizes are rough: S is a few hours, M a day or two, L longer.
 Every item on the original roadmap is built. What the results above point
 to next:
 
-The next step is being chosen; the likely candidate is period recovery, since
-most TOIs the search misses get a BLS period unrelated to the catalogued one.
+The next step is being chosen. The search still misses the catalogued period
+for 18% of hosts even with every sector joined, so period recovery is the
+likely candidate.
 
 ## References
 
