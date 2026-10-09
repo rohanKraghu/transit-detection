@@ -6,6 +6,7 @@ from dataclasses import replace
 
 import numpy as np
 import pytest
+from astropy.timeseries import BoxLeastSquares
 
 from transitml.config import BLSConfig
 from transitml.data.base import LightCurve
@@ -13,6 +14,7 @@ from transitml.features import (
     densest_window,
     distinct_peaks,
     extract_features,
+    leave_one_out_snr,
     run_bls,
     signal_detection_efficiency,
 )
@@ -27,10 +29,13 @@ def segments(starts, length):
     return np.concatenate([s + np.arange(0.0, length, CADENCE) for s in starts])
 
 
-def planet_curve(time, period, epoch, depth=2e-3, duration=0.12, sigma=5e-4, seed=0):
+def planet_curve(time, period, epoch, depth=2e-3, duration=0.12, sigma=5e-4, seed=0, event=None):
+    """``event``: ``(time, duration, depth)`` of one more dip, at no period."""
     rng = np.random.default_rng(seed)
     flux = np.ones_like(time)
     flux[transit_mask(time, period, epoch, duration, 0.5)] -= depth
+    if event is not None:
+        flux[np.abs(time - event[0]) < 0.5 * event[1]] -= event[2]
     flux += rng.normal(0.0, sigma, time.size)
     return LightCurve("TEST-WINDOW", time, flux, np.full(time.size, sigma))
 
@@ -116,3 +121,31 @@ def test_features_describe_the_peak_that_won():
     assert features["log_period"] == pytest.approx(np.log10(found["period"]))
     assert features["n_transits"] > 20
     assert all(np.isfinite(features[k]) for k in ("bls_depth_snr", "power_contrast"))
+
+
+def test_leaving_out_the_strongest_transit_costs_a_planet_little_and_a_lone_event_everything():
+    time = segments([0.0, 27.4, 54.8], 26.0)
+    planet = flatten(planet_curve(time, 3.1, 1.2))
+    stats = BoxLeastSquares(planet.time, planet.flux, planet.flux_err).compute_stats(3.1, 0.12, 1.2)
+    full = stats["depth"][0] / stats["depth"][1]
+    n = int(np.sum(stats["per_transit_count"] > 0))
+    assert leave_one_out_snr(planet, 3.1, 1.2, 0.12) == pytest.approx(full * np.sqrt((n - 1) / n), rel=0.1)
+
+    lone = flatten(planet_curve(time, 3.1, 1.2, depth=0.0, event=(60.3, 0.08, 2e-2)))
+    # One transit on data: nothing to leave out and still have a period.
+    assert np.isnan(leave_one_out_snr(lone, 100.0, 60.3, 0.08))
+    # With a second transit on data, the event alone made the score.
+    assert abs(leave_one_out_snr(lone, 40.0, 60.3, 0.08)) < 3.0
+
+
+def test_one_deep_event_does_not_outscore_a_planet():
+    period, epoch = 7.31234, 2.1
+    time = segments([0.0, 27.4, 54.8, 700.0, 1100.0, 1500.0], 26.0)
+    lc = flatten(planet_curve(time, period, epoch, depth=8e-4, event=(60.3, 0.08, 6e-3)))
+    bls = BoxLeastSquares(lc.time, lc.flux, lc.flux_err)
+    plain = lambda periods: bls.power(periods, [0.04, 0.07, 0.11], objective="snr").power.max()
+    # By the SNR alone, a long period with the event in transit beats the planet.
+    assert plain(np.linspace(60.0, 100.0, 20000)) > plain(period * np.linspace(0.9999, 1.0001, 41))
+
+    found = run_bls(lc, BLSConfig(max_search_baseline_days=400.0))
+    assert found["period"] == pytest.approx(period, rel=1e-4)

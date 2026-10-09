@@ -276,7 +276,8 @@ class BLSConfig:
     #: densest stretch of this length; each of its ``candidate_peaks``
     #: strongest distinct peaks, with its half and its double, is then
     #: fitted again on the whole curve with a fine grid around it, and
-    #: the one with the highest SNR there is the signal
+    #: the one with the highest SNR there is the signal, peaks and periods
+    #: both scored with their strongest transit left out
     #: (:func:`transitml.features.windowed_search`).  ``None``: always one grid.
     max_search_baseline_days: float | None = None
     candidate_peaks: int = 10

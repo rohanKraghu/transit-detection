@@ -235,6 +235,38 @@ def distinct_peaks(
     return taken
 
 
+def leave_one_out_snr(
+    lc: FlattenedLightCurve, period: float, transit_time: float, duration: float
+) -> float:
+    """The depth SNR of a box at this ephemeris with its most significant transit left out.
+
+    The SNR the search maximises adds up every cadence in transit, so one
+    deep event (a bad cadence, a systematic, a lone eclipse) can score as
+    much as a planet's many shallow transits; over years of sectors, most
+    long trial periods put such an event in transit and the rest of their
+    transits in the gaps.  Left out, the event takes its score with it,
+    while a planet's transits lose one of many.  Depth and error are those
+    of :meth:`~astropy.timeseries.BoxLeastSquares.compute_stats`; NaN when
+    fewer than two transits have a cadence in them.
+    """
+    err = np.where(lc.flux_err > 0, lc.flux_err, lc.scatter)
+    weight = 1.0 / err**2
+    phase = (lc.time - transit_time + 0.5 * period) % period - 0.5 * period
+    inside = np.abs(phase) < 0.5 * duration
+    epochs, which = np.unique(
+        np.round((lc.time[inside] - transit_time) / period), return_inverse=True
+    )
+    if epochs.size < 2 or inside.all():
+        return float("nan")
+    w_in = np.bincount(which, weight[inside])
+    s_in = np.bincount(which, (weight * lc.flux)[inside])
+    w_out = float(weight[~inside].sum())
+    level = float((weight * lc.flux)[~inside].sum()) / w_out
+    kept_w, kept_s = w_in.sum() - w_in, s_in.sum() - s_in
+    snr = (level - kept_s / kept_w) / np.sqrt(1.0 / kept_w + 1.0 / w_out)
+    return float(snr.min())
+
+
 def densest_window(time: NDArray[np.float64], length_days: float) -> tuple[float, float]:
     """``(start, stop)`` of the ``length_days`` stretch holding the most cadences.
 
@@ -257,14 +289,21 @@ def windowed_search(lc: FlattenedLightCurve, config: BLSConfig) -> dict[str, Any
 
     1. The usual grid search (:func:`period_grid`) runs on the densest
        ``config.max_search_baseline_days`` of the curve (:func:`densest_window`).
-    2. Each of that periodogram's ``config.candidate_peaks`` strongest
-       :func:`distinct_peaks`, its half and its double, is searched again on
-       the whole curve, on a grid as fine as a single grid over the whole
-       curve would have been, across the candidate's peak: half its duration
-       over the window's baseline, and at least two window steps, either
-       side.  The half and double count because a stretch with gaps often
-       cannot tell a period from them, where the rest of the data can.
-    3. The highest of those whole-curve peaks is the signal.
+    2. That periodogram's :func:`distinct_peaks` are ranked by their SNR
+       with their strongest transit left out (:func:`leave_one_out_snr`),
+       and each of the ``config.candidate_peaks`` best, its half and its
+       double, is searched again on the whole curve, on a grid as fine as a
+       single grid over the whole curve would have been, across the
+       candidate's peak: half its duration over the window's baseline, and
+       at least two window steps, either side.  The half and double count
+       because a stretch with gaps often cannot tell a period from them,
+       where the rest of the data can.
+    3. The trial period whose SNR on the whole curve, its strongest transit
+       left out, is highest is the signal.
+
+    Ranked by the plain SNR, one deep event outscored planets: across years
+    of gappy data, most long trial periods put a single event in transit
+    and the rest of their transits in the gaps.
 
     The ``"periods"`` and ``"power"`` returned are the window's periodogram,
     so the peak-significance features describe the search that proposed the
@@ -286,9 +325,19 @@ def windowed_search(lc: FlattenedLightCurve, config: BLSConfig) -> dict[str, Any
     window_step = float(np.log(periods[1] / periods[0]))
     fine = min(_grid_step(lc.baseline_days, config), window_step)
     longest = _max_period(lc.baseline_days, config)
-    # (power, candidate, period, durations tried there)
+    # Every distinct peak of the window, ranked by its SNR without its
+    # strongest transit; only the periodogram's local maxima can be peaks.
+    padded = np.r_[-np.inf, np.nan_to_num(power, nan=-np.inf), -np.inf]
+    local = (padded[1:-1] >= padded[:-2]) & (padded[1:-1] >= padded[2:])
+    peaks = distinct_peaks(periods, np.where(local, power, np.nan), periods.size)
+    ranked = [
+        (leave_one_out_snr(window, periods[i], coarse.transit_time[i], coarse.duration[i]), i)
+        for i in peaks
+    ]
+    ranked = sorted((r for r in ranked if np.isfinite(r[0])), reverse=True)
+    # (score, candidate, period, durations tried there)
     best: tuple[float, int, float, NDArray[np.float64]] | None = None
-    for i in distinct_peaks(periods, power, config.candidate_peaks):
+    for _, i in ranked[: config.candidate_peaks]:
         half = max(0.5 * float(coarse.duration[i]) / window.baseline_days, 2 * window_step)
         n = int(np.ceil(half / fine))
         for ratio in _REFINED_ALIASES:
@@ -298,9 +347,17 @@ def windowed_search(lc: FlattenedLightCurve, config: BLSConfig) -> dict[str, Any
                 continue
             durations = _durations(config, grid)
             result = _periodogram(lc, grid, durations)
-            j = int(np.nanargmax(result.power))
-            if best is None or result.power[j] > best[0]:
-                best = (float(result.power[j]), i, float(grid[j]), durations)
+            score = np.array(
+                [
+                    leave_one_out_snr(lc, p, t0, d)
+                    for p, t0, d in zip(grid, result.transit_time, result.duration, strict=True)
+                ]
+            )
+            if not np.any(np.isfinite(score)):
+                continue
+            j = int(np.nanargmax(score))
+            if best is None or score[j] > best[0]:
+                best = (float(score[j]), i, float(grid[j]), durations)
     if best is None:
         index = int(np.nanargmax(power))
         return {**_solution(window, coarse, index, periods), "search_window": (start, stop)}
