@@ -51,6 +51,8 @@ sectors in range, joined, instead of on one (``results/toi_trained/stitched/``),
 and ``--centroids-every-sector`` then runs the centroid test on each of those
 sectors' pixels and combines them (``stitched/centroids_every_sector/``), with
 ``--sky-offsets`` as offsets turned onto the sky (``stitched/sky_offsets/``).
+``--join-sectors 27-102`` adds each host's later sectors to its curve as data
+(``.../joined_27-102/``), searched as :func:`transitml.features.windowed_search`.
 """
 
 from __future__ import annotations
@@ -93,6 +95,9 @@ from transitml.model import TrainedModel, make_split, save_model, train
 from transitml.plots import plot_all, plot_sector_systematics
 
 ROOT = Path(__file__).resolve().parent
+#: With --join-sectors, the BLS grid search runs on the densest this-many days
+#: of a curve (a year of one hemisphere is about 357) and refines on the rest.
+JOINED_SEARCH_BASELINE_DAYS = 400.0
 
 
 def _display_path(path: Path) -> str:
@@ -254,6 +259,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "writes to a sky_offsets/ subdirectory of the stitched results.",
     )
     bench.add_argument(
+        "--join-sectors",
+        default=None,
+        metavar="SECTORS",
+        help="With --stitch: also add each host's curves from these sectors, e.g. 27-102, "
+        "as more data; hosts are still chosen by their training or benchmark sectors. "
+        f"The BLS grid search then runs on the densest {JOINED_SEARCH_BASELINE_DAYS:.0f} days "
+        "and its candidates are refined on all of the curve; writes to a joined_SECTORS/ "
+        "subdirectory of the stitched results.",
+    )
+    bench.add_argument(
         "--benchmark-comments",
         type=Path,
         default=None,
@@ -357,6 +372,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                     args.results_dir = args.results_dir / name
                 if default_figures:
                     args.figures_dir = args.figures_dir / name
+            if args.join_sectors is not None:
+                name = f"joined_{args.join_sectors}"
+                if default_results:
+                    args.results_dir = args.results_dir / name
+                if default_figures:
+                    args.figures_dir = args.figures_dir / name
         if args.pixel_features:
             args.benchmark_centroids = True
             if default_results:
@@ -376,6 +397,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "--centroids-every-sector changes the centroid test; give --benchmark-centroids "
             "or --pixel-features"
         )
+    if args.join_sectors is not None:
+        if not args.stitch:
+            parser.error("--join-sectors adds sectors to the curves --stitch joins; give --stitch")
+        try:
+            parse_sector_spec(args.join_sectors)
+        except ValueError as exc:
+            parser.error(f"--join-sectors: {exc}")
     if args.sky_offsets and not args.centroids_every_sector:
         parser.error(
             "--sky-offsets combines the sectors --centroids-every-sector tests; "
@@ -416,6 +444,11 @@ def apply_overrides(config: Config, args: argparse.Namespace) -> Config:
         )
     if args.search != config.bls.search:
         config = replace(config, bls=replace(config.bls, search=args.search))
+    if getattr(args, "join_sectors", None) is not None:
+        config = replace(
+            config,
+            bls=replace(config.bls, max_search_baseline_days=JOINED_SEARCH_BASELINE_DAYS),
+        )
     return config
 
 
@@ -502,6 +535,8 @@ class TOIHosts:
     centroids: list[dict[str, Any] | None] | None = None
     #: Each star searched on all of its sectors, joined (``--stitch``).
     stitched: bool = False
+    #: Further sectors added to each star's curve (``--join-sectors``).
+    joined: str | None = None
 
 
 def load_toi_hosts(
@@ -570,6 +605,7 @@ def load_toi_hosts(
                 targets,
                 sectors,
                 cache,
+                join=parse_sector_spec(args.join_sectors) if args.join_sectors else (),
                 author=args.author,
                 exposure_time=args.exposure_time,
                 n_workers=args.download_workers,
@@ -601,9 +637,15 @@ def load_toi_hosts(
         }
         paths: dict[str, Path] | dict[str, list[Path]]
         if args.centroids_every_sector:
-            # Every sector the star's curve was joined from; one sector has no list.
+            # Every sector the star's curve was joined from; one sector has no
+            # list.  Sectors added by --join-sectors are data for the search only.
             joined = {
-                lc.target_id: [int(s) for s in lc.meta.get("sectors", [lc.meta["sector"]])]
+                lc.target_id: [
+                    int(s)
+                    for s in lc.meta.get(
+                        "selection_sectors", lc.meta.get("sectors", [lc.meta["sector"]])
+                    )
+                ]
                 for lc in curves
             }
             paths = load_or_fetch_sector_tpfs(joined, tpfs, sky=args.sky_offsets, **download)
@@ -630,6 +672,7 @@ def load_toi_hosts(
         n_without_curve=len(targets) - len(curves),
         centroids=tests,
         stitched=args.stitch,
+        joined=args.join_sectors,
     )
 
 
@@ -695,6 +738,7 @@ def run_toi_benchmark(
         comments=comments,
         importance_repeats=importance_repeats,
         stitched=hosts.stitched,
+        joined=hosts.joined,
     )
     report = format_benchmark_report(result)
     print()
@@ -770,6 +814,7 @@ def run_toi_training(args: argparse.Namespace, config: Config, started: float) -
         seed=config.seed,
         centroids=hosts.centroids,
         stitched=hosts.stitched,
+        joined=hosts.joined,
     )
     print()
     print(format_training_report(summary))
