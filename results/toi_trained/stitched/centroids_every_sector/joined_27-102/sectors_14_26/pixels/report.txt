@@ -14,30 +14,30 @@ stars with a target pixel file: 766 of 766
 5-fold cross-validation on the training stars (out-of-fold scores)
 ------------------------------------------------------------------------
   random ranking (chance)            AP = 0.491
-  baseline: depth_threshold          AP = 0.571  [0.548, 0.600]   (ROC-AUC 0.614)
-  baseline: bls_snr                  AP = 0.608  [0.585, 0.639]   (ROC-AUC 0.639)
-  model: gradient boosting           AP = 0.870  [0.853, 0.888]   (ROC-AUC 0.886)
+  baseline: depth_threshold          AP = 0.567  [0.544, 0.597]   (ROC-AUC 0.609)
+  baseline: bls_snr                  AP = 0.606  [0.583, 0.637]   (ROC-AUC 0.637)
+  model: gradient boosting           AP = 0.856  [0.837, 0.876]   (ROC-AUC 0.878)
   (brackets are 68% bootstrap intervals)
 
 Operating threshold
 ------------------------------------------------------------------------
-  score >= 0.4937: calibrated P(planet) >= 0.50 at the training planet rate (49.1%)
-  out of fold: planets kept 0.84, false positives rejected 0.78, precision 0.79
+  score >= 0.5014: calibrated P(planet) >= 0.50 at the training planet rate (49.1%)
+  out of fold: planets kept 0.84, false positives rejected 0.76, precision 0.77
   the survey rule would keep 1.00 of the planets and reject 0.11 of the false positives:
-    max recall subject to Wilson 1-sigma lower bound on CV precision >= 0.50 (bound 0.500 at 725 candidates)
-  calibration: P(planet) = expit(0.816 * log-odds + 0.021)
+    max recall subject to Wilson 1-sigma lower bound on CV precision >= 0.50 (bound 0.500 at 723 candidates)
+  calibration: P(planet) = expit(0.785 * log-odds - 0.004)
 
 Scored, unchanged, on the TOI hosts of sectors 1 to 13 (toi_benchmark.txt)
 ------------------------------------------------------------------------
   857 stars, 459 planets and 398 false positives, none of them trained on; chance AP 0.536
-  model                              AP = 0.867  [0.851, 0.887]   (ROC-AUC 0.877)
-  model with the centroid veto       AP = 0.866  [0.851, 0.887]
-  at the threshold: planets kept 0.83, false positives rejected 0.76
-  calibrated P(planet): Brier score 0.139, against 0.251 for the training planet rate alone
+  model                              AP = 0.876  [0.859, 0.895]   (ROC-AUC 0.882)
+  model with the centroid veto       AP = 0.875  [0.858, 0.894]
+  at the threshold: planets kept 0.83, false positives rejected 0.77
+  calibrated P(planet): Brier score 0.137, against 0.251 for the training planet rate alone
     P(planet)      stars   mean P  planets
-    0.0 - 0.2        218    0.078    0.073
-    0.2 - 0.4        106    0.295    0.311
-    0.4 - 0.6        116    0.502    0.534
-    0.6 - 0.8        169    0.713    0.740
-    0.8 - 1.0        248    0.888    0.899
+    0.0 - 0.2        227    0.080    0.066
+    0.2 - 0.4        112    0.295    0.348
+    0.4 - 0.6        108    0.515    0.537
+    0.6 - 0.8        195    0.713    0.774
+    0.8 - 1.0        215    0.880    0.912
 ========================================================================

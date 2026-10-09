@@ -20,7 +20,7 @@ whose coverage is measured by injection.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python run_pipeline.py            # ~3 min on 4 cores
-pytest                            # ~5 min, 558 tests
+pytest                            # ~5 min, 560 tests
 ```
 
 It writes `results/metrics.json`, `results/report.txt`, the trained model
@@ -1165,12 +1165,13 @@ Two things had to change for curves that long.
   need about 250,000 trial periods over five years. `windowed_search` in
   `transitml/features.py` runs the usual grid on the densest 400 days of the
   curve instead (`max_search_baseline_days` in `BLSConfig`, which
-  `--join-sectors` sets), then fits each of that periodogram's ten strongest
-  distinct peaks (`candidate_peaks`), with its half and its double, again on
-  the whole curve, on a grid around each as fine as one whole-curve grid
-  would be. The highest whole-curve peak is the signal, and the
-  peak-significance features describe the window's periodogram at the
-  candidate that won. The half and the double are tried because a window
+  `--join-sectors` sets), then fits ten of that periodogram's distinct peaks
+  (`candidate_peaks`), with its half and its double, again on the whole
+  curve, on a grid around each as fine as one whole-curve grid would be.
+  Peaks and whole-curve periods alike are ranked by their SNR with their
+  strongest transit left out (see "One deep event against many transits"
+  below), and the peak-significance features describe the window's
+  periodogram at the candidate that won. The half and the double are tried because a window
   with gaps often cannot tell a period from them where the rest of the curve
   can. A signal with fewer than two transits in the window, or too weak to
   be among its ten candidates, is not found.
@@ -1191,43 +1192,43 @@ the later sectors scores higher:
 | Scored on | Inputs | Sectors of the range | With 27 to 102 added | Ahead in |
 |---|---|---|---|---|
 | *766 hosts of sectors 14 to 26 (chance 0.491)* | | | | |
-| | light curve | 0.766 | 0.825 | 100% |
-| | light curve, centroid test as a veto | 0.793 | 0.848 | 100% |
-| | light curve and centroid test | 0.802 | 0.842 | 99% |
-| | catalogued period found | 81% | 85% | |
+| | light curve | 0.766 | 0.811 | 99.7% |
+| | light curve, centroid test as a veto | 0.793 | 0.837 | 99.4% |
+| | light curve and centroid test | 0.802 | 0.831 | 94.5% |
+| | catalogued period found | 81% | 88% | |
 | *857 hosts of sectors 1 to 13 (chance 0.536)* | | | | |
-| | light curve | 0.793 | 0.858 | 100% |
-| | light curve, centroid test as a veto | 0.828 | 0.873 | 99.9% |
-| | light curve and centroid test | 0.836 | 0.867 | 99% |
-| | catalogued period found | 82% | 86% | |
+| | light curve | 0.793 | 0.857 | 100% |
+| | light curve, centroid test as a veto | 0.828 | 0.875 | 99.7% |
+| | light curve and centroid test | 0.836 | 0.876 | 99.8% |
+| | catalogued period found | 82% | 87% | |
 
-- **More catalogued periods are found, most of them long.** 51 and 55 hosts
-  gain their period and 20 and 20 lose it. For TOIs with periods between
-  half a sector and a whole one the share found rises from 78% to 94% and
-  from 63% to 71%, and for longer ones from 33% to 47% and from 32% to 49%.
-  Of the periods lost, 12 and 6 go to one over 50 days that the whole-curve
-  fit preferred to the planet's; why is not yet known.
+- **More catalogued periods are found, most of them long.** 58 and 62 hosts
+  gain their period and 7 and 16 lose it. For TOIs with periods between
+  half a sector and a whole one the share found rises from 78% to 92% and
+  from 63% to 71%, and for longer ones from 33% to 50% and from 32% to 51%.
+  The periods lost mostly go to shorter ones; one goes to a period over 50
+  days.
 - **The ranking gains where the scored star has more data.** On hosts with
   one to three later sectors (327 and 518) the light-curve model rises from
-  0.848 to 0.887 and from 0.840 to 0.870, and with four to nine (198 and
-  109) from 0.770 to 0.813 and from 0.810 to 0.847. With ten or more (81
-  and 66) it rises in one direction (0.865 to 0.929, scored on 1 to 13) and
-  hardly in the other (0.830 to 0.842). The 160 and 164 hosts with no later
+  0.848 to 0.875 and from 0.840 to 0.872, and with ten or more (81 and 66)
+  from 0.830 to 0.842 and from 0.865 to 0.903. With four to nine (198 and
+  109) it rises in one direction (0.810 to 0.836, scored on 1 to 13) and
+  not in the other (0.770 both times). The 160 and 164 hosts with no later
   sector, nearly all false positives (chance 0.06 and 0.13), move within
   noise and in opposite directions.
 - **The models' own cross-validation rises as much.** On their training
-  hosts the light-curve model goes from 0.808 to 0.848 (trained on 1 to 13)
-  and from 0.748 to 0.823 (14 to 26), and the model with the centroid test
-  from 0.849 to 0.884 and from 0.793 to 0.870.
-- **At the frozen threshold** the light-curve model keeps more planets (0.82
+  hosts the light-curve model goes from 0.808 to 0.851 (trained on 1 to 13)
+  and from 0.748 to 0.831 (14 to 26), and the model with the centroid test
+  from 0.849 to 0.894 and from 0.793 to 0.856.
+- **At the frozen threshold** the light-curve model keeps more planets (0.83
   against 0.77, and 0.82 against 0.75) and rejects more false positives
   (0.70 against 0.66, and 0.73 against 0.68). The veto flags about the same
-  stars as before: 129 false positives and 5 planets in sectors 14 to 26
-  (124 and 9), 111 and 8 in 1 to 13 (106 and 7).
+  stars as before: 133 false positives and 5 planets in sectors 14 to 26
+  (124 and 9), 112 and 8 in 1 to 13 (106 and 7).
 
-So each host's later sectors are worth about 0.06 of average precision to
-the light-curve model in both directions, and 0.03 to 0.04 to the model with
-the centroid test, which reaches 0.842 and 0.867 on its own search. That is
+So each host's later sectors are worth about 0.05 to 0.06 of average
+precision to the light-curve model, and 0.03 to 0.04 to the model with the
+centroid test, which reaches 0.831 and 0.876 on its own search. That is
 close to the 0.855 and 0.880 of the views model in "Views, the centroid test
 and every label together", which folds at the catalogue's ephemeris, learns
 from 550 more labels and is scored on slightly fewer hosts.
@@ -1245,6 +1246,65 @@ python run_pipeline.py --train-sectors 1-13 --benchmark-centroids --stitch \
 
 It writes to `results/toi_trained/stitched/centroids_every_sector/joined_27-102/`;
 `--pixel-features` and the other direction are as in the sections above.
+
+### One deep event against many transits
+
+With five years of data a long trial period can line up one deep event (an
+eclipse of a neighbour, a systematic dip at a sector's edge) with transit
+while nearly every other epoch falls in a gap. Ranked by the plain depth
+SNR, that one event outscored a planet's dozens of shallow transits: with
+the whole-curve peak chosen that way, the joined search returned a period
+over 50 days for 25 and 19 hosts whose TOI period is shorter, and 12 and 6
+of the periods it lost against the sectors of the range went there.
+Requiring two transits in the box does not help, since a second epoch with
+nothing in it qualifies; in a trial it recovered 3 of the 40 periods the
+joined search lost.
+
+`leave_one_out_snr` in `transitml/features.py` scores a box by its depth SNR
+with its most significant transit left out, on the same weighted depth and
+error as the features. A planet with n similar transits keeps about
+sqrt((n - 1)/n) of its SNR; a lone event keeps nothing. `windowed_search`
+now ranks the window's peaks by it and chooses among each peak's whole-curve
+periods by it. Against the plain ranking, on the same stars and models
+trained the same way (the last column is the share of 2000 paired bootstrap
+resamples in which leaving the strongest transit out scores higher):
+
+| Scored on | Inputs | Plain SNR | Strongest transit left out | Ahead in |
+|---|---|---|---|---|
+| *766 hosts of sectors 14 to 26* | | | | |
+| | light curve | 0.825 | 0.811 | 5% |
+| | light curve, centroid test as a veto | 0.848 | 0.837 | 10% |
+| | light curve and centroid test | 0.842 | 0.831 | 11% |
+| | catalogued period found | 85.2% | 87.9% | |
+| | search over 50 days, TOI under | 25 | 4 | |
+| *857 hosts of sectors 1 to 13* | | | | |
+| | light curve | 0.858 | 0.857 | 44% |
+| | light curve, centroid test as a veto | 0.873 | 0.875 | 54% |
+| | light curve and centroid test | 0.867 | 0.876 | 91% |
+| | catalogued period found | 86.1% | 87.4% | |
+| | search over 50 days, TOI under | 19 | 3 | |
+
+- **More periods are right.** 22 and 17 hosts gain their catalogued period
+  and 2 and 6 lose it, and almost no TOI under 50 days is now assigned a
+  period over 50.
+- **The ranking does not move beyond noise.** Retrained with 20 seeds, the
+  light-curve model averages 0.813 against 0.821 and 0.858 against 0.862,
+  and the seed-averaged scores are ahead in 12% and 31% of paired
+  resamples. A right period lifts false positives about as much as planets:
+  the 32 planets and 23 false positives of sectors 14 to 26 whose period
+  changed rise in mean score from 0.44 to 0.55 and from 0.38 to 0.43, since
+  an eclipsing binary or a blend found at its own period also looks cleaner.
+  On the training hosts' cross-validation the light-curve model goes from
+  0.848 to 0.851 and from 0.823 to 0.831, and the model with the centroid
+  test from 0.884 to 0.894 and from 0.870 to 0.856.
+- **What it cannot fix.** An event deep enough to pull the box's phase off
+  the planet even at the planet's own period (in tests, about 1% deep
+  inside the densest 400 days) still wins, and a signal with too few
+  transits in that window is still not among the candidates.
+
+So the search now reports the catalogued period more often, at no
+measurable cost to the ranking; the change was made for the period, and the
+ranking numbers are reported as they came out, not tuned.
 
 ---
 
@@ -2789,7 +2849,7 @@ Three further gaps:
   at the period the pipeline's own search found, the views add nothing to
   the pipeline's features (see "Views at the pipeline's own BLS period").
   Searching every sector of each star, its later ones included, brings the
-  pipeline's own model with the centroid test to 0.842 there (see "Later
+  pipeline's own model with the centroid test to 0.831 there (see "Later
   sectors, as more data").
 - **Labels.** Ground truth is known by construction here. On real data it has to
   come from a catalogue that inherits the selection function of the pipelines
@@ -2799,7 +2859,7 @@ Three further gaps:
   real TOI false positives only slightly better than a signal-to-noise
   ranking. Trained on the dispositions of other sectors, the same classifier
   does clearly better (0.75 against 0.60 for that ranking, 0.78 when each
-  star's sectors are searched together, and 0.825 with its later sectors
+  star's sectors are searched together, and 0.811 with its later sectors
   added), but those labels
   carry the follow-up programme's selection, so it is a ranker of TOIs like
   the resolved ones.
@@ -2873,7 +2933,7 @@ transit-detection/
 │   ├── dashboard.py            # the batch's self-contained HTML dashboard
 │   ├── real_check.py           # known planets' fits and a real sector, against the archives
 │   └── plots.py                # figures (matplotlib Agg, no display)
-├── tests/                      # 558 tests, ~5 min
+├── tests/                      # 560 tests, ~5 min
 │   ├── test_generator.py       # imbalance is exact; injected physics is consistent
 │   ├── test_preprocess.py      # depth preservation; why the median was rejected; fit by segment
 │   ├── test_features.py        # recovery vs SNR; the vetting statistics fire
