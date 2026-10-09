@@ -49,7 +49,8 @@ fewer of the hosts too, to show whether more labels would help.  Writes to
 ``results/toi_trained/``.  ``--stitch`` searches every host on all of its
 sectors in range, joined, instead of on one (``results/toi_trained/stitched/``),
 and ``--centroids-every-sector`` then runs the centroid test on each of those
-sectors' pixels and combines them (``stitched/centroids_every_sector/``).
+sectors' pixels and combines them (``stitched/centroids_every_sector/``), with
+``--sky-offsets`` as offsets turned onto the sky (``stitched/sky_offsets/``).
 """
 
 from __future__ import annotations
@@ -246,6 +247,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "writes to a centroids_every_sector/ subdirectory of the stitched results.",
     )
     bench.add_argument(
+        "--sky-offsets",
+        action="store_true",
+        help="With --centroids-every-sector: combine the sectors' offsets as vectors on the "
+        "sky, each turned with its pixel file's WCS, instead of by length and significance; "
+        "writes to a sky_offsets/ subdirectory of the stitched results.",
+    )
+    bench.add_argument(
         "--benchmark-comments",
         type=Path,
         default=None,
@@ -344,10 +352,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             if default_figures:
                 args.figures_dir = args.figures_dir / "stitched"
             if args.centroids_every_sector:
+                name = "sky_offsets" if args.sky_offsets else "centroids_every_sector"
                 if default_results:
-                    args.results_dir = args.results_dir / "centroids_every_sector"
+                    args.results_dir = args.results_dir / name
                 if default_figures:
-                    args.figures_dir = args.figures_dir / "centroids_every_sector"
+                    args.figures_dir = args.figures_dir / name
         if args.pixel_features:
             args.benchmark_centroids = True
             if default_results:
@@ -366,6 +375,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         parser.error(
             "--centroids-every-sector changes the centroid test; give --benchmark-centroids "
             "or --pixel-features"
+        )
+    if args.sky_offsets and not args.centroids_every_sector:
+        parser.error(
+            "--sky-offsets combines the sectors --centroids-every-sector tests; "
+            "give --centroids-every-sector"
         )
     if args.search == "tls":
         # Beside the BLS run of the same data: results/tls/, results/systematics/tls/, ...
@@ -592,11 +606,13 @@ def load_toi_hosts(
                 lc.target_id: [int(s) for s in lc.meta.get("sectors", [lc.meta["sector"]])]
                 for lc in curves
             }
-            paths = load_or_fetch_sector_tpfs(joined, tpfs, **download)
+            paths = load_or_fetch_sector_tpfs(joined, tpfs, sky=args.sky_offsets, **download)
             n_files = sum(len(p) for p in paths.values())
             print(
                 f"  {len(paths)} have a target pixel file, {n_files} in all; running the "
-                "centroid test on each sector and combining them ..."
+                "centroid test on each sector and combining them"
+                + (" as offsets on the sky" if args.sky_offsets else "")
+                + " ..."
             )
         else:
             scored = {lc.target_id for lc in curves}
@@ -604,7 +620,7 @@ def load_toi_hosts(
                 [t for t in targets if t.target_id in scored], tpfs, **download
             )
             print(f"  {len(paths)} have a target pixel file; running the centroid test ...")
-        tests = centroid_tests(dataset, paths, n_jobs=args.n_jobs)
+        tests = centroid_tests(dataset, paths, n_jobs=args.n_jobs, sky=args.sky_offsets)
         dataset = with_centroid_features(dataset, tests)
     return TOIHosts(
         sectors=sectors,
