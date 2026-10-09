@@ -91,6 +91,37 @@ def test_each_star_is_joined_from_all_its_sectors_in_range(tmp_path, monkeypatch
     assert "stitched" not in single.meta and single.label == 0
 
 
+def test_joined_sectors_add_data_to_a_star_but_never_a_star(tmp_path, monkeypatch):
+    served = {
+        ("TIC 1", 15): curve(1, 15, seed=1),
+        ("TIC 1", 40): curve(1, 40, seed=1),
+        ("TIC 1", 41): curve(1, 41, seed=1),
+        ("TIC 2", 40): curve(2, 40, seed=2),
+        ("TIC 3", 14): curve(3, 14, seed=3),
+    }
+    asked: list[list[tuple[str, int]]] = []
+    monkeypatch.setattr(bench, "fetch_benchmark_curves", fake_mast(served, asked))
+    targets = [target(1, (15, 40, 41)), target(2, (40,)), target(3, (14,), label=0)]
+
+    moved, curves = bench.load_or_fetch_stitched(
+        targets, range(14, 27), tmp_path / "c.npz", join=range(27, 103)
+    )
+    # Star 2 has nothing in 14-26, so its later sector is not even asked for.
+    assert ("TIC 2", 40) not in {key for batch in asked for key in batch}
+    assert [t.sector for t in moved] == [15, 40, 14]
+    assert [lc.target_id for lc in curves] == ["TIC 1", "TIC 3"]
+    joined, single = curves
+    assert sorted(joined.meta["sectors"]) == [15, 40, 41]
+    assert joined.meta["selection_sectors"] == [15] and joined.meta["sector"] == 15
+    assert joined.n_cadences == sum(served[("TIC 1", s)].n_cadences for s in (15, 40, 41))
+    assert single.meta["selection_sectors"] == [14] and single.meta["sector"] == 14
+    # Without join, nothing changes.
+    _, plain = bench.load_or_fetch_stitched(targets, range(14, 27), tmp_path / "c.npz")
+    assert [lc.n_cadences for lc in plain] == [served[("TIC 1", 15)].n_cadences,
+                                               served[("TIC 3", 14)].n_cadences]
+    assert "selection_sectors" not in plain[0].meta
+
+
 def test_stitch_flag_and_its_defaults(tmp_path):
     import run_pipeline
 
@@ -122,9 +153,20 @@ def test_stitch_flag_and_its_defaults(tmp_path):
     assert sky.results_dir == args.results_dir / "sky_offsets" / "pixels"
     assert sky.figures_dir == args.figures_dir / "sky_offsets" / "pixels"
     assert not veto.sky_offsets
+    joined = run_pipeline.parse_args(
+        [*base, "--stitch", "--pixel-features", "--centroids-every-sector", "--join-sectors", "27-102"]
+    )
+    assert joined.results_dir == args.results_dir / "centroids_every_sector" / "joined_27-102" / "pixels"
+    assert joined.train_cache == one.train_cache and joined.train_tpfs == one.train_tpfs
+    assert run_pipeline.apply_overrides(default_config(), joined).bls.max_search_baseline_days == (
+        run_pipeline.JOINED_SEARCH_BASELINE_DAYS
+    )
+    assert run_pipeline.apply_overrides(default_config(), args).bls.max_search_baseline_days is None
     for wrong in (["--centroids-every-sector", "--benchmark-centroids"],  # nothing joined
                   ["--stitch", "--centroids-every-sector"],  # no centroid test to change
-                  ["--stitch", "--benchmark-centroids", "--sky-offsets"]):  # one sector each
+                  ["--stitch", "--benchmark-centroids", "--sky-offsets"],  # one sector each
+                  ["--join-sectors", "27-102"],  # nothing to add them to
+                  ["--stitch", "--join-sectors", "x"]):
         with pytest.raises(SystemExit):
             run_pipeline.parse_args([*base, *wrong])
 
@@ -207,6 +249,41 @@ def test_run_pipeline_trains_and_scores_on_joined_sectors(tmp_path, monkeypatch)
     assert scored["stitched"] and metrics["training"]["stitched"]
     assert "each searched on every one of these sectors" in (results / "report.txt").read_text()
     assert "(every sector of each star, joined)" in (results / "toi_benchmark.txt").read_text()
+
+
+def test_run_pipeline_adds_later_sectors_as_data(tmp_path, monkeypatch):
+    """``--join-sectors``: later sectors lengthen a star's curve and the search is windowed."""
+    import run_pipeline
+    from transitml.data.injection import load_curves, save_curves
+
+    config, argv, results, (train_curves, train_tois), (test_curves, test_tois) = _joined_hosts(
+        tmp_path, monkeypatch
+    )
+    # Training star 1 and benchmark star 1 were seen again years later, in sector 60.
+    later = [replace(lc, time=lc.time + 1200.0, meta={**lc.meta, "sector": 60})
+             for lc in (train_curves[1], test_curves[1])]
+    cache = results / "toi_curves.npz"
+    save_curves(load_curves(cache) + later, cache)
+    table = tmp_path / "exofop_toi.csv"
+    seen_again = {f"{train_tois[1].tic},", f"{test_tois[1].tic},"}
+    table.write_text("".join(
+        (line[:-1] + ',60"' if any(line.startswith(t) for t in seen_again) else line) + "\n"
+        for line in table.read_text().splitlines()
+    ))
+    args = run_pipeline.parse_args([*argv, "--join-sectors", "60"])
+    config = run_pipeline.apply_overrides(config, args)
+    assert run_pipeline.run_toi_training(args, config, started=0.0) == 0
+
+    saved = np.load(results / "dataset.npz", allow_pickle=True)
+    meta = dict(zip(saved["meta_names"], saved["meta_values"].T))
+    cadences = dict(zip(meta["target_id"], meta["n_cadences"]))
+    assert cadences[f"TIC {train_tois[1].tic}"] == 2 * train_curves[1].n_cadences
+    assert cadences[f"TIC {train_tois[2].tic}"] == train_curves[2].n_cadences
+    scored = json.loads((results / "toi_benchmark.json").read_text())
+    assert len(scored["stars"]) == 24 and scored["joined"] == "60"
+    assert json.loads((results / "metrics.json").read_text())["training"]["joined"] == "60"
+    assert "every sector of 60 it was observed in added" in (results / "report.txt").read_text()
+    assert "with its sectors of 60 added" in (results / "toi_benchmark.txt").read_text()
 
 
 def _scene_hosts(n: int, *, tic0: int, sector: int, again: int, cache):

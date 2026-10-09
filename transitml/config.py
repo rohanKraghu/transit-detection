@@ -274,8 +274,8 @@ class BLSConfig:
     #: joined) is not searched on one grid over all of it, which would need
     #: hundreds of thousands of trial periods.  The grid search runs on the
     #: densest stretch of this length; each of its ``candidate_peaks``
-    #: strongest distinct peaks, and their 1/3, 1/2, 2 and 3 times aliases,
-    #: is then fitted again on the whole curve with a fine grid around it, and
+    #: strongest distinct peaks, with its half and its double, is then
+    #: fitted again on the whole curve with a fine grid around it, and
     #: the one with the highest SNR there is the signal
     #: (:func:`transitml.features.windowed_search`).  ``None``: always one grid.
     max_search_baseline_days: float | None = None
