@@ -2918,6 +2918,12 @@ on. Sizes are rough: S is a few hours, M a day or two, L longer.
   77% (1 to 13); light-curve AP on the same stars rises from 0.745 to 0.776
   and 0.764 to 0.796, and with the centroid test as features from 0.792 to
   0.804 and 0.807 to 0.838.
+- Every sector's pixels, tested together (`run_pipeline.py --stitch
+  --centroids-every-sector`): the centroid test runs on the pixel file of
+  every sector a host was joined from, the tests combined by Stouffer's
+  method. As a veto it flags 124 of the false positives of sectors 14 to 26
+  instead of 86 (AP 0.781 to 0.793) and 106 instead of 94 on 1 to 13 (0.821
+  to 0.828); as features it moves AP by only 0.006 and 0.001.
 
 **Next**
 
@@ -2926,7 +2932,7 @@ to next:
 
 | Item | Why | Size |
 | --- | --- | --- |
-| Centroid test across every sector of a star, in progress | The pixel test still uses one sector: for 28 hosts in each direction that sector holds no transit, so the test is empty, and the model with the centroid test gained least from joining sectors | M |
+| Centroid offsets as sky vectors across sectors, in progress | Each sector's stamp is turned differently on the sky and the pixel cache keeps no orientation, so the sectors' offsets combine only in length and significance; with each file's WCS a real neighbour's offset adds up in direction too, as the TESS data-validation reports combine them | M |
 
 ## References
 
