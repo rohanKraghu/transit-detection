@@ -2924,15 +2924,21 @@ on. Sizes are rough: S is a few hours, M a day or two, L longer.
   method. As a veto it flags 124 of the false positives of sectors 14 to 26
   instead of 86 (AP 0.781 to 0.793) and 106 instead of 94 on 1 to 13 (0.821
   to 0.828); as features it moves AP by only 0.006 and 0.001.
+- Centroid offsets as sky vectors (`run_pipeline.py --stitch
+  --centroids-every-sector --sky-offsets`): pixel files keep their WCS
+  orientation, and each sector's offset is added as a vector on the sky.
+  The orientation checks out (off-target false positives' offsets line up
+  across sectors), but AP is unchanged within noise (veto 0.794 and 0.827
+  against 0.793 and 0.828), so `--sky-offsets` stays an option, not the
+  default.
 
 **Next**
 
 Every item on the original roadmap is built. What the results above point
 to next:
 
-| Item | Why | Size |
-| --- | --- | --- |
-| Centroid offsets as sky vectors across sectors, in progress | Each sector's stamp is turned differently on the sky and the pixel cache keeps no orientation, so the sectors' offsets combine only in length and significance; with each file's WCS a real neighbour's offset adds up in direction too, as the TESS data-validation reports combine them | M |
+The next step is being chosen; the likely candidate is period recovery, since
+most TOIs the search misses get a BLS period unrelated to the catalogued one.
 
 ## References
 
