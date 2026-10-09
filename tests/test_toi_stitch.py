@@ -108,11 +108,27 @@ def test_stitch_flag_and_its_defaults(tmp_path):
     assert not one.stitch
     with pytest.raises(SystemExit):
         run_pipeline.parse_args(["--stitch"])
+    every = run_pipeline.parse_args([*base, "--stitch", "--pixel-features", "--centroids-every-sector"])
+    assert every.results_dir == args.results_dir / "centroids_every_sector" / "pixels"
+    assert every.figures_dir == args.figures_dir / "centroids_every_sector" / "pixels"
+    assert every.train_tpfs == one.train_tpfs
+    veto = run_pipeline.parse_args(
+        [*base, "--stitch", "--benchmark-centroids", "--centroids-every-sector"]
+    )
+    assert veto.results_dir == args.results_dir / "centroids_every_sector"
+    for wrong in (["--centroids-every-sector", "--benchmark-centroids"],  # nothing joined
+                  ["--stitch", "--centroids-every-sector"]):  # no centroid test to change
+        with pytest.raises(SystemExit):
+            run_pipeline.parse_args([*base, *wrong])
 
 
-def test_run_pipeline_trains_and_scores_on_joined_sectors(tmp_path, monkeypatch):
-    """``--train-sectors --stitch`` end to end: every star searched on all its sectors."""
-    import run_pipeline
+def _joined_hosts(tmp_path, monkeypatch):
+    """60 training hosts of sector 13 and 24 benchmark hosts of 15, one of each seen again.
+
+    Everything is in the curve cache, so MAST must not be asked for a curve.
+    Returns the config, the run's arguments without the flag under test, and
+    both sets of curves and TOIs.
+    """
     import transitml.data.tic as tic_module
     from transitml.data.injection import save_curves
 
@@ -148,17 +164,26 @@ def test_run_pipeline_trains_and_scores_on_joined_sectors(tmp_path, monkeypatch)
         "fetch_tic_stars",
         lambda ids: {tic: {"teff_k": 5800.0, "rho_star_cgs": 1.4} for tic in ids},
     )
-    args = run_pipeline.parse_args(
-        [
-            "--train-sectors", "13-14",
-            "--benchmark-tois", str(table),
-            "--benchmark-sectors", "15-16",
-            "--results-dir", str(results),
-            "--no-figures",
-            "--n-jobs", "2",
-            "--stitch",
-        ]
+    argv = [
+        "--train-sectors", "13-14",
+        "--benchmark-tois", str(table),
+        "--benchmark-sectors", "15-16",
+        "--results-dir", str(results),
+        "--no-figures",
+        "--n-jobs", "2",
+        "--stitch",
+    ]
+    return config, argv, results, (train_curves, train_tois), (test_curves, test_tois)
+
+
+def test_run_pipeline_trains_and_scores_on_joined_sectors(tmp_path, monkeypatch):
+    """``--train-sectors --stitch`` end to end: every star searched on all its sectors."""
+    import run_pipeline
+
+    config, argv, results, (train_curves, train_tois), (test_curves, _) = _joined_hosts(
+        tmp_path, monkeypatch
     )
+    args = run_pipeline.parse_args(argv)
     assert run_pipeline.run_toi_training(args, config, started=0.0) == 0
 
     metrics = json.loads((results / "metrics.json").read_text())
@@ -175,3 +200,101 @@ def test_run_pipeline_trains_and_scores_on_joined_sectors(tmp_path, monkeypatch)
     assert scored["stitched"] and metrics["training"]["stitched"]
     assert "each searched on every one of these sectors" in (results / "report.txt").read_text()
     assert "(every sector of each star, joined)" in (results / "toi_benchmark.txt").read_text()
+
+
+def _scene_hosts(n: int, *, tic0: int, sector: int, again: int, cache):
+    """Planets on their targets (CP) and blended binaries (FP), each a pixel scene.
+
+    Each curve is its own stamp's aperture sum, as in the benchmark's centroid
+    tests.  Star 0 is seen again in sector ``again``, its stamp turned and its
+    eclipses kept on the ephemeris.  Returns the curves and TOIs.
+    """
+    from transitml.data.synthetic_tpf import blend_scenario
+    from transitml.data.tpf import save_tpf
+
+    curves, tois = [], []
+    for i in range(n):
+        tic, label = tic0 + i, int(i % 2 == 0)
+        kind = "on_target" if label else "blend"
+        seen = [(sector, (1.6, 0.8), 0.0)] + ([(again, (-0.8, 1.6), 27.9)] if i == 0 else [])
+        for s, offset, shift in seen:
+            tpf, truth = blend_scenario(kind, neighbour_offset=offset, seed=tic + s)
+            tpf.time = tpf.time + shift  # nine periods of 3.1 days
+            tpf.target_id = f"TIC {tic}"
+            save_tpf(tpf, bench.tpf_cache_path(cache, tpf.target_id, s))
+            curves.append(replace(tpf.to_light_curve(), label=label,
+                                  meta={"kind": "real", "sector": s}))
+        tois.append(TOI(tic=tic, toi=f"{tic}.01", disposition="CP" if label else "FP",
+                        period=truth["period"], snr=20.0,
+                        sectors=tuple(s for s, _, _ in seen)))
+    return curves, tois
+
+
+def test_run_pipeline_tests_the_pixels_of_every_joined_sector(tmp_path, monkeypatch):
+    """``--centroids-every-sector``: one pixel file per sector a star was joined from."""
+    import run_pipeline
+    import transitml.data.tic as tic_module
+    from transitml.data.injection import save_curves
+
+    results = tmp_path / "results"
+    tpfs = results / "toi_tpfs"
+    train_curves, train_tois = _scene_hosts(40, tic0=6000, sector=13, again=14, cache=tpfs)
+    test_curves, test_tois = _scene_hosts(16, tic0=8000, sector=15, again=16, cache=tpfs)
+    table = tmp_path / "exofop_toi.csv"
+    table.write_text(
+        "TIC ID,TOI,TFOPWG Disposition,Period (days),Planet SNR,Sectors\n"
+        + "".join(
+            f'{t.tic},{t.toi},{t.disposition},{t.period},{t.snr},"{",".join(map(str, t.sectors))}"\n'
+            for t in train_tois + test_tois
+        )
+    )
+    save_curves(train_curves + test_curves, results / "toi_curves.npz")
+
+    def no_network(*_, **__):
+        raise AssertionError("everything is cached; MAST must not be queried")
+
+    monkeypatch.setattr(bench, "fetch_benchmark_curves", no_network)
+    monkeypatch.setattr(bench, "download_tpfs", no_network)
+    monkeypatch.setattr(
+        tic_module,
+        "fetch_tic_stars",
+        lambda ids: {tic: {"teff_k": 5800.0, "rho_star_cgs": 1.4} for tic in ids},
+    )
+    base = default_config()
+    config = replace(base, bls=replace(base.bls, n_periods=400))
+    args = run_pipeline.parse_args(
+        [
+            "--train-sectors", "13-14",
+            "--benchmark-tois", str(table),
+            "--benchmark-sectors", "15-16",
+            "--results-dir", str(results),
+            "--no-figures",
+            "--n-jobs", "2",
+            "--stitch",
+            "--pixel-features",
+            "--centroids-every-sector",
+        ]
+    )
+    assert args.results_dir == results  # an explicit directory is kept as given
+    assert run_pipeline.run_toi_training(args, config, started=0.0) == 0
+
+    metrics = json.loads((results / "metrics.json").read_text())
+    assert metrics["training"]["n_with_pixels"] == 40
+    assert metrics["training"]["n_pixel_files"] == 41
+    scored = json.loads((results / "toi_benchmark.json").read_text())
+    assert scored["centroid_veto"]["n_with_pixels"] == 16
+    assert scored["centroid_veto"]["n_pixel_files"] == 17
+    stars = {s["target_id"]: s for s in scored["stars"]}
+    joined = stars[f"TIC {test_tois[0].tic}"]["centroid"]
+    assert (joined["n_sectors"], joined["n_sectors_placed"]) == (2, 2)
+    assert stars[f"TIC {test_tois[1].tic}"]["centroid"]["n_sectors"] == 1
+    # The blended binaries are flagged, the planets are not.
+    flagged = {t: s["centroid"]["significant"] for t, s in stars.items()}
+    assert sum(flagged[f"TIC {t.tic}"] for t in test_tois if t.disposition == "FP") >= 6
+    assert not any(flagged[f"TIC {t.tic}"] for t in test_tois if t.disposition == "CP")
+    assert "each tested in every sector it was joined from (41 pixel files)" in (
+        results / "report.txt"
+    ).read_text()
+    assert "each tested in every sector it was joined from (17 pixel files)" in (
+        results / "toi_benchmark.txt"
+    ).read_text()

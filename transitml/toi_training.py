@@ -35,6 +35,7 @@ from scipy.special import logit
 from sklearn.metrics import average_precision_score
 
 from .calibration import PlattScaling, brier_score, reliability_table
+from .centroid import combined_pixel_files
 from .data.loader import Dataset
 from .data.toi import POSITIVE_DISPOSITIONS
 from .evaluate import N_BOOTSTRAP, CurveScores, bootstrap_indices, score_curve
@@ -167,6 +168,8 @@ class TrainingSummary:
     calibration: dict[str, float]
     #: Stars with a pixel file, when the model reads the centroid test.
     n_with_pixels: int | None = None
+    #: Pixel files tested, when each star's sectors were tested and combined.
+    n_pixel_files: int | None = None
     #: Each star searched on every one of ``sectors`` it was observed in, joined.
     stitched: bool = False
 
@@ -186,6 +189,7 @@ class TrainingSummary:
             "positive_rate": self.positive_rate,
             "feature_names": self.feature_names,
             **({"n_with_pixels": self.n_with_pixels} if self.n_with_pixels is not None else {}),
+            **({"n_pixel_files": self.n_pixel_files} if self.n_pixel_files is not None else {}),
             "cross_validation": {
                 "n_folds": self.n_folds,
                 "chance_average_precision": self.positive_rate,
@@ -270,6 +274,7 @@ def summarise_training(
         n_with_pixels=(
             sum(t is not None for t in centroids) if centroids is not None else None
         ),
+        n_pixel_files=combined_pixel_files(centroids) if centroids is not None else None,
     )
 
 
@@ -380,6 +385,11 @@ def format_training_report(
     )
     if summary.n_with_pixels is not None:
         add(f"stars with a target pixel file: {summary.n_with_pixels} of {summary.n_stars}")
+    if summary.n_pixel_files is not None:
+        add(
+            f"  each tested in every sector it was joined from ({summary.n_pixel_files} "
+            "pixel files), the tests combined"
+        )
     add("")
     add(f"{summary.n_folds}-fold cross-validation on the training stars (out-of-fold scores)")
     add("-" * 72)

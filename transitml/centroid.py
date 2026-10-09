@@ -81,6 +81,7 @@ from __future__ import annotations
 
 import math
 import warnings
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -551,3 +552,103 @@ def centroid_test(
         shift_vs_on_target_sigma=shift_vs_sigma,
         **base,
     )
+
+
+def combine_sector_tests(
+    tests: Sequence[Mapping[str, Any]], config: CentroidConfig | None = None
+) -> dict[str, Any]:
+    """One verdict from the centroid tests of one star in several sectors.
+
+    Each sector's test runs on its own pixel file at the same ephemeris.  The
+    stamps are not aligned with one another (the spacecraft turns between
+    sectors, so a pixel axis points somewhere else on the sky), so the offset
+    vectors are not averaged; what carries over between sectors is how long
+    the offset is and how significant:
+
+    * the significance is Stouffer's combination of the sectors' p-values:
+      each turned into a one-sided normal deviate, summed and divided by the
+      square root of their number.  An offset seen in every sector adds up,
+      noise in each stays noise, and one wild sector among many quiet ones
+      does not decide it (Fisher's ``-2 sum ln p`` lets the smallest p-value
+      do just that);
+    * the length is the mean of the sectors' lengths, each weighted by the
+      inverse of its bootstrap variance (the mean of its two axes');
+    * the difference-image SNR is the sectors' SNRs added in quadrature.
+
+    ``tests`` are dicts of :class:`CentroidResult` fields (at least
+    ``status``, ``offset_sigma``, ``offset_distance_pixels``,
+    ``offset_error_pixels``, ``difference_snr`` and ``n_transits``).  A
+    sector enters the offset when its difference image detects the dip
+    (status ``"ok"``), its significance and error are measured, and its
+    centroid lies within the ``window_radius`` it was measured over: a
+    flux-weighted centroid of that window can only land outside it when the
+    difference image there is not a dip but noise of both signs, and such a
+    sector would otherwise flag the star from a centroid 10 or 20 pixels away.
+    Every sector with an SNR enters the SNR.  The star's dip is placed
+    (status ``"ok"``) when any sector placed it, and flagged by the rule for
+    one sector: at least ``significance_sigma`` and at least
+    ``min_offset_pixels``.  One sector placed inside its window gives back
+    its own numbers.
+    """
+    config = config or CentroidConfig()
+    measured = [
+        t
+        for t in tests
+        if t["status"] == "ok"
+        and not np.isnan(t["offset_sigma"])
+        and t["offset_error_pixels"] is not None
+        and np.all(np.isfinite(t["offset_error_pixels"]))
+    ]
+    placed = [t for t in measured if t["offset_distance_pixels"] <= config.window_radius]
+    snrs = np.array([t["difference_snr"] for t in tests], dtype=float)
+    snrs = snrs[np.isfinite(snrs)]
+    snr = float(np.sqrt(np.sum(snrs**2))) if snrs.size else float("nan")
+    sigma = distance = float("nan")
+    if placed:
+        # Each sector's P(|z| > s), as a one-sided normal deviate; a p-value of
+        # exactly one (an offset of exactly zero) is kept finite.
+        log_p = np.array(
+            [math.log(2.0) + float(stats.norm.logcdf(-t["offset_sigma"])) for t in placed]
+        )
+        with np.errstate(invalid="ignore"):
+            deviates = -ndtri_exp(np.minimum(log_p, math.log1p(-1e-12)))
+        deviates[np.isneginf(log_p)] = np.inf
+        total = float(np.sum(deviates) / math.sqrt(len(placed)))
+        sigma = _gaussian_sigma_from_log_p(float(stats.norm.logsf(total)))
+        weights = np.array([2.0 / np.sum(np.square(t["offset_error_pixels"])) for t in placed])
+        lengths = np.array([t["offset_distance_pixels"] for t in placed], dtype=float)
+        distance = float(np.sum(weights * lengths) / np.sum(weights))
+        status = "ok"
+    elif measured:
+        status = "centroid_outside_window"
+    else:
+        statuses = [str(t["status"]) for t in tests]
+        status = (
+            "weak_difference_image"
+            if "weak_difference_image" in statuses
+            else statuses[0] if statuses else "no_pixel_file"
+        )
+    significant = bool(
+        placed and sigma >= config.significance_sigma and distance >= config.min_offset_pixels
+    )
+    return {
+        "status": status,
+        "significant": significant,
+        "offset_distance_pixels": distance,
+        "offset_arcsec": distance * TESS_PIXEL_SCALE_ARCSEC,
+        "offset_sigma": sigma,
+        "difference_snr": snr,
+        "n_transits": int(sum(t["n_transits"] for t in tests)),
+        "n_sectors": len(tests),
+        "n_sectors_placed": len(placed),
+    }
+
+
+def combined_pixel_files(tests: Sequence[Mapping[str, Any] | None]) -> int | None:
+    """How many pixel files :func:`combine_sector_tests` combined into ``tests``.
+
+    ``None`` when none of ``tests`` was combined across sectors.
+    """
+    counts = [t["n_sectors"] for t in tests if t is not None and "n_sectors" in t]
+    return int(sum(counts)) if counts else None
+

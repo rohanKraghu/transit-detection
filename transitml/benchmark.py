@@ -36,7 +36,12 @@ import pandas as pd
 from joblib import Parallel, delayed
 from numpy.typing import NDArray
 
-from .centroid import CentroidConfig, centroid_test
+from .centroid import (
+    CentroidConfig,
+    centroid_test,
+    combine_sector_tests,
+    combined_pixel_files,
+)
 from .config import BLSConfig, PreprocessConfig
 from .data.base import (
     LightCurve,
@@ -324,23 +329,63 @@ def load_or_fetch_tpfs(
     ``{target_id: path}`` rather than the files: 750 stamps of 11 by 11
     pixels over a sector hold about 2 GB in memory.
     """
+    found = _load_or_fetch_tpf_files(
+        [(t.target_id, t.sector) for t in targets], cache_dir, author, exposure_time, n_workers
+    )
+    return {
+        t.target_id: found[t.target_id, t.sector]
+        for t in targets
+        if (t.target_id, t.sector) in found
+    }
+
+
+def load_or_fetch_sector_tpfs(
+    sectors: Mapping[str, Sequence[int]],
+    cache_dir: str | Path,
+    *,
+    author: str = "TESS-SPOC",
+    exposure_time: int | None = 1800,
+    n_workers: int = 8,
+) -> dict[str, list[Path]]:
+    """Each star's pixel files in every one of its ``sectors``, downloading only what is missing.
+
+    For stars searched on several sectors joined.  Kept and remembered as
+    :func:`load_or_fetch_tpfs` keeps them; returns ``{target_id: [path, ...]}``
+    in the order of each star's sectors, without the sectors MAST has no file
+    for and the stars it has none for at all.
+    """
+    pairs = [(target_id, int(s)) for target_id, star in sectors.items() for s in star]
+    found = _load_or_fetch_tpf_files(pairs, cache_dir, author, exposure_time, n_workers)
+    out: dict[str, list[Path]] = {}
+    for pair in pairs:
+        if pair in found:
+            out.setdefault(pair[0], []).append(found[pair])
+    return out
+
+
+def _load_or_fetch_tpf_files(
+    pairs: Sequence[tuple[str, int]],
+    cache_dir: str | Path,
+    author: str,
+    exposure_time: int | None,
+    n_workers: int,
+) -> dict[tuple[str, int], Path]:
+    """``{(target_id, sector): path}`` for every pair with a pixel file, fetching the new ones."""
     cache_dir = Path(cache_dir)
     tried_path = cache_dir / "tried.json"
     tried = set(json.loads(tried_path.read_text())) if tried_path.exists() else set()
-    paths = {t.target_id: tpf_cache_path(cache_dir, t.target_id, t.sector) for t in targets}
+    paths = {pair: tpf_cache_path(cache_dir, *pair) for pair in pairs}
     missing = [
-        t
-        for t in targets
-        if not paths[t.target_id].exists() and f"{t.target_id}:{t.sector}" not in tried
+        pair for pair in paths if not paths[pair].exists() and f"{pair[0]}:{pair[1]}" not in tried
     ]
     if missing:
         cache_dir.mkdir(parents=True, exist_ok=True)
         args = (
-            [t.target_id for t in missing],
-            [t.sector for t in missing],
+            [target_id for target_id, _ in missing],
+            [sector for _, sector in missing],
             repeat(author),
             repeat(exposure_time),
-            [paths[t.target_id] for t in missing],
+            [paths[pair] for pair in missing],
         )
         if n_workers <= 1:
             list(map(_fetch_tpf, *args))
@@ -348,9 +393,9 @@ def load_or_fetch_tpfs(
             # Processes, not threads: lightkurve's FITS reading is not thread-safe.
             with ProcessPoolExecutor(max_workers=n_workers) as pool:
                 list(pool.map(_fetch_tpf, *args, chunksize=4))
-        tried |= {f"{t.target_id}:{t.sector}" for t in missing}
+        tried |= {f"{target_id}:{sector}" for target_id, sector in missing}
         tried_path.write_text(json.dumps(sorted(tried)))
-    return {target_id: path for target_id, path in paths.items() if path.exists()}
+    return {pair: path for pair, path in paths.items() if path.exists()}
 
 
 #: What the benchmark keeps of each centroid test.
@@ -365,16 +410,25 @@ CENTROID_FIELDS: tuple[str, ...] = (
 )
 
 
+#: What :func:`~transitml.centroid.combine_sector_tests` needs of each sector's test.
+SECTOR_CENTROID_FIELDS: tuple[str, ...] = (*CENTROID_FIELDS, "offset_error_pixels")
+
+
 def _centroid_one(
-    path: Path, period: float, epoch: float, duration: float, config: CentroidConfig | None
+    path: Path,
+    period: float,
+    epoch: float,
+    duration: float,
+    config: CentroidConfig | None,
+    fields: tuple[str, ...] = CENTROID_FIELDS,
 ) -> dict[str, Any]:
     result = centroid_test(load_tpf(path), period, epoch, duration, config)
-    return {name: getattr(result, name) for name in CENTROID_FIELDS}
+    return {name: getattr(result, name) for name in fields}
 
 
 def centroid_tests(
     dataset: Dataset,
-    tpf_paths: Mapping[str, Path],
+    tpf_paths: Mapping[str, Path | Sequence[Path]],
     *,
     config: CentroidConfig | None = None,
     n_jobs: int = -1,
@@ -384,18 +438,36 @@ def centroid_tests(
     The ephemeris is the BLS peak the model was scored on (the dataset's
     ``search_period``, ``search_epoch`` and ``search_duration``), not the catalogue's,
     so each star gets the test ``vet --centroids`` would give it.  ``None``
-    for a star without a pixel file.
+    for a star without a pixel file.  A star given a list of pixel files (one
+    per sector, for a star searched on its sectors joined) is tested on each
+    and the tests combined by :func:`~transitml.centroid.combine_sector_tests`,
+    which also says how many sectors were tested and how many placed the dip.
     """
     meta = dataset.meta
     ids = meta["target_id"].astype(str).tolist()
     ephemeris = meta[["search_period", "search_epoch", "search_duration"]].to_numpy(dtype=float)
-    jobs = [(i, tpf_paths[target_id]) for i, target_id in enumerate(ids) if target_id in tpf_paths]
+    jobs: list[tuple[int, Path, bool]] = []
+    for i, target_id in enumerate(ids):
+        paths = tpf_paths.get(target_id)
+        if isinstance(paths, (str, Path)):
+            jobs.append((i, Path(paths), False))
+        elif paths is not None:
+            jobs.extend((i, Path(path), True) for path in paths)
     done = Parallel(n_jobs=n_jobs)(
-        delayed(_centroid_one)(path, *ephemeris[i], config) for i, path in jobs
+        delayed(_centroid_one)(
+            path, *ephemeris[i], config, SECTOR_CENTROID_FIELDS if several else CENTROID_FIELDS
+        )
+        for i, path, several in jobs
     )
     out: list[dict[str, Any] | None] = [None] * len(ids)
-    for (i, _), result in zip(jobs, done):
-        out[i] = result
+    sectors: dict[int, list[dict[str, Any]]] = {}
+    for (i, _, several), result in zip(jobs, done):
+        if several:
+            sectors.setdefault(i, []).append(result)
+        else:
+            out[i] = result
+    for i, tests in sectors.items():
+        out[i] = combine_sector_tests(tests, config)
     return out
 
 
@@ -472,11 +544,14 @@ class CentroidVeto:
     false_positive_rejection: float
     #: Planets and false positives flagged at other offset floors.
     floors: list[dict[str, Any]]
+    #: Pixel files tested, when each star's sectors were tested and combined.
+    n_pixel_files: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "min_offset_pixels": self.min_offset_pixels,
             "n_with_pixels": self.n_with_pixels,
+            **({"n_pixel_files": self.n_pixel_files} if self.n_pixel_files is not None else {}),
             "status": self.status,
             "flagged": self.flagged,
             "model": self.model.to_dict(),
@@ -564,6 +639,7 @@ def _centroid_veto(
         planet_recall=_rate(kept_after, planets),
         false_positive_rejection=_rate(~kept_after, negatives),
         floors=floors,
+        n_pixel_files=combined_pixel_files(tests),
     )
 
 
@@ -1044,6 +1120,16 @@ def _centroid_section(add, result: BenchmarkResult) -> None:
     add("-" * 72)
     status = ", ".join(f"{k} {v}" for k, v in sorted(veto.status.items()))
     add(f"  stars with a pixel file: {veto.n_with_pixels} of {result.n_stars}   ({status})")
+    if veto.n_pixel_files is not None:
+        add(
+            f"  each tested in every sector it was joined from ({veto.n_pixel_files} pixel "
+            "files) and the tests combined:"
+        )
+        add(
+            "  significance by Stouffer's method, offset length weighted by its error, "
+            "SNR in quadrature,"
+        )
+        add("  a sector whose centroid falls outside its window left out")
     add(
         "  flagged as off target (difference-image centroid at least 3 sigma and "
         f"{veto.min_offset_pixels:g} pixel"
