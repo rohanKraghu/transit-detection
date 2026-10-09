@@ -17,6 +17,7 @@ import pytest
 from transitml.config import PreprocessConfig
 from transitml.data.base import LightCurve
 from transitml.preprocess import (
+    SegmentedDesign,
     flatten,
     fit_trend,
     harmonic_basis,
@@ -378,6 +379,33 @@ def test_excluded_rows_are_the_same_as_dropped_rows():
     np.testing.assert_allclose(c_excluded, c_dropped, rtol=1e-8, atol=1e-12)
     assert np.all(w_excluded[exclude] == 0.0)
     np.testing.assert_allclose(w_excluded[~exclude], w_dropped, atol=1e-12)
+
+
+def test_the_fit_by_segment_is_the_dense_fit():
+    """Three sectors, the last a year on, with a rotation term spanning all of them."""
+    rng = np.random.default_rng(2)
+    cadence = 30.0 / 1440.0
+    sector = np.concatenate([np.arange(0.0, 12.5, cadence), np.arange(13.5, 26.0, cadence)])
+    time = np.concatenate([start + sector for start in (0.0, 27.4, 400.0)])
+    values = 3e-3 * np.sin(2.0 * np.pi * time / 2.3) + rng.normal(0.0, 5e-4, time.size)
+    values[(time % 7.3) < 0.12] -= 2e-3
+    config = PreprocessConfig()
+    segmented = SegmentedDesign.spline(time, config).with_columns(harmonic_basis(time, 2.3, 3))
+    dense = segmented.toarray()
+    np.testing.assert_array_equal(dense[:, :-6], spline_basis(time, config))
+    assert segmented.shape == dense.shape
+
+    for exclude in (None, (time > 3.0) & (time < 3.4)):
+        c_dense, w_dense = robust_least_squares(dense, values, exclude=exclude)
+        c_segmented, w_segmented = robust_least_squares(segmented, values, exclude=exclude)
+        np.testing.assert_allclose(segmented @ c_segmented, dense @ c_dense, atol=1e-12)
+        np.testing.assert_allclose(c_segmented, c_dense, atol=1e-10)
+        np.testing.assert_allclose(w_segmented, w_dense, atol=1e-9)
+
+    start = time < 0.3
+    released = release_starved(segmented, start.copy(), 0.05)
+    np.testing.assert_array_equal(released, release_starved(dense, start.copy(), 0.05))
+    assert not released.any()
 
 
 def test_an_empty_mask_is_the_blind_detrend():

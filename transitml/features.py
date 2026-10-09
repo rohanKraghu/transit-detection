@@ -125,10 +125,10 @@ def run_bls(lc: FlattenedLightCurve, config: BLSConfig | None = None) -> dict[st
     BLS by default; ``config.search == "tls"`` runs Transit Least Squares
     instead (:mod:`transitml.tls`) and returns the same fields.  The BLS
     periodogram itself comes from astropy or from :mod:`transitml.fastbls`,
-    as :func:`bls_engine` says.
+    as :func:`bls_engine` says.  A BLS search of a curve longer than
+    ``config.max_search_baseline_days`` is a :func:`windowed_search`.
     """
     config = config or BLSConfig()
-    err = np.where(lc.flux_err > 0, lc.flux_err, lc.scatter)
     periods = period_grid(lc.baseline_days, config)
     if config.search == "tls":
         from .tls import run_tls
@@ -141,37 +141,59 @@ def run_bls(lc: FlattenedLightCurve, config: BLSConfig | None = None) -> dict[st
             config = replace(config, search="bls")
     if config.search != "bls":
         raise ValueError(f"unknown search {config.search!r}; expected 'bls' or 'tls'")
-    bls = BoxLeastSquares(lc.time, lc.flux, err)
+    limit = config.max_search_baseline_days
+    if limit is not None and lc.baseline_days > limit:
+        return windowed_search(lc, config)
+    durations = _durations(config, periods)
+    result = _periodogram(lc, periods, durations)
+    best = int(np.nanargmax(result.power))
+    return _solution(lc, result, best, periods)
+
+
+def _durations(config: BLSConfig, periods: NDArray[np.float64]) -> NDArray[np.float64]:
+    """The trial durations shorter than half the shortest trial period."""
     durations = np.asarray(config.durations_days, dtype=float)
     # Durations longer than the shortest trial period are meaningless.
     durations = durations[durations < 0.5 * periods.min()]
     if durations.size == 0:
         durations = np.array([0.05 * periods.min()])
+    return durations
+
+
+def _periodogram(
+    lc: FlattenedLightCurve, periods: NDArray[np.float64], durations: NDArray[np.float64]
+) -> Any:
+    """The BLS periodogram of ``lc`` on ``periods``, from the engine :func:`bls_engine` names."""
+    err = np.where(lc.flux_err > 0, lc.flux_err, lc.scatter)
     engine = bls_engine()
     if engine == "astropy":
-        result = bls.power(periods, durations, objective="snr")
-    else:
-        from .fastbls import array_module, bls_power
+        return BoxLeastSquares(lc.time, lc.flux, err).power(periods, durations, objective="snr")
+    from .fastbls import array_module, bls_power
 
-        result = _AsResult(
-            bls_power(lc.time, lc.flux, err, periods, durations, xp=array_module(engine)),
-            periods,
-        )
+    return _AsResult(
+        bls_power(lc.time, lc.flux, err, periods, durations, xp=array_module(engine)),
+        periods,
+    )
 
-    best = int(np.nanargmax(result.power))
+
+def _solution(
+    lc: FlattenedLightCurve, result: Any, index: int, periods: NDArray[np.float64]
+) -> dict[str, Any]:
+    """:func:`run_bls`'s dictionary: the solution at ``result[index]`` and the periodogram."""
+    err = np.where(lc.flux_err > 0, lc.flux_err, lc.scatter)
     return {
         "searched_with": "bls",
-        "bls": bls,
-        "periods": np.asarray(result.period, dtype=float),
+        "bls": BoxLeastSquares(lc.time, lc.flux, err),
+        "periods": np.asarray(periods, dtype=float),
         "power": np.asarray(result.power, dtype=float),
-        "best_index": best,
-        "period": float(result.period[best]),
-        "duration": float(result.duration[best]),
-        "transit_time": float(result.transit_time[best]),
-        "depth": float(result.depth[best]),
-        "depth_err": float(result.depth_err[best]),
-        "depth_snr": float(result.depth_snr[best]),
-        "log_likelihood": float(result.log_likelihood[best]),
+        "best_index": index,
+        "period": float(result.period[index]),
+        "duration": float(result.duration[index]),
+        "transit_time": float(result.transit_time[index]),
+        "depth": float(result.depth[index]),
+        "depth_err": float(result.depth_err[index]),
+        "depth_snr": float(result.depth_snr[index]),
+        "log_likelihood": float(result.log_likelihood[index]),
     }
 
 
@@ -182,6 +204,116 @@ class _AsResult:
         self.period = periods
         for key, value in values.items():
             setattr(self, key, value)
+
+
+#: Period ratios at which two trial periods are taken for one signal.
+_ALIAS_RATIOS = np.array([1.0, 0.5, 2.0, 1.0 / 3.0, 3.0])
+#: Multiples of a windowed search's candidate that the whole curve tries.
+_REFINED_ALIASES = (1.0, 0.5, 2.0)
+
+
+def distinct_peaks(
+    periods: NDArray[np.float64], power: NDArray[np.float64], k: int
+) -> list[int]:
+    """Indices of the ``k`` strongest peaks of a periodogram that are different signals.
+
+    Walking down from the strongest trial period, one is skipped when it lies
+    within 1% of a period already taken or of its 1/3, 1/2, 2 or 3 times
+    alias: the neighbouring trial periods of one peak, and the aliases of one
+    signal, are one candidate, not several.
+    """
+    finite = np.isfinite(power)
+    order = np.argsort(np.where(finite, power, -np.inf), kind="stable")[::-1]
+    taken: list[int] = []
+    for i in order:
+        if not finite[i] or len(taken) == k:
+            break
+        ratio = periods[i] / periods[taken] if taken else np.empty(0)
+        if np.any(np.abs(ratio[:, None] - _ALIAS_RATIOS) < 0.01 * _ALIAS_RATIOS):
+            continue
+        taken.append(int(i))
+    return taken
+
+
+def densest_window(time: NDArray[np.float64], length_days: float) -> tuple[float, float]:
+    """``(start, stop)`` of the ``length_days`` stretch holding the most cadences.
+
+    It starts on a cadence; of equally full stretches, the earliest.
+    """
+    time = np.sort(np.asarray(time, dtype=float))
+    stops = np.searchsorted(time, time + length_days, side="right")
+    first = int(np.argmax(stops - np.arange(time.size)))
+    return float(time[first]), float(time[first] + length_days)
+
+
+def _grid_step(baseline_days: float, config: BLSConfig) -> float:
+    """Step in ln(period) of :func:`period_grid` on a baseline of ``baseline_days``."""
+    periods = period_grid(baseline_days, config)
+    return float(np.log(periods[-1] / periods[0]) / (periods.size - 1))
+
+
+def windowed_search(lc: FlattenedLightCurve, config: BLSConfig) -> dict[str, Any]:
+    """BLS on a curve too long for one grid: candidates from its densest stretch, chosen on all of it.
+
+    1. The usual grid search (:func:`period_grid`) runs on the densest
+       ``config.max_search_baseline_days`` of the curve (:func:`densest_window`).
+    2. Each of that periodogram's ``config.candidate_peaks`` strongest
+       :func:`distinct_peaks`, its half and its double, is searched again on
+       the whole curve, on a grid as fine as a single grid over the whole
+       curve would have been, across the candidate's peak: half its duration
+       over the window's baseline, and at least two window steps, either
+       side.  The half and double count because a stretch with gaps often
+       cannot tell a period from them, where the rest of the data can.
+    3. The highest of those whole-curve peaks is the signal.
+
+    The ``"periods"`` and ``"power"`` returned are the window's periodogram,
+    so the peak-significance features describe the search that proposed the
+    signal, and ``"best_index"`` is the candidate that won; the rest of the
+    solution, and ``"bls"``, are from the whole curve.  A few hundred
+    periods around each of ten candidates are a few thousand, where one grid
+    over five years would need about 250,000.  A signal too weak to be among
+    the window's candidates, or with fewer than two transits in it, is not
+    found.
+    """
+    start, stop = densest_window(lc.time, float(config.max_search_baseline_days))
+    keep = (lc.time >= start) & (lc.time <= stop)
+    window = replace(
+        lc, time=lc.time[keep], flux=lc.flux[keep], flux_err=lc.flux_err[keep], trend=lc.trend[keep]
+    )
+    periods = period_grid(window.baseline_days, config)
+    coarse = _periodogram(window, periods, _durations(config, periods))
+    power = np.asarray(coarse.power, dtype=float)
+    window_step = float(np.log(periods[1] / periods[0]))
+    fine = min(_grid_step(lc.baseline_days, config), window_step)
+    longest = _max_period(lc.baseline_days, config)
+    # (power, candidate, period, durations tried there)
+    best: tuple[float, int, float, NDArray[np.float64]] | None = None
+    for i in distinct_peaks(periods, power, config.candidate_peaks):
+        half = max(0.5 * float(coarse.duration[i]) / window.baseline_days, 2 * window_step)
+        n = int(np.ceil(half / fine))
+        for ratio in _REFINED_ALIASES:
+            grid = periods[i] * ratio * np.exp(fine * np.arange(-n, n + 1))
+            grid = grid[(grid >= config.min_period_days) & (grid <= longest)]
+            if grid.size == 0:
+                continue
+            durations = _durations(config, grid)
+            result = _periodogram(lc, grid, durations)
+            j = int(np.nanargmax(result.power))
+            if best is None or result.power[j] > best[0]:
+                best = (float(result.power[j]), i, float(grid[j]), durations)
+    if best is None:
+        index = int(np.nanargmax(power))
+        return {**_solution(window, coarse, index, periods), "search_window": (start, stop)}
+    _, index, period, durations = best
+    one = np.array([period])
+    result = _periodogram(lc, one, durations)
+    return {
+        **_solution(lc, result, 0, one),
+        "periods": periods,
+        "power": power,
+        "best_index": index,
+        "search_window": (start, stop),
+    }
 
 
 def flatten_masked(
@@ -236,7 +368,8 @@ def _masked_detrend(
     found = run_bls(blind, bls)
     if not found["depth"] > 0:
         return blind, found
-    if not signal_detection_efficiency(found["power"]) >= preprocess.mask_min_sde:
+    peak = found["power"][found["best_index"]]
+    if not signal_detection_efficiency(found["power"], peak) >= preprocess.mask_min_sde:
         return blind, found
     period, epoch = found["period"], found["transit_time"]
     phase = (lc.time - epoch + 0.5 * period) % period - 0.5 * period
@@ -246,13 +379,16 @@ def _masked_detrend(
     return flatten(lc, preprocess, exclude=exclude), None
 
 
-def signal_detection_efficiency(power: NDArray[np.float64]) -> float:
+def signal_detection_efficiency(
+    power: NDArray[np.float64], peak: float | None = None
+) -> float:
     """Robust peak significance of the periodogram (the BLS/TLS "SDE").
 
     ``(peak - median) / (1.4826 * MAD)``.  Using MAD rather than the standard
     deviation matters: the peak itself, plus its aliases, inflate ``np.std``
     enough to suppress the SDE of the strongest signals -- which is precisely
-    backwards.
+    backwards.  ``peak`` is the power of the peak taken as the signal; the
+    highest by default.
     """
     finite = power[np.isfinite(power)]
     if finite.size < 10:
@@ -260,18 +396,23 @@ def signal_detection_efficiency(power: NDArray[np.float64]) -> float:
     sigma = robust_sigma(finite)
     if not np.isfinite(sigma) or sigma <= 0:
         return float("nan")
-    return float((np.nanmax(finite) - np.median(finite)) / sigma)
+    top = float(np.nanmax(finite)) if peak is None else float(peak)
+    return float((top - np.median(finite)) / sigma)
 
 
 def power_contrast(
-    periods: NDArray[np.float64], power: NDArray[np.float64], best_period: float
+    periods: NDArray[np.float64],
+    power: NDArray[np.float64],
+    best_period: float,
+    peak: float | None = None,
 ) -> float:
     """Peak power divided by the best power at an unrelated period.
 
     Periods within 10% of the peak and of its 1/2x, 2x and 3x aliases are
     excluded.  A genuine transit produces one isolated peak; correlated noise
     and residual stellar variability produce forests of comparable peaks, so
-    this is near 1 for junk and well above 1 for real signals.
+    this is near 1 for junk and well above 1 for real signals.  ``peak`` is
+    the power at ``best_period``; the highest by default.
     """
     finite = np.isfinite(power)
     mask = finite.copy()
@@ -280,7 +421,7 @@ def power_contrast(
         mask &= ~(np.abs(periods - target) < 0.1 * target)
     if not mask.any():
         return float("nan")
-    peak = float(np.nanmax(power[finite]))
+    peak = float(np.nanmax(power[finite])) if peak is None else float(peak)
     background = float(np.nanmax(power[mask]))
     if background <= 0:
         return float("nan")
@@ -499,6 +640,10 @@ def extract_features(
     bls, period, duration = res["bls"], res["period"], res["duration"]
     transit_time, depth = res["transit_time"], res["depth"]
     scatter = lc.scatter if lc.scatter > 0 else robust_sigma(lc.flux)
+    # The periodogram peak the signal came from: the highest one, except
+    # after a windowed search (whose period is then refined on all the data).
+    peak = float(res["power"][res["best_index"]])
+    peak_period = float(res["periods"][res["best_index"]])
 
     stats_dict = bls.compute_stats(period, duration, transit_time)
     per_transit_ll = np.asarray(stats_dict["per_transit_log_likelihood"], dtype=float)
@@ -572,11 +717,11 @@ def extract_features(
 
     features: dict[str, float] = {
         # --- detection strength ---
-        "bls_sde": signal_detection_efficiency(res["power"]),
+        "bls_sde": signal_detection_efficiency(res["power"], peak),
         "bls_depth_snr": float(res["depth_snr"]),
         "bls_depth_over_scatter": float(depth / scatter) if scatter > 0 else np.nan,
         "delta_loglike": delta_ll,
-        "power_contrast": power_contrast(res["periods"], res["power"], period),
+        "power_contrast": power_contrast(res["periods"], res["power"], peak_period, peak),
         # --- geometry / plausibility ---
         "log_depth": float(np.log10(max(depth, 1e-8))),
         "bls_duration": float(duration),

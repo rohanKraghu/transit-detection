@@ -20,7 +20,7 @@ whose coverage is measured by injection.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python run_pipeline.py            # ~3 min on 4 cores
-pytest                            # ~5 min, 549 tests
+pytest                            # ~5 min, 558 tests
 ```
 
 It writes `results/metrics.json`, `results/report.txt`, the trained model
@@ -928,7 +928,9 @@ directions, less than the 550 later-sector labels added scored on sectors 1
 to 13 (0.05) and twice what they added on 14 to 26 (0.014), and most of it
 comes from the stars one sector could not show. The labels of later sectors
 (27 to 102) are not joined here: their stars span several years, which this
-grid would search with hundreds of thousands of trial periods each.
+grid would search with hundreds of thousands of trial periods each. Those
+sectors are added as more data for the hosts already here in "Later
+sectors, as more data", with a search that can afford them.
 
 To reproduce, after the runs above (the first run downloads every other
 sector of each host, about 2800 more curves, which takes about an hour from
@@ -1135,6 +1137,114 @@ writes to `results/toi_trained/stitched/sky_offsets/` (`pixels/`,
 `sectors_14_26/` and `sectors_14_26/pixels/` below it), and fetches again
 any pixel file cached before format 2 (through lightkurve, about 20
 seconds a file).
+
+### Later sectors, as more data
+
+Where the joined search still misses the catalogued period (144 hosts of
+sectors 14 to 26 and 154 of 1 to 13), it is mostly short of data rather than
+choosing the wrong peak. For 25 and 42 of them the TOI's period is longer
+than the grid searches, so the data hold fewer than two transits; for 52 and
+47 the dip at the catalogued ephemeris has a depth SNR under 5 in the
+searched sectors; and only for 39 and 30 is the catalogued period the
+search's second or third strongest peak. Choosing among the peaks
+differently (each event left out in turn, or the strongest masked and the
+search run again) recovered 1 of 51 such periods in a trial. But TESS came
+back to most of these stars in later years, and the sectors 27 to 102 that
+gave more labels above also hold more transits of the hosts already here.
+
+`--join-sectors 27-102` (with `--stitch`) adds those sectors to every host's
+joined curve, training and benchmark alike, each fetched at its own cadence
+and averaged to 30 minutes as in "More labels, from later sectors". Of the
+766 hosts of sectors 14 to 26, 606 gain at least one sector (median 3, up to
+28), and of the 857 of 1 to 13, 693 (median 2, up to 22): about 5,800 more
+curves, and baselines of up to five years. The sectors of the range still
+choose the stars, and the centroid test still reads only their pixel files.
+Two things had to change for curves that long.
+
+- **The search.** A grid keeping the joined search's 0.05-day drift would
+  need about 250,000 trial periods over five years. `windowed_search` in
+  `transitml/features.py` runs the usual grid on the densest 400 days of the
+  curve instead (`max_search_baseline_days` in `BLSConfig`, which
+  `--join-sectors` sets), then fits each of that periodogram's ten strongest
+  distinct peaks (`candidate_peaks`), with its half and its double, again on
+  the whole curve, on a grid around each as fine as one whole-curve grid
+  would be. The highest whole-curve peak is the signal, and the
+  peak-significance features describe the window's periodogram at the
+  candidate that won. The half and the double are tried because a window
+  with gaps often cannot tell a period from them where the rest of the curve
+  can. A signal with fewer than two transits in the window, or too weak to
+  be among its ten candidates, is not found.
+- **The detrending.** The trend fit solved one dense least-squares problem
+  over every cadence, at a cost that grows as the cube of the curve's
+  length: a 34-sector star took about 400 seconds. Only the rotation terms
+  span the whole curve (the spline is block-diagonal over gap-free
+  segments), so the fit is now solved segment by segment, plus one small
+  problem over the rotation columns (`SegmentedDesign` in
+  `transitml/preprocess.py`). It is the same fit to rounding, about 1e-17
+  in relative flux, and that star now takes 5 seconds.
+
+On the same stars as the previous sections' runs (every sector of the
+range, the pixels of every sector combined by length and significance); the
+last column is the share of 2000 paired bootstrap resamples in which adding
+the later sectors scores higher:
+
+| Scored on | Inputs | Sectors of the range | With 27 to 102 added | Ahead in |
+|---|---|---|---|---|
+| *766 hosts of sectors 14 to 26 (chance 0.491)* | | | | |
+| | light curve | 0.766 | 0.825 | 100% |
+| | light curve, centroid test as a veto | 0.793 | 0.848 | 100% |
+| | light curve and centroid test | 0.802 | 0.842 | 99% |
+| | catalogued period found | 81% | 85% | |
+| *857 hosts of sectors 1 to 13 (chance 0.536)* | | | | |
+| | light curve | 0.793 | 0.858 | 100% |
+| | light curve, centroid test as a veto | 0.828 | 0.873 | 99.9% |
+| | light curve and centroid test | 0.836 | 0.867 | 99% |
+| | catalogued period found | 82% | 86% | |
+
+- **More catalogued periods are found, most of them long.** 51 and 55 hosts
+  gain their period and 20 and 20 lose it. For TOIs with periods between
+  half a sector and a whole one the share found rises from 78% to 94% and
+  from 63% to 71%, and for longer ones from 33% to 47% and from 32% to 49%.
+  Of the periods lost, 12 and 6 go to one over 50 days that the whole-curve
+  fit preferred to the planet's; why is not yet known.
+- **The ranking gains where the scored star has more data.** On hosts with
+  one to three later sectors (327 and 518) the light-curve model rises from
+  0.848 to 0.887 and from 0.840 to 0.870, and with four to nine (198 and
+  109) from 0.770 to 0.813 and from 0.810 to 0.847. With ten or more (81
+  and 66) it rises in one direction (0.865 to 0.929, scored on 1 to 13) and
+  hardly in the other (0.830 to 0.842). The 160 and 164 hosts with no later
+  sector, nearly all false positives (chance 0.06 and 0.13), move within
+  noise and in opposite directions.
+- **The models' own cross-validation rises as much.** On their training
+  hosts the light-curve model goes from 0.808 to 0.848 (trained on 1 to 13)
+  and from 0.748 to 0.823 (14 to 26), and the model with the centroid test
+  from 0.849 to 0.884 and from 0.793 to 0.870.
+- **At the frozen threshold** the light-curve model keeps more planets (0.82
+  against 0.77, and 0.82 against 0.75) and rejects more false positives
+  (0.70 against 0.66, and 0.73 against 0.68). The veto flags about the same
+  stars as before: 129 false positives and 5 planets in sectors 14 to 26
+  (124 and 9), 111 and 8 in 1 to 13 (106 and 7).
+
+So each host's later sectors are worth about 0.06 of average precision to
+the light-curve model in both directions, and 0.03 to 0.04 to the model with
+the centroid test, which reaches 0.842 and 0.867 on its own search. That is
+close to the 0.855 and 0.880 of the views model in "Views, the centroid test
+and every label together", which folds at the catalogue's ephemeris, learns
+from 550 more labels and is scored on slightly fewer hosts.
+
+To reproduce, after the runs above (the first run downloads the later
+sectors of every host, about 5,800 curves at 10-minute and 200-second
+cadence, which takes hours through lightkurve; the search then takes 35 to
+55 minutes for each set of hosts on 4 cores):
+
+```bash
+python run_pipeline.py --train-sectors 1-13 --benchmark-centroids --stitch \
+    --centroids-every-sector --join-sectors 27-102 \
+    --benchmark-tois data/toi_benchmark/exofop_toi_2026-10-06.csv --benchmark-sectors 14-26
+```
+
+It writes to `results/toi_trained/stitched/centroids_every_sector/joined_27-102/`;
+`--pixel-features` and the other direction are as in the sections above.
 
 ---
 
@@ -2678,6 +2788,9 @@ Three further gaps:
   the hosts it can fold when it is given the catalogue ephemeris, but folded
   at the period the pipeline's own search found, the views add nothing to
   the pipeline's features (see "Views at the pipeline's own BLS period").
+  Searching every sector of each star, its later ones included, brings the
+  pipeline's own model with the centroid test to 0.842 there (see "Later
+  sectors, as more data").
 - **Labels.** Ground truth is known by construction here. On real data it has to
   come from a catalogue that inherits the selection function of the pipelines
   being benchmarked against, or from injection-recovery, which only measures
@@ -2685,8 +2798,9 @@ Three further gaps:
   the first, and shows the synthetic-trained model separates real planets from
   real TOI false positives only slightly better than a signal-to-noise
   ranking. Trained on the dispositions of other sectors, the same classifier
-  does clearly better (0.75 against 0.60 for that ranking, and 0.78 when each
-  star's sectors are searched together), but those labels
+  does clearly better (0.75 against 0.60 for that ranking, 0.78 when each
+  star's sectors are searched together, and 0.825 with its later sectors
+  added), but those labels
   carry the follow-up programme's selection, so it is a ranker of TOIs like
   the resolved ones.
 - **Sample size.** 96 positives in total and 34 in the test set. The bootstrap
@@ -2731,7 +2845,7 @@ transit-detection/
 │   │   ├── synthetic_tpf.py    # synthetic pixels: on-target transits and blends
 │   │   └── loader.py           # source -> feature matrix, parallel over curves
 │   ├── preprocess.py           # robust spline + rotation detrending
-│   ├── features.py             # BLS search and vetting statistics
+│   ├── features.py             # BLS search (windowed on long curves) and vetting statistics
 │   ├── fastbls.py              # the same BLS as array operations, NumPy or CuPy
 │   ├── tls.py                  # Transit Least Squares as the search
 │   ├── search_benchmark.py     # BLS against TLS on the same planets
@@ -2759,15 +2873,16 @@ transit-detection/
 │   ├── dashboard.py            # the batch's self-contained HTML dashboard
 │   ├── real_check.py           # known planets' fits and a real sector, against the archives
 │   └── plots.py                # figures (matplotlib Agg, no display)
-├── tests/                      # 549 tests, ~5 min
+├── tests/                      # 558 tests, ~5 min
 │   ├── test_generator.py       # imbalance is exact; injected physics is consistent
-│   ├── test_preprocess.py      # depth preservation; why the median was rejected
+│   ├── test_preprocess.py      # depth preservation; why the median was rejected; fit by segment
 │   ├── test_features.py        # recovery vs SNR; the vetting statistics fire
 │   ├── test_fastbls.py         # array BLS equals astropy's; engine changes nothing
 │   ├── test_tls.py             # TLS finds the period; same features; falls back
 │   ├── test_search.py          # two planets found; noise yields nothing
 │   ├── test_single.py          # lone and duo transits found; ramps and noise are not
 │   ├── test_stitch.py          # sectors joined, period grid grows with them; pair detected
+│   ├── test_windowed_search.py # long curves: the densest stretch's peaks chosen on all of it
 │   ├── test_evaluation.py      # no test-set leakage into threshold or metrics
 │   ├── test_calibration.py     # Platt fit, ranking unchanged, proper scores
 │   ├── test_treeshap.py        # SHAP against brute force and the shap package
@@ -2777,7 +2892,7 @@ transit-detection/
 │   ├── test_benchmark.py       # the real-label benchmark, offline, from a cache
 │   ├── test_benchmark_centroids.py  # the centroid veto on synthetic pixel scenes
 │   ├── test_toi_training.py    # training on TOI labels: threshold, pixels, learning curve
-│   ├── test_toi_stitch.py      # every sector of a host fetched, joined, scored, pixels tested
+│   ├── test_toi_stitch.py      # every sector of a host fetched, joined, scored, pixels tested; later sectors added
 │   ├── test_cadence.py         # later sectors' faster photometry averaged to 30 minutes
 │   ├── test_stars.py           # host-star parameters and the occultation allowance
 │   ├── test_files.py           # CSV and npz input

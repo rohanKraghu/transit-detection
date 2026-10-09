@@ -211,6 +211,7 @@ def load_or_fetch_stitched(
     sectors: Sequence[int],
     cache: str | Path,
     *,
+    join: Sequence[int] = (),
     author: str = "TESS-SPOC",
     exposure_time: int | None = 1800,
     n_workers: int = 8,
@@ -224,31 +225,49 @@ def load_or_fetch_stitched(
     moved to the first of its sectors that had a curve (whose pixel file the
     centroid test then reads; unchanged when none had one), and one curve per
     star that had any, both in the order given.
+
+    ``join`` names more sectors whose curves are added to a star that has a
+    curve in ``sectors``: more data for it, never a star of its own, and never
+    the sector it is moved to.  The curve's ``"sectors"`` then lists them
+    too, and ``"selection_sectors"`` the ones of ``sectors`` alone.
     """
     order = {s: i for i, s in enumerate(sectors)}
-    per_sector = [
-        replace(target, sector=s)
-        for target in targets
-        for s in sorted(
-            {s for toi in target.tois for s in toi.sectors if s in order}, key=order.get
+    extra = {s: len(order) + i for i, s in enumerate(s for s in join if s not in order)}
+
+    def fetch(wanted: Sequence[BenchmarkTarget], rank: Mapping[int, int]) -> list[LightCurve]:
+        per_sector = [
+            replace(target, sector=s)
+            for target in wanted
+            for s in sorted(
+                {s for toi in target.tois for s in toi.sectors if s in rank}, key=rank.get
+            )
+        ]
+        return load_or_fetch_curves(
+            per_sector, cache, author=author, exposure_time=exposure_time, n_workers=n_workers
         )
-    ]
+
     found: dict[str, list[LightCurve]] = {}
-    for lc in load_or_fetch_curves(
-        per_sector, cache, author=author, exposure_time=exposure_time, n_workers=n_workers
-    ):
+    for lc in fetch(targets, order):
         found.setdefault(lc.target_id, []).append(lc)
+    # Only a star with a curve of its own sectors is given more.
+    if extra:
+        for lc in fetch([t for t in targets if t.target_id in found], extra):
+            found[lc.target_id].append(lc)
     moved: list[BenchmarkTarget] = []
     curves: list[LightCurve] = []
     for target in targets:
-        star = found.get(target.target_id)
-        if not star:
+        star = found.get(target.target_id, [])
+        selected = [lc for lc in star if int(lc.meta["sector"]) in order]
+        if not selected:
             moved.append(target)
             continue
-        first = min(star, key=lambda lc: order[int(lc.meta["sector"])])
+        first = min(selected, key=lambda lc: order[int(lc.meta["sector"])])
         moved.append(replace(target, sector=int(first.meta["sector"])))
         joined = stitch_light_curves(star) if len(star) > 1 else star[0]
-        curves.append(replace(joined, meta={**joined.meta, "sector": first.meta["sector"]}))
+        meta = {**joined.meta, "sector": first.meta["sector"]}
+        if extra:
+            meta["selection_sectors"] = sorted(int(lc.meta["sector"]) for lc in selected)
+        curves.append(replace(joined, meta=meta))
     return moved, curves
 
 
@@ -710,6 +729,8 @@ class BenchmarkResult:
     #: Each star searched on every one of ``sectors`` it was observed in,
     #: joined, rather than on the first.
     stitched: bool = False
+    #: Further sectors added to each star's curve (``--join-sectors``), if any.
+    joined: str | None = None
 
     @property
     def positive_rate(self) -> float:
@@ -719,6 +740,7 @@ class BenchmarkResult:
         return {
             "sectors": self.sectors,
             "stitched": self.stitched,
+            **({"joined": self.joined} if self.joined else {}),
             "selection": self.selection,
             "n_without_curve": self.n_without_curve,
             "n_stars": self.n_stars,
@@ -807,6 +829,7 @@ def benchmark(
     comments: Mapping[str, str] | None = None,
     importance_repeats: int = 0,
     stitched: bool = False,
+    joined: str | None = None,
 ) -> BenchmarkResult:
     """Score the TOI hosts in ``dataset`` with ``trained`` at its frozen threshold.
 
@@ -944,6 +967,7 @@ def benchmark(
 
     return BenchmarkResult(
         stitched=stitched,
+        joined=joined,
         sectors=list(sectors),
         selection=dict(selection),
         n_without_curve=int(n_without_curve),
@@ -1019,6 +1043,8 @@ def format_benchmark_report(result: BenchmarkResult) -> str:
     add("REAL-LABEL BENCHMARK: TOI HOSTS WITH FOLLOW-UP DISPOSITIONS")
     add("=" * 72)
     per_star = "every sector of each star, joined" if result.stitched else "one sector per star"
+    if result.joined:
+        per_star += f", with its sectors of {result.joined} added"
     add(f"sectors: {', '.join(str(s) for s in result.sectors)} ({per_star})")
     add(
         f"stars in TOI table: {sel.get('stars_in_table', 0)}   unlabelled (PC/APC): "

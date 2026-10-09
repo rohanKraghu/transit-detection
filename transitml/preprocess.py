@@ -171,7 +171,7 @@ def split_on_gaps(
 # Robust least squares
 # --------------------------------------------------------------------------
 def robust_least_squares(
-    design: NDArray[np.float64],
+    design: NDArray[np.float64] | SegmentedDesign,
     values: NDArray[np.float64],
     *,
     iterations: int = 6,
@@ -196,9 +196,12 @@ def robust_least_squares(
     coefficients = np.zeros(design.shape[1])
     for _ in range(max(iterations, 1)):
         root = np.sqrt(weights)
-        coefficients, *_ = np.linalg.lstsq(
-            design * root[:, None], values * root, rcond=None
-        )
+        if isinstance(design, SegmentedDesign):
+            coefficients = design.weighted_lstsq(values, root)
+        else:
+            coefficients, *_ = np.linalg.lstsq(
+                design * root[:, None], values * root, rcond=None
+            )
         residual = values - design @ coefficients
         scale = robust_sigma(residual if exclude is None else residual[~exclude])
         if not np.isfinite(scale) or scale <= 0:
@@ -217,6 +220,28 @@ def robust_least_squares(
 # --------------------------------------------------------------------------
 # Trend model
 # --------------------------------------------------------------------------
+def spline_blocks(
+    time: NDArray[np.float64], config: PreprocessConfig
+) -> list[tuple[NDArray[np.int_], NDArray[np.float64]]]:
+    """``(rows, basis)`` for each gap-free segment: the pieces of :func:`spline_basis`."""
+    degree = config.spline_degree
+    blocks: list[tuple[NDArray[np.int_], NDArray[np.float64]]] = []
+    for segment in split_on_gaps(time, config.gap_threshold_days):
+        x = time[segment]
+        span = float(x[-1] - x[0]) if x.size else 0.0
+        if x.size < degree + 3 or span <= 0:
+            blocks.append((segment, np.ones((segment.size, 1))))
+            continue
+        n_interior = max(int(np.ceil(span / config.knot_spacing_days)) - 1, 0)
+        n_interior = min(n_interior, max(x.size - degree - 2, 0))
+        interior = np.linspace(x[0], x[-1], n_interior + 2)[1:-1]
+        knots = np.concatenate(
+            [np.full(degree + 1, x[0]), interior, np.full(degree + 1, x[-1])]
+        )
+        blocks.append((segment, BSpline.design_matrix(x, knots, degree, extrapolate=False).toarray()))
+    return blocks
+
+
 def spline_basis(
     time: NDArray[np.float64], config: PreprocessConfig
 ) -> NDArray[np.float64]:
@@ -226,27 +251,103 @@ def spline_basis(
     two halves of a sector are detrended independently while still being fitted
     in one linear system.
     """
-    degree = config.spline_degree
-    blocks: list[NDArray[np.float64]] = []
-    for segment in split_on_gaps(time, config.gap_threshold_days):
-        x = time[segment]
-        span = float(x[-1] - x[0]) if x.size else 0.0
-        if x.size < degree + 3 or span <= 0:
-            block = np.zeros((time.size, 1))
-            block[segment, 0] = 1.0
-            blocks.append(block)
-            continue
-        n_interior = max(int(np.ceil(span / config.knot_spacing_days)) - 1, 0)
-        n_interior = min(n_interior, max(x.size - degree - 2, 0))
-        interior = np.linspace(x[0], x[-1], n_interior + 2)[1:-1]
-        knots = np.concatenate(
-            [np.full(degree + 1, x[0]), interior, np.full(degree + 1, x[-1])]
+    return SegmentedDesign.spline(time, config).toarray()
+
+
+@dataclass(frozen=True)
+class SegmentedDesign:
+    """The trend model's design matrix, kept segment by segment.
+
+    The spline columns are block-diagonal over gap-free segments; only the
+    rotation columns (``shared``) span the whole curve.  Solved in that form, a
+    weighted fit is one small least-squares problem per segment plus one with a
+    column per rotation term, so its cost grows with the curve's length instead
+    of with its cube: a 34-sector curve, about 41,000 cadences and 1,300 spline
+    columns, took about 400 s to detrend as one dense matrix.  The fit is the
+    dense one's (the same minimum-norm solution), up to rounding.
+    """
+
+    n_rows: int
+    segments: tuple[NDArray[np.int_], ...]
+    blocks: tuple[NDArray[np.float64], ...]
+    shared: NDArray[np.float64]
+
+    @classmethod
+    def spline(cls, time: NDArray[np.float64], config: PreprocessConfig) -> SegmentedDesign:
+        pieces = spline_blocks(time, config) or [(np.arange(time.size), np.ones((time.size, 1)))]
+        return cls(
+            time.size,
+            tuple(rows for rows, _ in pieces),
+            tuple(block for _, block in pieces),
+            np.zeros((time.size, 0)),
         )
-        local = BSpline.design_matrix(x, knots, degree, extrapolate=False).toarray()
-        block = np.zeros((time.size, local.shape[1]))
-        block[segment] = local
-        blocks.append(block)
-    return np.hstack(blocks) if blocks else np.ones((time.size, 1))
+
+    @property
+    def shape(self) -> tuple[int, int]:
+        return self.n_rows, sum(b.shape[1] for b in self.blocks) + self.shared.shape[1]
+
+    def with_columns(self, columns: NDArray[np.float64]) -> SegmentedDesign:
+        """The same design with ``columns`` added to the shared ones."""
+        return SegmentedDesign(
+            self.n_rows, self.segments, self.blocks, np.hstack([self.shared, columns])
+        )
+
+    def toarray(self) -> NDArray[np.float64]:
+        parts = []
+        for rows, block in zip(self.segments, self.blocks, strict=True):
+            part = np.zeros((self.n_rows, block.shape[1]))
+            part[rows] = block
+            parts.append(part)
+        return np.hstack([*parts, self.shared])
+
+    def __matmul__(self, coefficients: NDArray[np.float64]) -> NDArray[np.float64]:
+        out = np.empty(self.n_rows)
+        start = 0
+        for rows, block in zip(self.segments, self.blocks, strict=True):
+            out[rows] = block @ coefficients[start : start + block.shape[1]]
+            start += block.shape[1]
+        return out + self.shared @ coefficients[start:]
+
+    def weighted_lstsq(
+        self, values: NDArray[np.float64], root: NDArray[np.float64]
+    ) -> NDArray[np.float64]:
+        """Minimise ``|root * (values - design @ c)|``: ``np.linalg.lstsq``, by segment.
+
+        Each segment's spline is fitted to the values and to every shared
+        column at once; the shared coefficients then come from what the
+        splines leave of both, and each segment's from its own fits less the
+        shared part.
+        """
+        targets = np.column_stack([values, self.shared]) * root[:, None]
+        left = np.empty_like(targets)
+        local = []
+        for rows, block in zip(self.segments, self.blocks, strict=True):
+            weighted = block * root[rows, None]
+            solution, *_ = np.linalg.lstsq(weighted, targets[rows], rcond=None)
+            left[rows] = targets[rows] - weighted @ solution
+            local.append(solution)
+        shared = (
+            np.linalg.lstsq(left[:, 1:], left[:, 0], rcond=None)[0]
+            if self.shared.shape[1]
+            else np.zeros(0)
+        )
+        return np.concatenate([s[:, 0] - s[:, 1:] @ shared for s in local] + [shared])
+
+    def column_mass(self, rows: NDArray[np.bool_]) -> NDArray[np.float64]:
+        """Each column's squared weight over the rows marked in ``rows``."""
+        local = [np.sum(b[rows[r]] ** 2, axis=0) for r, b in zip(self.segments, self.blocks, strict=True)]
+        return np.concatenate([*local, np.sum(self.shared[rows] ** 2, axis=0)])
+
+    def rows_using(self, columns: NDArray[np.bool_]) -> NDArray[np.bool_]:
+        """Rows where any of the marked columns is non-zero."""
+        out = np.zeros(self.n_rows, dtype=bool)
+        start = 0
+        for rows, block in zip(self.segments, self.blocks, strict=True):
+            wanted = columns[start : start + block.shape[1]]
+            if wanted.any():
+                out[rows] |= np.any(block[:, wanted] != 0.0, axis=1)
+            start += block.shape[1]
+        return out | np.any(self.shared[:, columns[start:]] != 0.0, axis=1)
 
 
 def harmonic_basis(
@@ -322,7 +423,9 @@ def bayesian_information_criterion(
 
 
 def release_starved(
-    design: NDArray[np.float64], exclude: NDArray[np.bool_], min_support: float
+    design: NDArray[np.float64] | SegmentedDesign,
+    exclude: NDArray[np.bool_],
+    min_support: float,
 ) -> NDArray[np.bool_]:
     """Unmask the cadences of any basis function a mask leaves almost unconstrained.
 
@@ -335,11 +438,17 @@ def release_starved(
     weight outside the mask gets its cadences back, so there the fit is the
     blind one again rather than an arbitrary one.
     """
-    mass = np.sum(design**2, axis=0)
-    kept = np.sum(design[~exclude] ** 2, axis=0)
+    if isinstance(design, SegmentedDesign):
+        mass = design.column_mass(np.ones(design.n_rows, dtype=bool))
+        kept = design.column_mass(~exclude)
+    else:
+        mass = np.sum(design**2, axis=0)
+        kept = np.sum(design[~exclude] ** 2, axis=0)
     starved = kept < min_support * mass
     if not starved.any():
         return exclude
+    if isinstance(design, SegmentedDesign):
+        return exclude & ~design.rows_using(starved)
     return exclude & ~np.any(design[:, starved] != 0.0, axis=1)
 
 
@@ -372,7 +481,7 @@ def fit_trend(
     ``exclude`` marks cadences to keep out of every fit (see :func:`flatten`).
     The trend is still evaluated there.
     """
-    design = spline_basis(time, config)
+    design = SegmentedDesign.spline(time, config)
     if exclude is not None:
         exclude = release_starved(design, exclude, config.mask_min_support)
         if not exclude.any():
@@ -399,8 +508,8 @@ def fit_trend(
             candidate = peak * multiple
             if candidate > 0.5 * float(time[-1] - time[0]):
                 continue
-            trial = np.hstack(
-                [design, harmonic_basis(time, candidate, config.rotation_harmonics * multiple)]
+            trial = design.with_columns(
+                harmonic_basis(time, candidate, config.rotation_harmonics * multiple)
             )
             # Cheap scan: the candidates only need ranking, and three IRLS
             # cycles are enough for the weights to settle on the transit.

@@ -174,6 +174,8 @@ class TrainingSummary:
     combination: str | None = None
     #: Each star searched on every one of ``sectors`` it was observed in, joined.
     stitched: bool = False
+    #: Further sectors added to each star's curve (``--join-sectors``), if any.
+    joined: str | None = None
 
     @property
     def positive_rate(self) -> float:
@@ -183,6 +185,7 @@ class TrainingSummary:
         return {
             "sectors": self.sectors,
             "stitched": self.stitched,
+            **({"joined": self.joined} if self.joined else {}),
             "selection": self.selection,
             "n_without_curve": self.n_without_curve,
             "n_stars": self.n_stars,
@@ -232,6 +235,7 @@ def summarise_training(
     n_bootstrap: int = N_BOOTSTRAP,
     centroids: Sequence[dict[str, Any] | None] | None = None,
     stitched: bool = False,
+    joined: str | None = None,
 ) -> TrainingSummary:
     """Out-of-fold ranking and operating point of ``trained`` on its own training hosts."""
     y = split.y_train
@@ -251,6 +255,7 @@ def summarise_training(
     survey_kept = oof >= survey_threshold
     return TrainingSummary(
         stitched=stitched,
+        joined=joined,
         sectors=list(sectors),
         selection=dict(selection),
         n_without_curve=int(n_without_curve),
@@ -372,6 +377,8 @@ def format_training_report(
     )
     if summary.stitched:
         add("  each searched on every one of these sectors it was observed in, joined")
+    if summary.joined:
+        add(f"  with every sector of {summary.joined} it was observed in added to its curve")
     if sel.get("from_a_later_sector"):
         add(
             f"  of which {sel['from_a_later_sector']} from a later sector than their first, "

@@ -270,6 +270,16 @@ class BLSConfig:
     #: uses its own period and duration grids between the same period limits).
     #: Part of the saved model, so ``vet`` searches the way training did.
     search: str = "bls"
+    #: A curve spanning more than this many days (several years of sectors
+    #: joined) is not searched on one grid over all of it, which would need
+    #: hundreds of thousands of trial periods.  The grid search runs on the
+    #: densest stretch of this length; each of its ``candidate_peaks``
+    #: strongest distinct peaks, with its half and its double, is then
+    #: fitted again on the whole curve with a fine grid around it, and
+    #: the one with the highest SNR there is the signal
+    #: (:func:`transitml.features.windowed_search`).  ``None``: always one grid.
+    max_search_baseline_days: float | None = None
+    candidate_peaks: int = 10
 
 
 @dataclass(frozen=True)

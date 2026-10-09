@@ -1,0 +1,150 @@
+========================================================================
+REAL-LABEL BENCHMARK: TOI HOSTS WITH FOLLOW-UP DISPOSITIONS
+========================================================================
+sectors: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13 (every sector of each star, joined, with its sectors of 27-102 added)
+stars in TOI table: 7826   unlabelled (PC/APC): 5151   not observed in these sectors: 1531   in the training set: 0
+selected: 1144   no light curve at MAST: 287   scored: 857
+scored stars: 459 planets (CP/KP), 398 false positives (FP/FA), positive rate 53.6%
+
+At the frozen operating threshold (chosen on the training split only)
+------------------------------------------------------------------------
+  threshold: 0.4901
+  confirmed planets kept (recall):       0.821
+  known false positives rejected:        0.729
+    FA   n = 33    rejected 0.788
+    FP   n = 365   rejected 0.723
+  precision at this catalogue's mix:     0.777   (not a survey precision; see below)
+
+  Confusion matrix (rows = disposition, cols = prediction)
+                          pred: no planet    pred: planet
+    FP / FA                         290             108
+    CP / KP                          82             377
+
+Ranking (average precision; chance = positive rate)
+------------------------------------------------------------------------
+  random ranking (chance)            AP = 0.536
+  baseline: depth_threshold          AP = 0.650  [0.628, 0.676]   (ROC-AUC 0.669)
+  baseline: bls_snr                  AP = 0.661  [0.639, 0.687]   (ROC-AUC 0.674)
+  model: gradient boosting           AP = 0.858  [0.843, 0.876]   (ROC-AUC 0.853)
+  (brackets are 68% bootstrap intervals)
+  the model beats the best baseline in 100.0% of paired bootstrap resamples
+  precision of model_top20                    0.950
+  precision of depth_threshold_top20          0.450
+  precision of bls_snr_top20                  0.650
+
+Centroid veto: is the dip on the target?
+------------------------------------------------------------------------
+  stars with a pixel file: 857 of 857   (centroid_outside_window 12, no_in_transit_cadences 12, ok 765, weak_difference_image 68)
+  each tested in every sector it was joined from (2001 pixel files) and the tests combined:
+  significance by Stouffer's method, offset length weighted by its error, SNR in quadrature,
+  a sector whose centroid falls outside its window left out
+  flagged as off target (difference-image centroid at least 3 sigma and 0.5 pixel
+  from the catalogue position, on the search's own ephemeris):
+    planets (CP/KP)            n = 459  with pixels 459  flagged 8    (2%)
+    false positives (FP/FA)    n = 398  with pixels 398  flagged 111  (28%)
+    CP                         n = 277  with pixels 277  flagged 7    (3%)
+    FA                         n = 33   with pixels 33   flagged 1    (3%)
+    FP                         n = 365  with pixels 365  flagged 110  (30%)
+    KP                         n = 182  with pixels 182  flagged 1    (1%)
+    FP, off target             n = 175  with pixels 175  flagged 75   (43%)
+    FP, binary on target       n = 104  with pixels 104  flagged 13   (12%)
+    FP, not stated             n = 86   with pixels 86   flagged 22   (26%)
+  model with the centroid veto       AP = 0.873  [0.859, 0.891]   (ROC-AUC 0.873)
+  gain over the model alone: +0.015 [+0.010, +0.020]; the veto wins in 100.0% of paired resamples
+  at the frozen threshold: planets kept 0.821 -> 0.810, false positives rejected 0.729 -> 0.784
+  flagged at other offset floors (planets / false positives, of those with pixels):
+    0.10 pixel   19.6% / 40.2%
+    0.25 pixel   6.5% / 32.4%
+    0.50 pixel   1.7% / 27.9%
+    1.00 pixel   0.4% / 20.6%
+
+What the model leans on here: average precision lost when one feature is
+shuffled across these stars (mean and spread of the shuffles)
+------------------------------------------------------------------------
+  delta_loglike                  +0.056 +/- 0.008
+  secondary_sigma                +0.046 +/- 0.009
+  log_scatter                    +0.027 +/- 0.009
+  odd_even_sigma                 +0.025 +/- 0.005
+  log_depth                      +0.020 +/- 0.003
+  bls_depth_over_scatter         +0.017 +/- 0.003
+  harmonic_amp_over_depth        +0.016 +/- 0.002
+  flat_bottom_fraction           +0.012 +/- 0.003
+  log_duration_ratio             +0.011 +/- 0.003
+  half_period_depth_ratio        +0.011 +/- 0.005
+
+Did the search find the catalogued signal?
+------------------------------------------------------------------------
+  BLS period matches the TOI period (or a low-order alias): planets 0.91, false positives 0.82
+  planet recall when the period was found: 0.85   when it was not: 0.56
+
+  recall by catalogue TOI SNR (all sectors; these sectors are scored here)
+  SNR bin             n   recall   search
+  0 - 10             19     0.63     0.84
+  10 - 20            92     0.71     0.79
+  20 - 40           107     0.76     0.91
+  40 - inf          241     0.91     0.96
+
+Kept at the threshold, by catalogued depth: does the model separate the
+classes, or rank both by signal strength?
+  depth (ppm)      planets   kept    FPs   kept
+  0 - 1000              88   0.83    131   0.21
+  1000 - 3000           92   0.71    110   0.19
+  3000 - 6000           56   0.79     61   0.31
+  6000 - 10000          70   0.86     35   0.54
+  10000 - inf          153   0.88     61   0.34
+
+Highest-SNR confirmed planets the model rejected
+------------------------------------------------------------------------
+  TIC 429302040   TOI 1905.01  KP  S10  SNR  288.0  P    5.72 d  BLS    5.72 d  score 0.289
+                  odd/even 2.2 sigma, secondary -0.7 sigma, red-noise beta 2.64
+  TIC 261867566   TOI 905.01   CP  S12  SNR  220.4  P    3.74 d  BLS    3.74 d  score 0.447
+                  odd/even 1.9 sigma, secondary 0.7 sigma, red-noise beta 1.19
+  TIC 360742636   TOI 1076.01  KP  S13  SNR  194.4  P    2.55 d  BLS    2.55 d  score 0.471
+                  odd/even 1.6 sigma, secondary -0.4 sigma, red-noise beta 1.28
+  TIC 55652896    TOI 216.01   CP  S1   SNR  147.8  P   34.51 d  BLS   34.45 d  score 0.277
+                  odd/even 0.8 sigma, secondary -0.3 sigma, red-noise beta 4.29
+  TIC 254113311   TOI 1130.01  CP  S13  SNR  129.0  P    8.35 d  BLS    8.35 d  score 0.243
+                  odd/even 0.7 sigma, secondary -1.1 sigma, red-noise beta 1.99
+  TIC 391903064   TOI 3353.01  CP  S1   SNR  122.9  P    4.67 d  BLS  338.27 d  score 0.174
+                  odd/even 0.0 sigma, secondary 4.0 sigma, red-noise beta 4.44, period not recovered
+  TIC 243200602   TOI 826.01   KP  S11  SNR  120.0  P   11.55 d  BLS   11.55 d  score 0.266
+                  odd/even 0.4 sigma, secondary 0.4 sigma, red-noise beta 1.77
+  TIC 409794137   TOI 1478.01  CP  S7   SNR  118.0  P   10.18 d  BLS   10.18 d  score 0.416
+                  odd/even 0.5 sigma, secondary 1.0 sigma, red-noise beta 1.16
+  TIC 271168962   TOI 828.01   KP  S11  SNR  115.7  P    5.32 d  BLS    5.32 d  score 0.345
+                  odd/even 5.7 sigma, secondary 0.0 sigma, red-noise beta 1.28
+  TIC 122612091   TOI 264.01   KP  S3   SNR  111.0  P    2.22 d  BLS    2.22 d  score 0.172
+                  odd/even 1.8 sigma, secondary 0.0 sigma, red-noise beta 1.12
+  ... and 72 more
+
+Highest-scoring false positives the model kept
+------------------------------------------------------------------------
+  TIC 294090620   TOI 587.01   FP  S8   SNR  183.1  P    8.04 d  BLS    8.04 d  score 0.988
+                  odd/even 0.1 sigma, secondary 0.0 sigma, red-noise beta 5.50
+  TIC 70887357    TOI 2008.01  FP  S5   SNR   67.2  P  723.83 d  BLS   23.35 d  score 0.957
+                  odd/even 0.9 sigma, secondary -1.3 sigma, red-noise beta 1.01, period not recovered
+  TIC 339636032   TOI 688.01   FP  S3   SNR   24.0  P    6.88 d  BLS    6.88 d  score 0.930
+                  odd/even 0.5 sigma, secondary 0.0 sigma, red-noise beta 1.09
+  TIC 302659412   TOI 1957.01  FP  S9   SNR   10.0  P   14.52 d  BLS   14.52 d  score 0.918
+                  odd/even 1.8 sigma, secondary -0.5 sigma, red-noise beta 1.03
+  TIC 271581073   TOI 1101.01  FP  S13  SNR   54.0  P    2.67 d  BLS    2.67 d  score 0.896
+                  odd/even 0.8 sigma, secondary 0.0 sigma, red-noise beta 1.09
+  TIC 279999655   TOI 959.01   FP  S7   SNR  145.0  P    1.54 d  BLS    1.54 d  score 0.891
+                  odd/even 0.1 sigma, secondary -2.0 sigma, red-noise beta 1.34
+  TIC 311183180   TOI 550.02   FP  S5   SNR   85.7  P   10.04 d  BLS   13.25 d  score 0.888
+                  odd/even 0.2 sigma, secondary -0.1 sigma, red-noise beta 14.99, period not recovered
+  TIC 19451711    TOI 522.01   FA  S7   SNR    9.4  P    0.40 d  BLS    9.93 d  score 0.884
+                  odd/even 2.6 sigma, secondary 0.1 sigma, red-noise beta 1.12, period not recovered
+  TIC 362709886   TOI 4420.01  FP  S12  SNR   88.8  P    4.73 d  BLS    4.73 d  score 0.881
+                  odd/even 0.9 sigma, secondary 0.0 sigma, red-noise beta 1.63
+  TIC 360286627   TOI 1042.01  FP  S9   SNR   13.1  P    0.76 d  BLS   32.40 d  score 0.876
+                  odd/even 1.5 sigma, secondary -0.2 sigma, red-noise beta 2.20, period not recovered
+  ... and 98 more
+
+Reading these numbers
+------------------------------------------------------------------------
+  Every star here is a TOI: both classes already passed a TESS pipeline's
+  detection and vetting, so the false positives are the hard ones. The
+  catalogue sets the positive rate, so precision here is not survey
+  precision; recall and false-positive rejection are the transferable numbers.
+========================================================================
