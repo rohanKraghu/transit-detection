@@ -3229,8 +3229,12 @@ on. Sizes are rough: S is a few hours, M a day or two, L longer.
 
 **Next**
 
-Every item on the original roadmap is built, and nothing is in progress;
-the next step has not been chosen yet.
+Every item on the original roadmap is built. What the results above point
+to next:
+
+| Item | Why | Size |
+| --- | --- | --- |
+| Long-period recovery, in progress | Even with every sector joined, the search finds the catalogued period for only about half of the TOIs with periods longer than a sector (50% and 51%), against 87% to 88% overall | M |
 
 ## References
 
