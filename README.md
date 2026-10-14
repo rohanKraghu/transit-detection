@@ -20,7 +20,7 @@ whose coverage is measured by injection.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python run_pipeline.py            # ~3 min on 4 cores
-pytest                            # ~5 min, 560 tests
+pytest                            # ~5 min, 566 tests
 ```
 
 It writes `results/metrics.json`, `results/report.txt`, the trained model
@@ -1305,6 +1305,102 @@ resamples in which leaving the strongest transit out scores higher):
 So the search now reports the catalogued period more often, at no
 measurable cost to the ranking; the change was made for the period, and the
 ranking numbers are reported as they came out, not tuned.
+
+### Ranking the open TOIs
+
+Every benchmark above scores TOIs whose fate is already known. The point of
+a vetting model is the ones that are not: `--rank-open-tois` turns it on the
+4,059 stars of sectors 1 to 26 with a PC or APC TOI and no confirmed or
+known planet. They are searched exactly as the benchmark's hosts are (every
+sector of the star together, sectors 27 to 102 joined, the search of "One
+deep event against many transits") and scored by the light-curve model
+trained on all 1,623 resolved hosts of sectors 1 to 26 at once, rather than
+on one half (cross-validated AP 0.861). The centroid test runs on the 200
+best-ranked stars only, where a dip on another star matters most.
+
+```bash
+python run_pipeline.py --train-sectors 1-26 --rank-open-tois \
+    --benchmark-tois data/toi_benchmark/exofop_toi_2026-10-06.csv \
+    --stitch --centroids-every-sector --join-sectors 27-102 \
+    --archive-planets data/toi_benchmark/archive_planets_2026-10-14.csv
+```
+
+`open_tois.csv` under
+`results/toi_trained/stitched/centroids_every_sector/joined_27-102/open_tois/`
+has one row per star, best first: the TOI, its catalogued and searched
+periods, the model score, P(planet), the odd/even and secondary statistics
+and the centroid verdict. `open_tois.txt` is the summary below.
+
+There is no average precision here, because nobody knows yet which of these
+are planets. What can be said:
+
+- **Half the open hosts have no light curve here.** 1,856 of the 4,059 have
+  a TESS-SPOC curve in sectors 1 to 26. The rest, fainter at a median TESS
+  magnitude of 12.9, have none in those sectors, and TESS-SPOC is the only
+  photometry this pipeline reads.
+- **The open TOIs are harder than the resolved ones.** Their median TESS
+  magnitude is 11.15 against 10.43, their TOI SNR 19 against 29, their depth
+  2,100 against 2,550 ppm and their period 5.6 against 3.9 days. P(planet)
+  is calibrated on resolved TOIs at their 51% planet rate, so it is the
+  chance that a resolved TOI which looked like this one turned out a planet,
+  not a forecast for this population.
+- **The search finds the catalogued period for 87%** (1,568 of the 1,810
+  with one), as on the benchmark. Where it does not, the score describes the
+  signal the search found (TOI-6267.01, catalogued at 734 days, ranks 20th on
+  a 19.6-day signal); `period_recovered` in the table says which.
+- **1,142 (62%) are above the operating threshold**, P(planet) of 0.5. Of
+  the 1,605 PCs 64% are, at a median P(planet) of 0.63; of the 251 APCs,
+  candidates where follow-up has already raised a doubt, 45% are, at 0.46.
+  The model never saw those dispositions, and it leans the same way.
+- **The top of the list is giant-planet depths.** 63 of the top 100 are
+  deeper than 0.5%, against 29% of the whole list, at a median period of 3.8
+  days. Among the training hosts, 71% of the TOIs that deep at under 10
+  days were planets, against 51% of all of them.
+- **The centroid test** places the dip for 178 of the top 200: on the
+  target for 176 and off it for 2 (TOI-6777.01, ranked 151st, and
+  TOI-4451.01, 160th). For 18 the difference image is too weak to say, and
+  4 have too few cadences in transit or a centroid outside the window.
+
+One check is possible all the same. Dispositions on ExoFOP lag the
+literature, so some open TOIs are already confirmed planets in the NASA
+Exoplanet Archive. 101 of the 1,856 are (the same TIC star with a planet at
+the TOI's period, within 1%, in the archive's `pscomppars` table of
+2026-10-14, kept as `data/toi_benchmark/archive_planets_2026-10-14.csv`; 100
+of them discovered in 2025 or 2026). None of them was in training. Where
+they sit in the ranking, against orderings by what follow-up itself favours:
+
+| Ordering | ROC-AUC, archive planets against the rest |
+|---|---|
+| model score | 0.621 |
+| TOI SNR | 0.505 |
+| TOI depth | 0.445 |
+| brightness | 0.482 |
+
+79% of them are above the threshold, against 61% of the rest and the 84% of
+planets the model keeps out of fold in training. The model's AUC is above
+the SNR's in all of 2000 paired resamples. The rest still hold many planets,
+so 0.62 is a floor on the separation, not a measure of it, and the archive
+planets are the ones follow-up chose to confirm first. 11 are in the top 100,
+three of them in the top 25.
+
+| Rank | TOI | Star | Disposition | Tmag | Period (d) | Depth (ppm) | P(planet) | Centroid | Archive |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | 2645.01 | TIC 372818426 | PC | 12.4 | 1.444 | 43,370 | 0.97 | on target | |
+| 2 | 202.01 | TIC 355509914 | PC | 14.7 | 1.739 | 13,711 | 0.96 | too weak | |
+| 3 | 2069.01 | TIC 198187049 | PC | 8.0 | 5.921 | 140 | 0.96 | too weak | |
+| 4 | 4283.01 | TIC 343952976 | PC | 11.2 | 3.013 | 13,660 | 0.96 | on target | |
+| 5 | 2082.01 | TIC 160039081 | PC | 7.8 | 30.200 | 520 | 0.95 | on target | |
+| 6 | 702.01 | TIC 237914496 | PC | 11.8 | 3.568 | 907 | 0.95 | on target | |
+| 7 | 2031.01 | TIC 470127886 | PC | 10.8 | 5.716 | 12,241 | 0.94 | on target | TOI-2031 A b |
+| 8 | 234.01 | TIC 12423815 | PC | 14.6 | 2.839 | 35,230 | 0.94 | on target | |
+| 9 | 3686.01 | TIC 13533330 | PC | 11.2 | 5.078 | 14,469 | 0.94 | on target | |
+| 10 | 1398.01 | TIC 66445643 | APC | 8.6 | 6.556 | 861 | 0.94 | on target | |
+
+So the list ranks the open TOIs by how much they look like the resolved
+planets, with a probability calibrated on those, and the one check available
+says it carries information that SNR, depth and brightness do not. It is not
+a measured precision, a 43,000 ppm dip at the top may yet be a grazing
+binary, and it says nothing about the 2,203 hosts without a TESS-SPOC curve.
 
 ---
 
@@ -2862,7 +2958,10 @@ Three further gaps:
   star's sectors are searched together, and 0.811 with its later sectors
   added), but those labels
   carry the follow-up programme's selection, so it is a ranker of TOIs like
-  the resolved ones.
+  the resolved ones. On the 1,856 open TOI hosts with a light curve it puts
+  the 101 that the literature has since confirmed above the rest (ROC-AUC
+  0.62, where the TOI's SNR gives 0.51), the one check of the open list
+  possible before their dispositions arrive (see "Ranking the open TOIs").
 - **Sample size.** 96 positives in total and 34 in the test set. The bootstrap
   interval on average precision is [0.671, 0.819], roughly ±0.074, so the
   move from 0.80 to 0.74 between the last two versions of this README is
@@ -2918,6 +3017,7 @@ transit-detection/
 │   ├── evaluate.py             # PR curves, AP, confusion matrix, failure analysis
 │   ├── benchmark.py            # the trained model scored on real TOI dispositions
 │   ├── toi_training.py         # the same classifier trained on TOI dispositions
+│   ├── open_tois.py            # the open TOIs ranked by the TOI-trained model
 │   ├── views.py                # global, local, odd, even, secondary folded views
 │   ├── kepler_dr25.py          # python -m transitml.kepler_dr25: training set + model
 │   ├── cnn.py                  # python -m transitml.cnn: CNN on the views (needs torch)
@@ -2933,7 +3033,7 @@ transit-detection/
 │   ├── dashboard.py            # the batch's self-contained HTML dashboard
 │   ├── real_check.py           # known planets' fits and a real sector, against the archives
 │   └── plots.py                # figures (matplotlib Agg, no display)
-├── tests/                      # 560 tests, ~5 min
+├── tests/                      # 566 tests, ~5 min
 │   ├── test_generator.py       # imbalance is exact; injected physics is consistent
 │   ├── test_preprocess.py      # depth preservation; why the median was rejected; fit by segment
 │   ├── test_features.py        # recovery vs SNR; the vetting statistics fire
@@ -2952,6 +3052,7 @@ transit-detection/
 │   ├── test_benchmark.py       # the real-label benchmark, offline, from a cache
 │   ├── test_benchmark_centroids.py  # the centroid veto on synthetic pixel scenes
 │   ├── test_toi_training.py    # training on TOI labels: threshold, pixels, learning curve
+│   ├── test_open_tois.py       # open TOIs selected, ranked and written, with no AP
 │   ├── test_toi_stitch.py      # every sector of a host fetched, joined, scored, pixels tested; later sectors added
 │   ├── test_cadence.py         # later sectors' faster photometry averaged to 30 minutes
 │   ├── test_stars.py           # host-star parameters and the occultation allowance
