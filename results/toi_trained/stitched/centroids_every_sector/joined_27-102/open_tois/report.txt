@@ -1,0 +1,27 @@
+========================================================================
+TRAINED ON REAL LABELS: TOI HOSTS OF SECTORS 1 TO 26
+========================================================================
+stars in TOI table: 7826   unlabelled (PC/APC): 5151   not observed in these sectors: 528
+selected: 2147   no light curve at MAST: 524   trained on: 1623
+  each searched on every one of these sectors it was observed in, joined
+  with every sector of 27-102 it was observed in added to its curve
+  of which 32 from a later sector than their first, which MAST had no light curve for
+training stars: 835 planets (CP/KP), 788 false positives (FP/FA), planet rate 51.4%
+model inputs: the 23 light-curve features
+
+5-fold cross-validation on the training stars (out-of-fold scores)
+------------------------------------------------------------------------
+  random ranking (chance)            AP = 0.514
+  baseline: depth_threshold          AP = 0.613  [0.596, 0.633]   (ROC-AUC 0.639)
+  baseline: bls_snr                  AP = 0.633  [0.616, 0.652]   (ROC-AUC 0.654)
+  model: gradient boosting           AP = 0.861  [0.849, 0.873]   (ROC-AUC 0.867)
+  (brackets are 68% bootstrap intervals)
+
+Operating threshold
+------------------------------------------------------------------------
+  score >= 0.4780: calibrated P(planet) >= 0.50 at the training planet rate (51.4%)
+  out of fold: planets kept 0.84, false positives rejected 0.73, precision 0.77
+  the survey rule would keep 1.00 of the planets and reject 0.00 of the false positives:
+    max recall subject to Wilson 1-sigma lower bound on CV precision >= 0.50 (bound 0.502 at 1623 candidates)
+  calibration: P(planet) = expit(0.928 * log-odds + 0.082)
+========================================================================
