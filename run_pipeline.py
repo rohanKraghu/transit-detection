@@ -113,6 +113,9 @@ ROOT = Path(__file__).resolve().parent
 #: With --join-sectors, the BLS grid search runs on the densest this-many days
 #: of a curve (a year of one hemisphere is about 357) and refines on the rest.
 JOINED_SEARCH_BASELINE_DAYS = 400.0
+#: With --join-sectors, pairs of single dips propose periods down to this
+#: (``BLSConfig.pair_min_period_days``).
+JOINED_PAIR_MIN_PERIOD_DAYS = 10.0
 
 
 def _display_path(path: Path) -> str:
@@ -519,7 +522,11 @@ def apply_overrides(config: Config, args: argparse.Namespace) -> Config:
     if getattr(args, "join_sectors", None) is not None:
         config = replace(
             config,
-            bls=replace(config.bls, max_search_baseline_days=JOINED_SEARCH_BASELINE_DAYS),
+            bls=replace(
+                config.bls,
+                max_search_baseline_days=JOINED_SEARCH_BASELINE_DAYS,
+                pair_min_period_days=JOINED_PAIR_MIN_PERIOD_DAYS,
+            ),
         )
     return config
 

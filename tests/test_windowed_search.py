@@ -17,9 +17,11 @@ from transitml.features import (
     leave_one_out_snr,
     run_bls,
     signal_detection_efficiency,
+    transit_epochs,
 )
 from transitml.preprocess import flatten
 from transitml.search import transit_mask
+from transitml.single import pair_periods
 
 CADENCE = 30.0 / 1440.0
 
@@ -29,13 +31,15 @@ def segments(starts, length):
     return np.concatenate([s + np.arange(0.0, length, CADENCE) for s in starts])
 
 
-def planet_curve(time, period, epoch, depth=2e-3, duration=0.12, sigma=5e-4, seed=0, event=None):
-    """``event``: ``(time, duration, depth)`` of one more dip, at no period."""
+def planet_curve(
+    time, period, epoch, depth=2e-3, duration=0.12, sigma=5e-4, seed=0, event=None, events=()
+):
+    """``event``: ``(time, duration, depth)`` of one more dip, at no period; ``events``, several."""
     rng = np.random.default_rng(seed)
     flux = np.ones_like(time)
     flux[transit_mask(time, period, epoch, duration, 0.5)] -= depth
-    if event is not None:
-        flux[np.abs(time - event[0]) < 0.5 * event[1]] -= event[2]
+    for t0, width, dip in ([event] if event is not None else []) + list(events):
+        flux[np.abs(time - t0) < 0.5 * width] -= dip
     flux += rng.normal(0.0, sigma, time.size)
     return LightCurve("TEST-WINDOW", time, flux, np.full(time.size, sigma))
 
@@ -149,3 +153,36 @@ def test_one_deep_event_does_not_outscore_a_planet():
 
     found = run_bls(lc, BLSConfig(max_search_baseline_days=400.0))
     assert found["period"] == pytest.approx(period, rel=1e-4)
+
+
+def test_a_planet_with_one_transit_in_the_window_is_found_from_a_pair_of_its_dips():
+    period, epoch = 41.11, 12.7
+    # Three sectors in a row, then one a year: the transits on data are at
+    # 12.7 (the only one in the densest 400 days), 711.6 and 1122.7.
+    time = segments([0.0, 27.4, 54.8, 700.0, 1100.0, 1500.0], 26.0)
+    lc = flatten(planet_curve(time, period, epoch, depth=3e-3, duration=0.2))
+    config = BLSConfig(max_search_baseline_days=400.0)
+    assert transit_epochs(lc, period, epoch, 0.2) == 3
+
+    alone = run_bls(lc, config)
+    assert abs(alone["period"] / period - 1.0) > 0.01, "no peak in the window to refine"
+
+    found = run_bls(lc, replace(config, pair_min_period_days=10.0))
+    assert found["period"] == pytest.approx(period, rel=1e-4)
+    # The window's trial period nearest it stands in for the peak.
+    window_period = found["periods"][found["best_index"]]
+    assert window_period == pytest.approx(min(period, found["periods"][-1]), rel=0.01)
+
+
+def test_two_dips_and_nothing_between_them_on_data_give_the_shortest_period_they_allow():
+    # Two matching dips 600 days apart, and no other cadence that any of the
+    # periods they allow puts in transit: the data cannot choose, the shortest stands.
+    time = segments([0.0, 300.0, 600.0], 26.0)
+    dips = [(10.0, 0.2, 3e-3), (610.0, 0.2, 3e-3)]
+    lc = flatten(planet_curve(time, 1e4, -1.0, depth=0.0, events=dips))
+    allowed = [p for periods, _ in pair_periods(lc, 10.0) for p in periods]
+    assert any(p == pytest.approx(600.0, rel=1e-3) for p in allowed)
+    assert all(transit_epochs(lc, p, 10.0, 0.2) == 2 for p in allowed)
+
+    found = run_bls(lc, BLSConfig(max_search_baseline_days=400.0, pair_min_period_days=10.0))
+    assert found["period"] == pytest.approx(min(allowed), rel=1e-3)

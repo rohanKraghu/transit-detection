@@ -281,6 +281,12 @@ class BLSConfig:
     #: (:func:`transitml.features.windowed_search`).  ``None``: always one grid.
     max_search_baseline_days: float | None = None
     candidate_peaks: int = 10
+    #: With the windowed search, pairs of the strongest single dips anywhere
+    #: on the curve also propose periods down to this many days
+    #: (:func:`transitml.single.pair_periods`): a planet with one transit in
+    #: the densest stretch and more elsewhere has no peak there to refine.
+    #: Shorter periods put several transits in any stretch.  ``None``: off.
+    pair_min_period_days: float | None = None
 
 
 @dataclass(frozen=True)
