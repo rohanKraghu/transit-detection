@@ -76,3 +76,6 @@ results/real_planets/reports/**/*.png
 # The full 34,032-TCE set and its CNN weights.
 results/kepler_dr25/full/training_set.npz
 results/kepler_dr25/full_cnn/cnn_models.pt
+results/**/open_curves.npz
+results/**/open_curves.tried.json
+results/**/open_tpfs/
