@@ -63,7 +63,9 @@ trains on every labelled TOI host of sectors 1 to 26 and ranks the open ones
 (a PC or APC TOI, no CP or KP on the star) of the same sectors, with the
 centroid test on the top ``--open-centroids`` of the list
 (:mod:`transitml.open_tois`); writes ``open_tois.csv``, ``.json`` and ``.txt``
-to an ``open_tois/`` subdirectory.
+to an ``open_tois/`` subdirectory.  ``--archive-planets`` names the open TOIs
+the NASA Exoplanet Archive already lists as planets and reports where they
+rank.
 """
 
 from __future__ import annotations
@@ -353,6 +355,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Directory of their target pixel files; None means open_tpfs/ beside --open-cache.",
     )
+    labels.add_argument(
+        "--archive-planets",
+        type=Path,
+        default=None,
+        help="With --rank-open-tois: a NASA Exoplanet Archive planet table (CSV with pl_name, "
+        "tic_id, pl_orbper) to mark the open TOIs already confirmed in the literature and "
+        "report where they rank.",
+    )
     args = parser.parse_args(argv)
     default_results = args.results_dir == ROOT / "results"
     default_figures = args.figures_dir == ROOT / "figures"
@@ -388,6 +398,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             )
         if args.open_centroids < 0:
             parser.error("--open-centroids must be 0 or more")
+    elif args.archive_planets is not None:
+        parser.error("--archive-planets is for --rank-open-tois")
     if args.train_sectors is not None:
         if args.benchmark_tois is None or (
             args.benchmark_sectors is None and not args.rank_open_tois
@@ -860,6 +872,7 @@ def rank_open_tois(
     from transitml.open_tois import (
         format_open_report,
         rank_open_hosts,
+        read_archive_planets,
         write_open_ranking,
     )
 
@@ -889,6 +902,8 @@ def rank_open_tois(
         centroids=hosts.centroids,
         stitched=hosts.stitched,
         joined=hosts.joined,
+        archive=None if args.archive_planets is None else read_archive_planets(args.archive_planets),
+        archive_name=None if args.archive_planets is None else Path(args.archive_planets).name,
     )
     print()
     print(format_open_report(result))
@@ -900,6 +915,7 @@ def rank_open_tois(
         "n_centroids": result.n_centroids,
         "comparison": result.comparison,
         "probability_bins": result.probability_bins(),
+        "archive_check": result.archive_check(),
     }
 
 

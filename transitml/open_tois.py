@@ -21,24 +21,31 @@ What the ranking is, and is not:
 * **The centroid test runs on the top of the list only** (``n_centroids``),
   where a dip placed on another star matters most; a star without the test is
   not cleared by it.
+
+One check is possible all the same.  Dispositions on ExoFOP lag the
+literature, so some open TOIs are already confirmed planets in the NASA
+Exoplanet Archive (:func:`read_archive_planets`).  Those labels were never
+seen in training, and :meth:`OpenRanking.archive_check` asks how far up the
+list they sit, against orderings by the quantities follow-up itself favours.
 """
 
 from __future__ import annotations
 
 import csv
 import json
-from collections import Counter
-from collections.abc import Sequence
+from collections import Counter, defaultdict
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+from sklearn.metrics import roc_auc_score
 
 from .data.loader import Dataset
 from .data.toi import OPEN_DISPOSITIONS, BenchmarkTarget
-from .evaluate import period_recovered
+from .evaluate import N_BOOTSTRAP, period_recovered
 from .model import TrainedModel
 from .toi_training import TOI_RELIABILITY_EDGES
 
@@ -65,6 +72,21 @@ OPEN_COLUMNS: tuple[str, ...] = (
     "centroid_offset_pixels",
     "centroid_offset_sigma",
     "centroid_flagged",
+    "archive_planet",
+)
+
+#: An archive planet is the TOI when their periods differ by less than this
+#: fraction.  Only the same period counts: a planet at twice or half the TOI's
+#: period, or another planet of the star, is left out.
+ARCHIVE_PERIOD_TOLERANCE: float = 0.01
+
+#: Orderings the archive check compares the model with: the TOI's SNR and
+#: depth and the star's brightness, which decide what follow-up can confirm.
+ARCHIVE_ORDERINGS: tuple[tuple[str, str], ...] = (
+    ("model", "model score"),
+    ("toi_snr", "TOI SNR"),
+    ("toi_depth_ppm", "TOI depth"),
+    ("brightness", "brightness (-Tmag)"),
 )
 
 #: Quantities the report compares between the open stars and the resolved
@@ -98,6 +120,8 @@ class OpenRanking:
     joined: str | None = None
     #: Centroid statuses among the stars tested.
     centroid_status: dict[str, int] = field(default_factory=dict)
+    #: The archive planet table the rows were matched against, if any.
+    archive: str | None = None
 
     @property
     def n_stars(self) -> int:
@@ -134,6 +158,54 @@ class OpenRanking:
             }
         return out
 
+    def archive_check(self, n_resamples: int = N_BOOTSTRAP, seed: int = 0) -> dict[str, Any] | None:
+        """Where the open TOIs the archive already lists as planets sit in the ranking.
+
+        ROC-AUC of the archive planets against the rest, for the model's
+        score and for :data:`ARCHIVE_ORDERINGS`; the share above the
+        threshold; and the share of ``n_resamples`` paired resamples (each
+        group resampled on its own) in which the model's AUC beats the TOI
+        SNR's.  The rest are not all false positives, so the AUC is a floor
+        on how well the model separates, not a measure of it.
+        """
+        if self.archive is None:
+            return None
+        confirmed = np.array([r["archive_planet"] is not None for r in self.rows])
+        n = int(confirmed.sum())
+        out: dict[str, Any] = {"archive": self.archive, "n_confirmed": n, "n_rest": len(confirmed) - n}
+        if n == 0 or n == len(confirmed):
+            return out
+        orderings = {
+            "model": [r["model_score"] for r in self.rows],
+            "toi_snr": [r["toi_snr"] for r in self.rows],
+            "toi_depth_ppm": [r["toi_depth_ppm"] for r in self.rows],
+            "brightness": [-r["tess_mag"] for r in self.rows],
+        }
+        values = {k: _filled(v) for k, v in orderings.items()}
+        y = confirmed.astype(int)
+        kept = np.array([r["kept"] for r in self.rows])
+        probability = np.array([r["probability"] for r in self.rows], dtype=float)
+        rng = np.random.default_rng(seed)
+        pos, neg = np.flatnonzero(confirmed), np.flatnonzero(~confirmed)
+        wins = 0
+        for _ in range(n_resamples):
+            idx = np.r_[rng.choice(pos, pos.size), rng.choice(neg, neg.size)]
+            wins += roc_auc_score(y[idx], values["model"][idx]) > roc_auc_score(
+                y[idx], values["toi_snr"][idx]
+            )
+        out.update(
+            {
+                "kept_confirmed": float(kept[confirmed].mean()),
+                "kept_rest": float(kept[~confirmed].mean()),
+                "median_probability_confirmed": float(np.median(probability[confirmed])),
+                "median_probability_rest": float(np.median(probability[~confirmed])),
+                "auc": {k: float(roc_auc_score(y, v)) for k, v in values.items()},
+                "model_ahead_of_snr": wins / n_resamples,
+                "n_resamples": n_resamples,
+            }
+        )
+        return out
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "sectors": self.sectors,
@@ -151,10 +223,49 @@ class OpenRanking:
             "comparison": self.comparison,
             "probability_bins": self.probability_bins(),
             "by_disposition": self.by_disposition(),
+            "archive_check": self.archive_check(),
             "n_centroids": self.n_centroids,
             "centroid_status": self.centroid_status,
             "stars": self.rows,
         }
+
+
+def _filled(values: Sequence[float]) -> np.ndarray:
+    """Scores with missing values put below every finite one, as :func:`~transitml.evaluate.score_curve` does."""
+    a = np.asarray(values, dtype=float)
+    ok = np.isfinite(a)
+    return np.where(ok, a, (a[ok].min() if ok.any() else 0.0) - 1.0)
+
+
+def read_archive_planets(path: Path | str) -> dict[str, list[tuple[str, float]]]:
+    """Confirmed planets by host star, from the NASA Exoplanet Archive's planet table.
+
+    A CSV with ``pl_name``, ``tic_id`` (``"TIC n"``) and ``pl_orbper``
+    columns, such as ``pscomppars`` from the archive's TAP service; rows
+    without a TIC ID are skipped and a missing period is NaN.
+    """
+    out: dict[str, list[tuple[str, float]]] = defaultdict(list)
+    with Path(path).open(newline="") as handle:
+        for row in csv.DictReader(handle):
+            tic = (row.get("tic_id") or "").strip()
+            if not tic:
+                continue
+            try:
+                period = float(row.get("pl_orbper") or "nan")
+            except ValueError:
+                period = float("nan")
+            out[tic].append((row["pl_name"], period))
+    return dict(out)
+
+
+def archive_match(planets: Sequence[tuple[str, float]], period: float) -> str | None:
+    """The planet in ``planets`` at the TOI's ``period`` (:data:`ARCHIVE_PERIOD_TOLERANCE`), if any."""
+    if not np.isfinite(period) or period <= 0:
+        return None
+    for name, p in planets:
+        if np.isfinite(p) and abs(p / period - 1.0) < ARCHIVE_PERIOD_TOLERANCE:
+            return name
+    return None
 
 
 def _median(values: Sequence[float]) -> float:
@@ -175,6 +286,8 @@ def rank_open_hosts(
     centroids: Sequence[dict[str, Any] | None] | None = None,
     stitched: bool = False,
     joined: str | None = None,
+    archive: Mapping[str, Sequence[tuple[str, float]]] | None = None,
+    archive_name: str | None = None,
 ) -> OpenRanking:
     """Score the open TOI hosts in ``dataset`` with ``trained`` and rank them.
 
@@ -183,7 +296,10 @@ def rank_open_hosts(
     ``resolved`` are the hosts the model was trained on, for the comparison.
     With ``centroids`` (one :func:`~transitml.benchmark.centroid_tests` entry
     per dataset row, ``None`` where the test was not run), each row carries
-    the test's status and whether it placed the dip off target.
+    the test's status and whether it placed the dip off target.  With
+    ``archive`` (:func:`read_archive_planets`), each row names the archive
+    planet at its TOI's period, if there is one; ``archive_name`` labels the
+    table in the report.
     """
     by_id = {t.target_id: t for t in targets}
     ids = dataset.meta["target_id"].astype(str).tolist()
@@ -234,6 +350,11 @@ def rank_open_hosts(
                 ),
                 "centroid_offset_sigma": float(test["offset_sigma"]) if placed else float("nan"),
                 "centroid_flagged": None if test is None else bool(test["significant"]),
+                "archive_planet": (
+                    None
+                    if archive is None
+                    else archive_match(archive.get(target.target_id, ()), ref.period)
+                ),
             }
         )
     out.sort(key=lambda r: -r["model_score"])
@@ -267,6 +388,7 @@ def rank_open_hosts(
         stitched=stitched,
         joined=joined,
         centroid_status=dict(Counter(str(c["status"]) for c in tested)),
+        archive=None if archive is None else (archive_name or "archive planet table"),
     )
 
 
@@ -345,12 +467,35 @@ def format_open_report(result: OpenRanking, top: int = 25) -> str:
             f"centroid test on the top {result.n_centroids} with a pixel file: {flagged} dips "
             f"placed off target ({status})"
         )
+    check = result.archive_check()
+    if check is not None:
+        add("")
+        add(f"Already confirmed in the literature ({check['archive']})")
+        add("-" * 72)
+        add(
+            f"  {check['n_confirmed']} of the {result.n_stars} are a confirmed planet at the TOI's "
+            f"period (within {ARCHIVE_PERIOD_TOLERANCE:.0%})"
+        )
+        if "auc" in check:
+            add(
+                f"  above the threshold: {check['kept_confirmed']:.0%} of them, "
+                f"{check['kept_rest']:.0%} of the rest; median P(planet) "
+                f"{check['median_probability_confirmed']:.2f} against "
+                f"{check['median_probability_rest']:.2f}"
+            )
+            add("  ROC-AUC against the rest (the rest are not all false positives):")
+            for name, label in ARCHIVE_ORDERINGS:
+                add(f"    {label:<20s} {check['auc'][name]:.3f}")
+            add(
+                f"  model ahead of the TOI SNR in {check['model_ahead_of_snr']:.0%} of "
+                f"{check['n_resamples']} paired resamples"
+            )
     add("")
     add(f"Top {min(top, result.n_stars)}")
     add("-" * 72)
     add(
         f"{'rank':>4s} {'TOI':>8s} {'target':>15s} {'Tmag':>5s} {'P_toi':>8s} {'P_bls':>8s} "
-        f"{'depth':>7s} {'P(pl)':>6s} {'centroid':>9s}"
+        f"{'depth':>7s} {'P(pl)':>6s} {'centroid':>9s}  archive"
     )
     for r in result.rows[:top]:
         centroid = (
@@ -362,6 +507,7 @@ def format_open_report(result: OpenRanking, top: int = 25) -> str:
             f"{r['rank']:>4d} {r['toi']:>8s} {r['target_id']:>15s} {_fmt(r['tess_mag'], '.1f'):>5s} "
             f"{_fmt(r['toi_period_days'], '.3f'):>8s} {_fmt(r['bls_period_days'], '.3f'):>8s} "
             f"{_fmt(r['toi_depth_ppm'], '.0f'):>7s} {r['probability']:>6.2f} {centroid:>9s}"
+            f"  {r['archive_planet'] or ''}".rstrip()
         )
     return "\n".join(lines)
 

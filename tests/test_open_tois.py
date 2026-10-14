@@ -14,8 +14,10 @@ from transitml.data.toi import TOI, BenchmarkTarget, select_open_targets
 from transitml.features import FEATURE_NAMES
 from transitml.open_tois import (
     OPEN_COLUMNS,
+    archive_match,
     format_open_report,
     rank_open_hosts,
+    read_archive_planets,
     write_open_ranking,
 )
 from transitml.toi_training import train_on_hosts
@@ -122,8 +124,65 @@ def test_open_hosts_are_ranked_by_the_model(trained):
     assert list(result.by_disposition()) == ["PC"]
     assert result.by_disposition()["PC"]["n"] == 40
 
+    assert all(r["archive_planet"] is None for r in rows)
+    assert result.archive_check() is None
+
     with pytest.raises(ValueError, match="match no open target"):
         rank_open_hosts(dataset, targets[1:], trained, sectors=[14], selection={}, resolved=[])
+
+
+def test_archive_planets_are_matched_at_the_tois_period(tmp_path):
+    table = tmp_path / "planets.csv"
+    table.write_text(
+        "pl_name,hostname,tic_id,pl_orbper,disc_year\n"
+        "A b,A,TIC 1,3.000,2025\n"
+        "A c,A,TIC 1,7.5,2025\n"
+        "B b,B,TIC 2,,2024\n"
+        "C b,C,,4.0,2020\n"
+    )
+    planets = read_archive_planets(table)
+    assert set(planets) == {"TIC 1", "TIC 2"}
+    assert archive_match(planets["TIC 1"], 3.02) == "A b"  # within 1%
+    assert archive_match(planets["TIC 1"], 7.5) == "A c"
+    assert archive_match(planets["TIC 1"], 6.0) is None  # twice a planet's period is not it
+    assert archive_match(planets["TIC 1"], 3.05) is None
+    assert archive_match(planets["TIC 2"], 5.0) is None  # no period, no match
+    assert archive_match(planets["TIC 1"], float("nan")) is None
+
+
+def test_the_archive_check_asks_where_confirmed_planets_rank(trained):
+    from sklearn.metrics import roc_auc_score
+
+    dataset = _hosts(60, seed=4)
+    targets = _open_targets(dataset)
+    period = {t.target_id: t.reference.period for t in targets}
+    # The archive confirms the six best-scored hosts at their TOI's period,
+    # and lists another planet, at a different period, on a seventh.
+    scores = trained.score(dataset.inputs(tuple(trained.feature_names)))
+    ids = dataset.meta["target_id"].astype(str).to_numpy()
+    order = ids[np.argsort(-scores)]
+    archive = {i: [(f"{i} b", period[i] * 1.001)] for i in order[:6]}
+    archive[str(order[-1])] = [(f"{order[-1]} c", period[str(order[-1])] * 2.0)]
+
+    result = rank_open_hosts(
+        dataset, targets, trained, sectors=[14], selection={}, resolved=[],
+        archive=archive, archive_name="planets.csv",
+    )
+    named = [r["archive_planet"] for r in result.rows]
+    assert named[:6] == [f"{i} b" for i in order[:6]] and named[6:] == [None] * 54
+
+    check = result.archive_check(n_resamples=200)
+    assert check["archive"] == "planets.csv"
+    assert (check["n_confirmed"], check["n_rest"]) == (6, 54)
+    y = np.array([n is not None for n in named], dtype=int)
+    assert check["auc"]["model"] == pytest.approx(roc_auc_score(y, [r["model_score"] for r in result.rows]))
+    assert check["auc"]["model"] == 1.0  # the top six by construction
+    assert check["kept_confirmed"] == np.mean([r["kept"] for r in result.rows[:6]])
+    assert 0.0 <= check["model_ahead_of_snr"] <= 1.0
+    assert set(check["auc"]) == {"model", "toi_snr", "toi_depth_ppm", "brightness"}
+    report = format_open_report(result, top=8)
+    assert "Already confirmed in the literature (planets.csv)" in report
+    assert "6 of the 60 are a confirmed planet" in report
 
 
 def test_the_ranking_is_written_and_says_it_has_no_ap(trained, tmp_path):
@@ -175,3 +234,9 @@ def test_the_open_ranking_command_line():
     with pytest.raises(SystemExit):
         # Without --rank-open-tois a training run still needs its benchmark.
         run_pipeline.parse_args(["--train-sectors", "1-26", "--benchmark-tois", table])
+    with pytest.raises(SystemExit):
+        run_pipeline.parse_args(
+            ["--train-sectors", "1-26", "--benchmark-tois", table, "--benchmark-sectors", "14-26",
+             "--archive-planets", "planets.csv"]
+        )
+    assert args.archive_planets is None
