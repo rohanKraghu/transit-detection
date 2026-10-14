@@ -53,6 +53,19 @@ sectors' pixels and combines them (``stitched/centroids_every_sector/``), with
 ``--sky-offsets`` as offsets turned onto the sky (``stitched/sky_offsets/``).
 ``--join-sectors 27-102`` adds each host's later sectors to its curve as data
 (``.../joined_27-102/``), searched as :func:`transitml.features.windowed_search`.
+
+Ranking the TOIs nobody has resolved yet::
+
+    python run_pipeline.py --train-sectors 1-26 --rank-open-tois \
+        --benchmark-tois exofop_toi.csv
+
+trains on every labelled TOI host of sectors 1 to 26 and ranks the open ones
+(a PC or APC TOI, no CP or KP on the star) of the same sectors, with the
+centroid test on the top ``--open-centroids`` of the list
+(:mod:`transitml.open_tois`); writes ``open_tois.csv``, ``.json`` and ``.txt``
+to an ``open_tois/`` subdirectory.  ``--archive-planets`` names the open TOIs
+the NASA Exoplanet Archive already lists as planets and reports where they
+rank.
 """
 
 from __future__ import annotations
@@ -63,6 +76,7 @@ import os
 import platform
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -88,6 +102,7 @@ from transitml.data.toi import (
     parse_sector_spec,
     read_toi_table,
     select_benchmark_targets,
+    select_open_targets,
 )
 from transitml.evaluate import evaluate, format_report
 from transitml.features import BLS_ENGINE_ENV, FEATURE_NAMES, bls_engine
@@ -313,6 +328,41 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "doubling in size from 100, and score each on the benchmark's hosts, to show "
         "whether more labels would help (adds learning_curve to metrics.json).",
     )
+    labels.add_argument(
+        "--rank-open-tois",
+        action="store_true",
+        help="With --train-sectors: instead of a benchmark, train on every labelled TOI host "
+        "of those sectors and rank the open ones (a PC or APC TOI and no CP or KP on the star) "
+        "of the same sectors; writes to an open_tois/ subdirectory of the results.",
+    )
+    labels.add_argument(
+        "--open-centroids",
+        type=int,
+        default=200,
+        metavar="N",
+        help="With --rank-open-tois: run the centroid test on the N best-ranked open hosts "
+        "(0 for none).",
+    )
+    labels.add_argument(
+        "--open-cache",
+        type=Path,
+        default=None,
+        help="npz of the open hosts' curves; None means open_curves.npz beside --train-cache.",
+    )
+    labels.add_argument(
+        "--open-tpfs",
+        type=Path,
+        default=None,
+        help="Directory of their target pixel files; None means open_tpfs/ beside --open-cache.",
+    )
+    labels.add_argument(
+        "--archive-planets",
+        type=Path,
+        default=None,
+        help="With --rank-open-tois: a NASA Exoplanet Archive planet table (CSV with pl_name, "
+        "tic_id, pl_orbper) to mark the open TOIs already confirmed in the literature and "
+        "report where they rank.",
+    )
     args = parser.parse_args(argv)
     default_results = args.results_dir == ROOT / "results"
     default_figures = args.figures_dir == ROOT / "figures"
@@ -338,8 +388,22 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             args.figures_dir = ROOT / "figures" / "real_injection"
         if args.curve_cache is None:
             args.curve_cache = args.results_dir / "base_curves.npz"
+    if args.rank_open_tois:
+        if args.train_sectors is None:
+            parser.error("--rank-open-tois trains on TOI hosts; give --train-sectors")
+        if args.pixel_features or args.learning_curve:
+            parser.error(
+                "--rank-open-tois ranks with the light-curve model and has no benchmark; "
+                "drop --pixel-features and --learning-curve"
+            )
+        if args.open_centroids < 0:
+            parser.error("--open-centroids must be 0 or more")
+    elif args.archive_planets is not None:
+        parser.error("--archive-planets is for --rank-open-tois")
     if args.train_sectors is not None:
-        if args.benchmark_tois is None or args.benchmark_sectors is None:
+        if args.benchmark_tois is None or (
+            args.benchmark_sectors is None and not args.rank_open_tois
+        ):
             parser.error(
                 "--train-sectors reads the TOI table from --benchmark-tois and scores the "
                 "model on --benchmark-sectors; give both"
@@ -384,6 +448,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                 args.results_dir = args.results_dir / "pixels"
             if default_figures:
                 args.figures_dir = args.figures_dir / "pixels"
+        if args.rank_open_tois:
+            if default_results:
+                args.results_dir = args.results_dir / "open_tois"
+            if args.open_cache is None:
+                args.open_cache = Path(args.train_cache).parent / "open_curves.npz"
+            if args.open_tpfs is None:
+                args.open_tpfs = Path(args.open_cache).parent / "open_tpfs"
     elif args.pixel_features:
         parser.error("--pixel-features needs --train-sectors: only TOI hosts come with pixels")
     elif args.learning_curve:
@@ -392,10 +463,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         parser.error("--stitch joins the sectors of TOI hosts; it needs --benchmark-tois")
     if args.centroids_every_sector and not args.stitch:
         parser.error("--centroids-every-sector tests the sectors --stitch joins; give --stitch")
-    if args.centroids_every_sector and not args.benchmark_centroids:
+    open_centroids = args.rank_open_tois and args.open_centroids > 0
+    if args.centroids_every_sector and not (args.benchmark_centroids or open_centroids):
         parser.error(
-            "--centroids-every-sector changes the centroid test; give --benchmark-centroids "
-            "or --pixel-features"
+            "--centroids-every-sector changes the centroid test; give --benchmark-centroids, "
+            "--pixel-features or --rank-open-tois"
         )
     if args.join_sectors is not None:
         if not args.stitch:
@@ -523,7 +595,7 @@ def training_tic_ids(source: LightCurveSource) -> set[int]:
 
 @dataclass
 class TOIHosts:
-    """The labelled TOI hosts of some sectors: their curves searched, their pixels tested."""
+    """The TOI hosts of some sectors: their curves searched, their pixels tested."""
 
     sectors: list[int]
     targets: list[BenchmarkTarget]
@@ -549,6 +621,8 @@ def load_toi_hosts(
     centroids: bool,
     exclude_tics: set[int] | None = None,
     training: bool = False,
+    open_tois: bool = False,
+    test_only: Callable[[Dataset], set[str]] | None = None,
 ) -> TOIHosts:
     """Select, fetch (or read from the caches) and search the labelled TOI hosts of ``spec``.
 
@@ -559,6 +633,11 @@ def load_toi_hosts(
     curve for there is taken from its next sector in ``spec`` instead, since a
     training set loses nothing by that.  With ``--stitch``, every star is
     searched on all of its sectors in ``spec`` that have a curve, joined.
+
+    With ``open_tois``, the hosts are the open ones instead
+    (:func:`~transitml.data.toi.select_open_targets`), unlabelled.  With
+    ``test_only``, the centroid test runs only on the stars it names, given
+    the searched dataset; the rest get ``None``.
     """
     from transitml.benchmark import (
         build_benchmark_dataset,
@@ -573,22 +652,31 @@ def load_toi_hosts(
     )
 
     sectors = parse_sector_spec(spec)
-    targets, selection = select_benchmark_targets(
-        read_toi_table(args.benchmark_tois), sectors, exclude_tics=exclude_tics or set()
-    )
+    if open_tois:
+        targets, selection = select_open_targets(read_toi_table(args.benchmark_tois), sectors)
+        print(
+            f"\nOpen TOIs: {selection['selected']} hosts with a PC or APC TOI and no CP or KP "
+            f"in sectors {spec}"
+        )
+    else:
+        targets, selection = select_benchmark_targets(
+            read_toi_table(args.benchmark_tois), sectors, exclude_tics=exclude_tics or set()
+        )
     if training:
         selection["in_benchmark_sectors"] = selection.pop("in_training_set")
-    dropped = (
-        f" ({selection['in_benchmark_sectors']} dropped as observed in the benchmark's sectors)"
-        if training and selection["in_benchmark_sectors"]
-        else f" ({selection['in_training_set']} dropped as training stars)"
-        if not training
-        else ""
-    )
-    print(
-        f"\n{'Training set' if training else 'TOI benchmark'}: {selection['positives']} CP/KP "
-        f"and {selection['negatives']} FP/FA hosts in sectors {spec}{dropped}"
-    )
+    if not open_tois:
+        dropped = (
+            f" ({selection['in_benchmark_sectors']} dropped as observed in the benchmark's "
+            "sectors)"
+            if training and selection["in_benchmark_sectors"]
+            else f" ({selection['in_training_set']} dropped as training stars)"
+            if not training
+            else ""
+        )
+        print(
+            f"\n{'Training set' if training else 'TOI benchmark'}: {selection['positives']} CP/KP "
+            f"and {selection['negatives']} FP/FA hosts in sectors {spec}{dropped}"
+        )
 
     def fetch(wanted: list[BenchmarkTarget]) -> list[LightCurve]:
         return load_or_fetch_curves(
@@ -630,6 +718,11 @@ def load_toi_hosts(
     )
     tests = None
     if centroids:
+        tested = (
+            test_only(dataset)
+            if test_only is not None
+            else {str(i) for i in dataset.meta["target_id"]}
+        )
         download = {
             "author": args.author,
             "exposure_time": args.exposure_time,
@@ -647,6 +740,7 @@ def load_toi_hosts(
                     )
                 ]
                 for lc in curves
+                if lc.target_id in tested
             }
             paths = load_or_fetch_sector_tpfs(joined, tpfs, sky=args.sky_offsets, **download)
             n_files = sum(len(p) for p in paths.values())
@@ -657,7 +751,7 @@ def load_toi_hosts(
                 + " ..."
             )
         else:
-            scored = {lc.target_id for lc in curves}
+            scored = {lc.target_id for lc in curves} & tested
             paths = load_or_fetch_tpfs(
                 [t for t in targets if t.target_id in scored], tpfs, **download
             )
@@ -764,8 +858,74 @@ def benchmark_headline(bench: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def rank_open_tois(
+    args: argparse.Namespace,
+    config: Config,
+    trained: TrainedModel,
+    resolved: list[BenchmarkTarget],
+) -> dict[str, Any]:
+    """Rank the open TOI hosts of ``--train-sectors`` with ``trained``; write the ranking.
+
+    ``resolved`` are the hosts it was trained on.  The centroid test runs on
+    the ``--open-centroids`` best-ranked hosts only.
+    """
+    from transitml.open_tois import (
+        format_open_report,
+        rank_open_hosts,
+        read_archive_planets,
+        write_open_ranking,
+    )
+
+    def best(dataset: Dataset) -> set[str]:
+        scores = trained.score(dataset.inputs(tuple(trained.feature_names)))
+        ids = dataset.meta["target_id"].astype(str).to_numpy()
+        return set(ids[np.argsort(-scores, kind="stable")[: args.open_centroids]].tolist())
+
+    hosts = load_toi_hosts(
+        args,
+        config,
+        args.train_sectors,
+        cache=args.open_cache,
+        tpfs=args.open_tpfs,
+        centroids=args.open_centroids > 0,
+        open_tois=True,
+        test_only=best,
+    )
+    result = rank_open_hosts(
+        hosts.dataset,
+        hosts.targets,
+        trained,
+        sectors=hosts.sectors,
+        selection=hosts.selection,
+        resolved=resolved,
+        n_without_curve=hosts.n_without_curve,
+        centroids=hosts.centroids,
+        stitched=hosts.stitched,
+        joined=hosts.joined,
+        archive=None if args.archive_planets is None else read_archive_planets(args.archive_planets),
+        archive_name=None if args.archive_planets is None else Path(args.archive_planets).name,
+    )
+    print()
+    print(format_open_report(result))
+    written = write_open_ranking(result, Path(args.results_dir))
+    print(f"\nwrote {', '.join(_display_path(p) for p in written)}")
+    return {
+        "n_stars": result.n_stars,
+        "n_kept": result.n_kept,
+        "n_centroids": result.n_centroids,
+        "comparison": result.comparison,
+        "probability_bins": result.probability_bins(),
+        "archive_check": result.archive_check(),
+    }
+
+
 def run_toi_training(args: argparse.Namespace, config: Config, started: float) -> int:
-    """Train on the TOI hosts of ``--train-sectors``, then benchmark on ``--benchmark-sectors``."""
+    """Train on the TOI hosts of ``--train-sectors``, then benchmark on ``--benchmark-sectors``.
+
+    With ``--rank-open-tois``, there is no benchmark: the model is trained on
+    every labelled host of ``--train-sectors`` and ranks the open ones
+    (:func:`rank_open_tois`).
+    """
     from transitml.benchmark import CENTROID_FEATURE_NAMES
     from transitml.toi_training import (
         format_training_report,
@@ -777,8 +937,12 @@ def run_toi_training(args: argparse.Namespace, config: Config, started: float) -
 
     # A star observed in the benchmark's sectors is never trained on, so the
     # benchmark scores the same stars whichever sectors the model learned from.
-    benchmark_stars = observed_in(
-        read_toi_table(args.benchmark_tois), parse_sector_spec(args.benchmark_sectors)
+    benchmark_stars = (
+        set()
+        if args.rank_open_tois
+        else observed_in(
+            read_toi_table(args.benchmark_tois), parse_sector_spec(args.benchmark_sectors)
+        )
     )
     hosts = load_toi_hosts(
         args,
@@ -839,13 +1003,20 @@ def run_toi_training(args: argparse.Namespace, config: Config, started: float) -
             "numpy": np.__version__,
         },
     }
-    trained_on = {t.tic for t in hosts.targets}
-    scored = benchmark_hosts(args, config, names, trained_on)
-    bench = run_toi_benchmark(
-        args, config, trained, trained_on, importance_repeats=10, hosts=scored
-    )
-    calibration = scored_calibration(bench["stars"], trained.calibration)
-    payload["toi_benchmark"] = benchmark_headline(bench) | {"calibration": calibration}
+    if args.rank_open_tois:
+        have = set(hosts.dataset.meta["target_id"].astype(str))
+        payload["open_tois"] = rank_open_tois(
+            args, config, trained, [t for t in hosts.targets if t.target_id in have]
+        )
+        bench = calibration = None
+    else:
+        trained_on = {t.tic for t in hosts.targets}
+        scored = benchmark_hosts(args, config, names, trained_on)
+        bench = run_toi_benchmark(
+            args, config, trained, trained_on, importance_repeats=10, hosts=scored
+        )
+        calibration = scored_calibration(bench["stars"], trained.calibration)
+        payload["toi_benchmark"] = benchmark_headline(bench) | {"calibration": calibration}
     learning = None
     if args.learning_curve:
         print(f"\nlearning curve: subsets of the {len(hosts.dataset)} training stars ...")

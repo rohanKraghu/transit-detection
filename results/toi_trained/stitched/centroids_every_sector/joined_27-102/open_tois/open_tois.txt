@@ -1,0 +1,72 @@
+========================================================================
+OPEN TOIs OF SECTORS 1 TO 26, RANKED
+========================================================================
+stars in TOI table: 7826   with a resolved planet or no open TOI: 2677   not observed in these sectors: 1090
+open TOI hosts: 4059   no light curve at MAST: 2203   scored: 1856
+  each searched on every one of these sectors it was observed in, joined
+  with every sector of 27-102 it was observed in added to its curve
+model: trained on the 1623 resolved hosts of the same sectors (planet rate 51.4%)
+
+No average precision: nobody knows yet which of these are planets.
+P(planet) is calibrated on resolved TOIs, at their planet rate.
+
+Open hosts against the resolved hosts the model learned from (medians)
+------------------------------------------------------------------------
+  TESS magnitude         open     11.15   resolved     10.43
+  TOI depth (ppm)        open      2103   resolved      2549
+  TOI SNR                open     19.28   resolved     28.63
+  TOI period (days)      open     5.637   resolved     3.949
+
+search found the TOI's period: 1568 of 1810 with a catalogued period (87%)
+above the operating threshold (calibrated P(planet) >= 0.50 at the training planet rate (51.4%)): 1142 of 1856 (62%)
+  PC    1605 stars   median P(planet) 0.63   above threshold 64%
+  APC    251 stars   median P(planet) 0.46   above threshold 45%
+
+P(planet)        stars
+  0.0 to 0.2        298
+  0.2 to 0.4        247
+  0.4 to 0.6        361
+  0.6 to 0.8        539
+  0.8 to 1.0        411
+
+centroid test on the top 200 with a pixel file: 2 dips placed off target (centroid_outside_window 3, no_in_transit_cadences 1, ok 178, weak_difference_image 18)
+
+Already confirmed in the literature (archive_planets_2026-10-14.csv)
+------------------------------------------------------------------------
+  101 of the 1856 are a confirmed planet at the TOI's period (within 1%)
+  above the threshold: 79% of them, 61% of the rest; median P(planet) 0.72 against 0.60
+  ROC-AUC against the rest (the rest are not all false positives):
+    model score          0.621
+    TOI SNR              0.505
+    TOI depth            0.445
+    brightness (-Tmag)   0.482
+  model ahead of the TOI SNR in 100% of 2000 paired resamples
+
+Top 25
+------------------------------------------------------------------------
+rank      TOI          target  Tmag    P_toi    P_bls   depth  P(pl)  centroid  archive
+   1  2645.01   TIC 372818426  12.4    1.444    1.444   43370   0.97        on
+   2   202.01   TIC 355509914  14.7    1.739    1.739   13711   0.96       n/a
+   3  2069.01   TIC 198187049   8.0    5.921    5.921     140   0.96       n/a
+   4  4283.01   TIC 343952976  11.2    3.013    3.013   13660   0.96        on
+   5  2082.01   TIC 160039081   7.8   30.200   30.201     520   0.95        on
+   6   702.01   TIC 237914496  11.8    3.568    3.568     907   0.95        on
+   7  2031.01   TIC 470127886  10.8    5.716    5.715   12241   0.94        on  TOI-2031 A b
+   8   234.01    TIC 12423815  14.6    2.839    2.839   35230   0.94        on
+   9  3686.01    TIC 13533330  11.2    5.078    5.078   14469   0.94        on
+  10  1398.01    TIC 66445643   8.6    6.556    6.556     861   0.94        on
+  11  4160.01   TIC 441580526  12.2    4.443    4.443   12220   0.94        on
+  12  1763.01   TIC 441739871  12.8    3.798    3.798    1501   0.94        on
+  13  2778.01   TIC 332860211  12.3    4.445    4.444   16730   0.94        on
+  14  2040.01   TIC 427730490  10.8    3.861    3.861   14670   0.94        on  TOI-2040 b
+  15  6458.01     TIC 2507547   6.5    9.783    9.783     142   0.94        on
+  16  2659.01   TIC 147456499  12.7    1.256    1.256   22260   0.94        on
+  17   934.01   TIC 220475245  12.7    3.782    3.782   18871   0.94        on
+  18   802.01   TIC 167303382   7.5    3.694    3.694      72   0.93       n/a
+  19  1845.01   TIC 272758199  12.9    3.661    3.661   18701   0.93        on
+  20  6267.01   TIC 296737508   9.2  733.991   19.573    1675   0.93        on
+  21  4427.01   TIC 207339000  11.3    4.618    4.618   20288   0.93        on  TOI-4427 b
+  22  1077.01   TIC 369960846  13.5    1.606    1.606   16725   0.93        on
+  23   842.01   TIC 141768070  12.6    2.786    2.786   11629   0.93        on
+  24   330.01    TIC 27966179  12.9    4.279    4.280   17011   0.93        on
+  25  2679.01   TIC 323295908  12.4    3.854    3.854   14520   0.93        on
