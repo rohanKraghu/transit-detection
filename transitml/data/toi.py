@@ -98,15 +98,16 @@ class TOI:
 
 @dataclass(frozen=True)
 class BenchmarkTarget:
-    """One labelled star, the sector to fetch for it, and its reference TOI.
+    """One star, the sector to fetch for it, and its reference TOI.
 
     ``reference`` is the TOI whose period the search is checked against: the
     highest-SNR TOI that agrees with the star's label (a CP for a planet host,
-    an FP or FA for a negative).
+    an FP or FA for a negative).  An open star (:func:`select_open_targets`)
+    has no label, and its reference is its highest-SNR open TOI.
     """
 
     tic: int
-    label: int
+    label: int | None
     sector: int
     reference: TOI
     tois: tuple[TOI, ...] = field(default=())
@@ -327,6 +328,52 @@ def select_benchmark_targets(
         )
         counts["selected"] += 1
         counts["positives" if label == 1 else "negatives"] += 1
+    return targets, counts
+
+
+#: Dispositions of a TOI nobody has resolved yet.
+OPEN_DISPOSITIONS: frozenset[str] = frozenset({"PC", "APC"})
+
+
+def select_open_targets(
+    tois: Iterable[TOI], sectors: Sequence[int]
+) -> tuple[list[BenchmarkTarget], dict[str, int]]:
+    """Stars with an open TOI and no resolved planet, observed in one of ``sectors``.
+
+    These are the stars :func:`select_benchmark_targets` leaves out as
+    unlabelled, less the few whose TOIs are all blank: each still has a PC or
+    APC and no CP or KP, so nobody knows yet what it is.  Each is given the
+    first of ``sectors`` it was observed in, ``label`` ``None``, and its
+    highest-SNR open TOI as the reference.  Returns ``(targets, counts)``.
+    """
+    by_star: dict[int, list[TOI]] = {}
+    for toi in tois:
+        by_star.setdefault(toi.tic, []).append(toi)
+
+    wanted = list(sectors)
+    counts = {"stars_in_table": len(by_star), "not_open": 0, "not_in_sectors": 0, "selected": 0}
+    targets: list[BenchmarkTarget] = []
+    for tic in sorted(by_star):
+        star_tois = by_star[tic]
+        open_tois = [t for t in star_tois if t.disposition in OPEN_DISPOSITIONS]
+        if star_label(star_tois) is not None or not open_tois:
+            counts["not_open"] += 1
+            continue
+        observed = {s for t in star_tois for s in t.sectors}
+        sector = next((s for s in wanted if s in observed), None)
+        if sector is None:
+            counts["not_in_sectors"] += 1
+            continue
+        targets.append(
+            BenchmarkTarget(
+                tic=tic,
+                label=None,
+                sector=sector,
+                reference=max(open_tois, key=_snr_key),
+                tois=tuple(star_tois),
+            )
+        )
+        counts["selected"] += 1
     return targets, counts
 
 
