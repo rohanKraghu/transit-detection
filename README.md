@@ -3221,6 +3221,11 @@ on. Sizes are rough: S is a few hours, M a day or two, L longer.
   transit left out. TOIs under 50 days given a period over 50 fell from 25
   to 4 and 19 to 3, and periods found rose from 85.2% to 87.9% and 86.1% to
   87.4%; the ranking is unchanged within noise.
+- Ranking the open TOIs (`run_pipeline.py --rank-open-tois`): the 1,856
+  open TOIs of sectors 1 to 26, ranked by the light-curve model trained on
+  all 1,623 resolved hosts. Checked against the 101 of them the NASA
+  Exoplanet Archive already lists as planets (`--archive-planets`), the
+  model's ROC-AUC is 0.62 against 0.51 for TOI SNR.
 
 **Next**
 
