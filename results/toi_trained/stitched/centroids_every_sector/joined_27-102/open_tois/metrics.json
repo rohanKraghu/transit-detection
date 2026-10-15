@@ -170,7 +170,8 @@
       ],
       "search": "bls",
       "max_search_baseline_days": 400.0,
-      "candidate_peaks": 10
+      "candidate_peaks": 10,
+      "pair_min_period_days": 10.0
     },
     "multi_planet": {
       "max_signals": 3,
@@ -204,7 +205,7 @@
       "top_k": 20
     }
   },
-  "runtime_seconds": 5263.0,
+  "runtime_seconds": 7165.1,
   "dataset": {
     "source": "TOI hosts, sectors 1-26",
     "n_curves": 1623,
@@ -290,54 +291,54 @@
       "model": {
         "name": "gradient_boosting",
         "description": "out-of-fold scores on the training hosts",
-        "average_precision": 0.8612191366721212,
+        "average_precision": 0.8636630722654882,
         "average_precision_ci68": [
-          0.8486222044698256,
-          0.8728311289045837
+          0.8512078478406084,
+          0.8759223564788181
         ],
-        "roc_auc": 0.8669275661874221
+        "roc_auc": 0.8697619988449496
       },
       "baselines": [
         {
           "name": "depth_threshold",
           "description": "Rank by the depth of the best BLS box. The naive heuristic: deeper dip = more likely a planet.",
-          "average_precision": 0.6133464042400488,
+          "average_precision": 0.6149416150341781,
           "average_precision_ci68": [
-            0.5964011708295018,
-            0.6334708001570802
+            0.5981619425788847,
+            0.6349992001094771
           ],
-          "roc_auc": 0.6388081704611083
+          "roc_auc": 0.6423082768473207
         },
         {
           "name": "bls_snr",
           "description": "Rank by BLS depth signal-to-noise. The classical single-statistic transit search, and a genuinely strong baseline.",
-          "average_precision": 0.6327143389792131,
+          "average_precision": 0.6334246592349662,
           "average_precision_ci68": [
-            0.6156083875163385,
-            0.6519964770585583
+            0.6166148594098485,
+            0.6525212500965184
           ],
-          "roc_auc": 0.6537979877807836
+          "roc_auc": 0.6555776771330436
         }
       ]
     },
     "operating_point": {
-      "threshold": 0.4779662950828034,
+      "threshold": 0.4838868033775976,
       "rule": "calibrated P(planet) >= 0.50 at the training planet rate (51.4%)",
-      "threshold_as_probability": 0.5,
-      "cv_planet_recall": 0.8419161676646707,
-      "cv_false_positive_rejection": 0.7296954314720813,
-      "cv_precision": 0.767467248908297,
+      "threshold_as_probability": 0.5000000000000001,
+      "cv_planet_recall": 0.8407185628742515,
+      "cv_false_positive_rejection": 0.7385786802030457,
+      "cv_precision": 0.7731277533039648,
       "precision_rule": {
         "rule": "max recall subject to Wilson 1-sigma lower bound on CV precision >= 0.50 (bound 0.502 at 1623 candidates)",
-        "threshold": 0.0023548710458416618,
+        "threshold": 0.001599123059096213,
         "cv_planet_recall": 1.0,
         "cv_false_positive_rejection": 0.0,
         "cv_precision": 0.514479359211337
       }
     },
     "calibration": {
-      "slope": 0.9278114137727405,
-      "intercept": 0.08182548573164206,
+      "slope": 0.9442656646663122,
+      "intercept": 0.06088163512726612,
       "train_positive_rate": 0.514479359211337
     }
   },
@@ -347,7 +348,7 @@
   },
   "open_tois": {
     "n_stars": 1856,
-    "n_kept": 1142,
+    "n_kept": 1156,
     "n_centroids": 200,
     "comparison": {
       "tess_mag": {
@@ -376,34 +377,34 @@
       {
         "low": 0.2,
         "high": 0.4,
-        "n": 247
+        "n": 242
       },
       {
         "low": 0.4,
         "high": 0.6,
-        "n": 361
+        "n": 355
       },
       {
         "low": 0.6,
         "high": 0.8,
-        "n": 539
+        "n": 554
       },
       {
         "low": 0.8,
         "high": 1.0,
-        "n": 411
+        "n": 407
       }
     ],
     "archive_check": {
       "archive": "archive_planets_2026-10-14.csv",
       "n_confirmed": 101,
       "n_rest": 1755,
-      "kept_confirmed": 0.7920792079207921,
-      "kept_rest": 0.6051282051282051,
-      "median_probability_confirmed": 0.7195527890448215,
-      "median_probability_rest": 0.6034484436950093,
+      "kept_confirmed": 0.8217821782178217,
+      "kept_rest": 0.6113960113960114,
+      "median_probability_confirmed": 0.7131225195609954,
+      "median_probability_rest": 0.6071066309783689,
       "auc": {
-        "model": 0.6209472229274209,
+        "model": 0.6277114890976278,
         "toi_snr": 0.5051620546670051,
         "toi_depth_ppm": 0.4447067783701447,
         "brightness": 0.48184254322868186

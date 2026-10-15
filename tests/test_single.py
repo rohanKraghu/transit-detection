@@ -11,6 +11,7 @@ from transitml.physics import RHO_SUN_CGS, expected_central_duration
 from transitml.preprocess import flatten
 from transitml.single import (
     binned_noise_factor,
+    pair_periods,
     period_from_duration,
     search_single_events,
 )
@@ -80,6 +81,19 @@ def test_two_matching_transits_make_a_duo_with_only_unexcluded_aliases():
     assert duo.allowed_periods[0] == pytest.approx(18.0, abs=0.05)
     assert all(abs(p - 9.0) > 0.1 for p in duo.allowed_periods)
     assert len(duo.duration_ratios) == len(duo.allowed_periods)
+
+
+def test_pair_periods_are_the_duos_periods_down_to_a_floor():
+    lc = box_events([(4.1, 0.2, 2.5e-3), (22.1, 0.2, 2.5e-3)])
+    duo = search_single_events(lc).duos[0]
+    pairs = pair_periods(lc, 5.0)
+    assert len(pairs) == 1
+    periods, duration = pairs[0]
+    assert periods == tuple(p for p in duo.allowed_periods if p >= 5.0)
+    assert duration == pytest.approx(0.5 * (duo.first.duration + duo.second.duration))
+    # A pair closer together than the floor proposes nothing.
+    assert pair_periods(lc, 20.0) == []
+    assert pair_periods(box_events([(4.1, 0.2, 2.5e-3)]), 5.0) == []
 
 
 def test_dips_of_different_depth_do_not_pair():

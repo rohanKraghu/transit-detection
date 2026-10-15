@@ -38,10 +38,11 @@ from astropy.timeseries import BoxLeastSquares
 from numpy.typing import NDArray
 from scipy import stats
 
-from .config import BLSConfig, PreprocessConfig
+from .config import BLSConfig, PreprocessConfig, SingleEventConfig
 from .data.base import LightCurve
 from .physics import RHO_SUN_CGS, expected_central_duration, max_occultation_fraction
 from .preprocess import FlattenedLightCurve, flatten, robust_sigma
+from .single import pair_periods
 
 #: Fixed column order.  The model, the permutation-importance plot and the
 #: dataset all key off this, so it is defined once, here.
@@ -235,6 +236,15 @@ def distinct_peaks(
     return taken
 
 
+def transit_epochs(
+    lc: FlattenedLightCurve, period: float, transit_time: float, duration: float
+) -> int:
+    """How many of this ephemeris's transits have at least one cadence in them."""
+    phase = (lc.time - transit_time + 0.5 * period) % period - 0.5 * period
+    inside = np.abs(phase) < 0.5 * duration
+    return int(np.unique(np.round((lc.time[inside] - transit_time) / period)).size)
+
+
 def leave_one_out_snr(
     lc: FlattenedLightCurve, period: float, transit_time: float, duration: float
 ) -> float:
@@ -298,21 +308,33 @@ def windowed_search(lc: FlattenedLightCurve, config: BLSConfig) -> dict[str, Any
        at least two window steps, either side.  The half and double count
        because a stretch with gaps often cannot tell a period from them,
        where the rest of the data can.
-    3. The trial period whose SNR on the whole curve, its strongest transit
+    3. With ``config.pair_min_period_days``, pairs of the strongest single
+       dips anywhere on the curve propose more candidates
+       (:func:`~transitml.single.pair_periods`): their separation over each
+       whole number, down to that period, that no flat stretch of data rules
+       out, each searched on the whole curve the same way.  Of one pair's
+       periods, the one with the most transits on data stands for it (the
+       shortest, when only the pair itself is): every one left has a dip
+       wherever it predicts a transit on data, and the one explaining the
+       most of them is the pair's signal.
+    4. The trial period whose SNR on the whole curve, its strongest transit
        left out, is highest is the signal.
 
     Ranked by the plain SNR, one deep event outscored planets: across years
     of gappy data, most long trial periods put a single event in transit
-    and the rest of their transits in the gaps.
+    and the rest of their transits in the gaps.  And a planet with one
+    transit in the window, however many elsewhere, has no peak there worth
+    refining: the pairs of step 3 are how it is found.
 
     The ``"periods"`` and ``"power"`` returned are the window's periodogram,
     so the peak-significance features describe the search that proposed the
-    signal, and ``"best_index"`` is the candidate that won; the rest of the
-    solution, and ``"bls"``, are from the whole curve.  A few hundred
-    periods around each of ten candidates are a few thousand, where one grid
-    over five years would need about 250,000.  A signal too weak to be among
-    the window's candidates, or with fewer than two transits in it, is not
-    found.
+    signal, and ``"best_index"`` is the candidate that won (for a pair's
+    period, the window's trial period nearest it); the rest of the solution,
+    and ``"bls"``, are from the whole curve.  A few hundred periods around
+    each of ten candidates are a few thousand, where one grid over five
+    years would need about 250,000.  A signal too weak to be among the
+    window's candidates, or with fewer than two transits in it and no two
+    dips strong enough to pair, is not found.
     """
     start, stop = densest_window(lc.time, float(config.max_search_baseline_days))
     keep = (lc.time >= start) & (lc.time <= stop)
@@ -325,6 +347,29 @@ def windowed_search(lc: FlattenedLightCurve, config: BLSConfig) -> dict[str, Any
     window_step = float(np.log(periods[1] / periods[0]))
     fine = min(_grid_step(lc.baseline_days, config), window_step)
     longest = _max_period(lc.baseline_days, config)
+
+    def refine(centre: float, duration: float) -> tuple[float, float, NDArray, int] | None:
+        """(score, period, durations tried, transits on data) of the best trial around ``centre``."""
+        half = max(0.5 * duration / window.baseline_days, 2 * window_step)
+        n = int(np.ceil(half / fine))
+        grid = centre * np.exp(fine * np.arange(-n, n + 1))
+        grid = grid[(grid >= config.min_period_days) & (grid <= longest)]
+        if grid.size == 0:
+            return None
+        durations = _durations(config, grid)
+        result = _periodogram(lc, grid, durations)
+        score = np.array(
+            [
+                leave_one_out_snr(lc, p, t0, d)
+                for p, t0, d in zip(grid, result.transit_time, result.duration, strict=True)
+            ]
+        )
+        if not np.any(np.isfinite(score)):
+            return None
+        j = int(np.nanargmax(score))
+        n_epochs = transit_epochs(lc, grid[j], result.transit_time[j], result.duration[j])
+        return float(score[j]), float(grid[j]), durations, n_epochs
+
     # Every distinct peak of the window, ranked by its SNR without its
     # strongest transit; only the periodogram's local maxima can be peaks.
     padded = np.r_[-np.inf, np.nan_to_num(power, nan=-np.inf), -np.inf]
@@ -338,26 +383,23 @@ def windowed_search(lc: FlattenedLightCurve, config: BLSConfig) -> dict[str, Any
     # (score, candidate, period, durations tried there)
     best: tuple[float, int, float, NDArray[np.float64]] | None = None
     for _, i in ranked[: config.candidate_peaks]:
-        half = max(0.5 * float(coarse.duration[i]) / window.baseline_days, 2 * window_step)
-        n = int(np.ceil(half / fine))
         for ratio in _REFINED_ALIASES:
-            grid = periods[i] * ratio * np.exp(fine * np.arange(-n, n + 1))
-            grid = grid[(grid >= config.min_period_days) & (grid <= longest)]
-            if grid.size == 0:
+            found = refine(periods[i] * ratio, float(coarse.duration[i]))
+            if found is not None and (best is None or found[0] > best[0]):
+                best = (found[0], i, found[1], found[2])
+    if config.pair_min_period_days is not None:
+        for allowed, duration in pair_periods(lc, config.pair_min_period_days, SingleEventConfig()):
+            tried = [r for r in (refine(p, duration) for p in allowed) if r is not None]
+            if not tried:
                 continue
-            durations = _durations(config, grid)
-            result = _periodogram(lc, grid, durations)
-            score = np.array(
-                [
-                    leave_one_out_snr(lc, p, t0, d)
-                    for p, t0, d in zip(grid, result.transit_time, result.duration, strict=True)
-                ]
+            most = max(r[3] for r in tried)
+            alike = [r for r in tried if r[3] == most]
+            score, period, durations, _ = (
+                min(alike, key=lambda r: r[1]) if most <= 2 else max(alike, key=lambda r: r[0])
             )
-            if not np.any(np.isfinite(score)):
-                continue
-            j = int(np.nanargmax(score))
-            if best is None or score[j] > best[0]:
-                best = (float(score[j]), i, float(grid[j]), durations)
+            if best is None or score > best[0]:
+                nearest = int(np.argmin(np.abs(np.log(periods / period))))
+                best = (score, nearest, period, durations)
     if best is None:
         index = int(np.nanargmax(power))
         return {**_solution(window, coarse, index, periods), "search_window": (start, stop)}

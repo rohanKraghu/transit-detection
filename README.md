@@ -20,7 +20,7 @@ whose coverage is measured by injection.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python run_pipeline.py            # ~3 min on 4 cores
-pytest                            # ~5 min, 566 tests
+pytest                            # ~5 min, 569 tests
 ```
 
 It writes `results/metrics.json`, `results/report.txt`, the trained model
@@ -1173,8 +1173,10 @@ Two things had to change for curves that long.
   below), and the peak-significance features describe the window's
   periodogram at the candidate that won. The half and the double are tried because a window
   with gaps often cannot tell a period from them where the rest of the curve
-  can. A signal with fewer than two transits in the window, or too weak to
-  be among its ten candidates, is not found.
+  can. A signal too weak to be among the window's ten candidates is not
+  found, and one with fewer than two transits in the window only through
+  pairs of its strongest dips (see "Planets with one transit in the window"
+  below).
 - **The detrending.** The trend fit solved one dense least-squares problem
   over every cadence, at a cost that grows as the cube of the curve's
   length: a 34-sector star took about 400 seconds. Only the rotation terms
@@ -1192,51 +1194,51 @@ the later sectors scores higher:
 | Scored on | Inputs | Sectors of the range | With 27 to 102 added | Ahead in |
 |---|---|---|---|---|
 | *766 hosts of sectors 14 to 26 (chance 0.491)* | | | | |
-| | light curve | 0.766 | 0.811 | 99.7% |
-| | light curve, centroid test as a veto | 0.793 | 0.837 | 99.4% |
-| | light curve and centroid test | 0.802 | 0.831 | 94.5% |
+| | light curve | 0.766 | 0.818 | 100% |
+| | light curve, centroid test as a veto | 0.793 | 0.840 | 99.7% |
+| | light curve and centroid test | 0.802 | 0.842 | 98.7% |
 | | catalogued period found | 81% | 88% | |
 | *857 hosts of sectors 1 to 13 (chance 0.536)* | | | | |
-| | light curve | 0.793 | 0.857 | 100% |
-| | light curve, centroid test as a veto | 0.828 | 0.875 | 99.7% |
-| | light curve and centroid test | 0.836 | 0.876 | 99.8% |
-| | catalogued period found | 82% | 87% | |
+| | light curve | 0.793 | 0.858 | 100% |
+| | light curve, centroid test as a veto | 0.828 | 0.872 | 99.7% |
+| | light curve and centroid test | 0.836 | 0.876 | 100% |
+| | catalogued period found | 82% | 88% | |
 
-- **More catalogued periods are found, most of them long.** 58 and 62 hosts
-  gain their period and 7 and 16 lose it. For TOIs with periods between
-  half a sector and a whole one the share found rises from 78% to 92% and
-  from 63% to 71%, and for longer ones from 33% to 50% and from 32% to 51%.
-  The periods lost mostly go to shorter ones; one goes to a period over 50
-  days.
+- **More catalogued periods are found, most of them long.** 60 and 63 hosts
+  gain their period and 6 and 10 lose it. For TOIs with periods between
+  half a sector and a whole one the share found rises from 78% to 94% and
+  from 63% to 77%, and for longer ones from 33% to 56% and from 32% to 57%.
+  The periods lost go to shorter and longer ones alike; two go to periods
+  over 50 days.
 - **The ranking gains where the scored star has more data.** On hosts with
   one to three later sectors (327 and 518) the light-curve model rises from
-  0.848 to 0.875 and from 0.840 to 0.872, and with ten or more (81 and 66)
-  from 0.830 to 0.842 and from 0.865 to 0.903. With four to nine (198 and
-  109) it rises in one direction (0.810 to 0.836, scored on 1 to 13) and
-  not in the other (0.770 both times). The 160 and 164 hosts with no later
-  sector, nearly all false positives (chance 0.06 and 0.13), move within
-  noise and in opposite directions.
+  0.848 to 0.886 and from 0.840 to 0.869. With more, it rises when scored
+  on 1 to 13 (0.810 to 0.858 with four to nine later sectors, 109 hosts,
+  and 0.865 to 0.944 with ten or more, 66) and moves within noise when
+  scored on 14 to 26 (0.770 to 0.785 on 198 hosts, 0.830 to 0.812 on 81).
+  The 160 and 164 hosts with no later sector, nearly all false positives
+  (chance 0.06 and 0.13), move within noise.
 - **The models' own cross-validation rises as much.** On their training
-  hosts the light-curve model goes from 0.808 to 0.851 (trained on 1 to 13)
-  and from 0.748 to 0.831 (14 to 26), and the model with the centroid test
-  from 0.849 to 0.894 and from 0.793 to 0.856.
-- **At the frozen threshold** the light-curve model keeps more planets (0.83
-  against 0.77, and 0.82 against 0.75) and rejects more false positives
-  (0.70 against 0.66, and 0.73 against 0.68). The veto flags about the same
+  hosts the light-curve model goes from 0.808 to 0.869 (trained on 1 to 13)
+  and from 0.748 to 0.823 (14 to 26), and the model with the centroid test
+  from 0.849 to 0.895 and from 0.793 to 0.858.
+- **At the frozen threshold** the light-curve model keeps more planets (0.84
+  against 0.77, and 0.81 against 0.75) and rejects more false positives
+  (0.74 against 0.66, and 0.75 against 0.68). The veto flags about the same
   stars as before: 133 false positives and 5 planets in sectors 14 to 26
-  (124 and 9), 112 and 8 in 1 to 13 (106 and 7).
+  (124 and 9), 113 and 9 in 1 to 13 (106 and 7).
 
-So each host's later sectors are worth about 0.05 to 0.06 of average
-precision to the light-curve model, and 0.03 to 0.04 to the model with the
-centroid test, which reaches 0.831 and 0.876 on its own search. That is
+So each host's later sectors are worth about 0.05 to 0.07 of average
+precision to the light-curve model, and 0.04 to the model with the centroid
+test, which reaches 0.842 and 0.876 on its own search. That is
 close to the 0.855 and 0.880 of the views model in "Views, the centroid test
 and every label together", which folds at the catalogue's ephemeris, learns
 from 550 more labels and is scored on slightly fewer hosts.
 
 To reproduce, after the runs above (the first run downloads the later
 sectors of every host, about 5,800 curves at 10-minute and 200-second
-cadence, which takes hours through lightkurve; the search then takes 35 to
-55 minutes for each set of hosts on 4 cores):
+cadence, which takes hours through lightkurve; the search then takes about
+50 minutes for each set of hosts on 4 cores):
 
 ```bash
 python run_pipeline.py --train-sectors 1-13 --benchmark-centroids --stitch \
@@ -1266,8 +1268,9 @@ error as the features. A planet with n similar transits keeps about
 sqrt((n - 1)/n) of its SNR; a lone event keeps nothing. `windowed_search`
 now ranks the window's peaks by it and chooses among each peak's whole-curve
 periods by it. Against the plain ranking, on the same stars and models
-trained the same way (the last column is the share of 2000 paired bootstrap
-resamples in which leaving the strongest transit out scores higher):
+trained the same way, before the change of the next section (the last
+column is the share of 2000 paired bootstrap resamples in which leaving the
+strongest transit out scores higher):
 
 | Scored on | Inputs | Plain SNR | Strongest transit left out | Ahead in |
 |---|---|---|---|---|
@@ -1300,11 +1303,95 @@ resamples in which leaving the strongest transit out scores higher):
 - **What it cannot fix.** An event deep enough to pull the box's phase off
   the planet even at the planet's own period (in tests, about 1% deep
   inside the densest 400 days) still wins, and a signal with too few
-  transits in that window is still not among the candidates.
+  transits in that window is not among the window's candidates (the next
+  section adds candidates for those).
 
 So the search now reports the catalogued period more often, at no
 measurable cost to the ranking; the change was made for the period, and the
 ranking numbers are reported as they came out, not tuned.
+
+### Planets with one transit in the window
+
+Even with the later sectors joined, the search found the catalogued period
+for only half the TOIs longer than 27 days: 18 of 36 hosts of sectors 14 to
+26 and 19 of 37 of 1 to 13. Counting the transits at the catalogued
+ephemeris that fall on data splits those 73 in two. 24 have at most two, so
+any whole fraction of their separation that puts no other transit on data
+fits them as well, and these curves cannot pin the period down; 3 of them
+were found. The other 49 have three or more, and 34 were found. Of the 15
+missed, 6 have at most one transit in the densest 400 days, so the window's
+periodogram has no peak at their period to refine, however clear their
+transits are on the rest of the curve.
+
+`pair_periods` in `transitml/single.py` gives the search candidates that do
+not need the window. It takes the strongest single dips of the whole curve
+(the single-event search of "Single and duo transits", at its defaults),
+pairs those that match in depth and duration as a duo does, and lists the
+periods each pair allows: the separation divided by a whole number, down to
+10 days, wherever no transit the period predicts lands on flat data.
+`windowed_search` fits each of those periods again on the whole curve, as
+it does the window's peaks. Of one pair's periods it keeps the one with the
+most transits on data (the shortest, when none has more than the two), and
+that period then competes with the window's candidates by its SNR with the
+strongest transit left out. The floor is `pair_min_period_days` in
+`BLSConfig`, which `--join-sectors` sets to 10 days; below it a sector holds
+at least two transits, so the window sees the period on its own.
+
+Against the search of the previous section, on the same stars and models
+trained the same way (the last column is the share of 2000 paired bootstrap
+resamples in which the search with pairs of dips scores higher):
+
+| Scored on | Inputs | Window peaks only | With pairs of dips | Ahead in |
+|---|---|---|---|---|
+| *766 hosts of sectors 14 to 26* | | | | |
+| | light curve | 0.811 | 0.818 | 85% |
+| | light curve, centroid test as a veto | 0.837 | 0.840 | 66% |
+| | light curve and centroid test | 0.831 | 0.842 | 93% |
+| | catalogued period found | 87.9% | 88.3% | |
+| | TOIs over 27 days: period found | 18 of 36 | 20 of 36 | |
+| *857 hosts of sectors 1 to 13* | | | | |
+| | light curve | 0.857 | 0.858 | 58% |
+| | light curve, centroid test as a veto | 0.875 | 0.872 | 31% |
+| | light curve and centroid test | 0.876 | 0.876 | 52% |
+| | catalogued period found | 87.4% | 88.2% | |
+| | TOIs over 27 days: period found | 19 of 37 | 21 of 37 | |
+
+- **The hosts it was built for are found.** Of the 6 long-period TOIs with
+  three or more transits on data but at most one in the window, 4 now are
+  (TOI-5980.01 at 80 days, 2537.01 at 94, 4310.01 at 30 and 2011.02 at 28),
+  and so is TOI-4633.01 at 272 days, which has only two transits on data.
+  Shorter TOIs whose window held a single transit gain too: of those
+  between 13.7 and 27 days, 60 of 64 are found instead of 59, and 61 of 79
+  instead of 56 (TOI-757.01, 257.01 and 6628.01 among them, at 17 to 18
+  days).
+- **13 hosts gain their period and 3 lose it** (3 and 10 gain, none and 3
+  lose). TOI-776.02 is now given 15.67 days, the period of TOI-776.01 on the
+  same star; TOI-791.01 is given 836 days, six times its period, set by its
+  two strongest dips; TOI-2540.01 goes from 12.7 days to 17.3.
+- **Two short TOIs are given very long periods.** TOI-3353.01 (4.7 days)
+  and TOI-1231.01 (24.2 days), both confirmed planets whose period the
+  window had already missed, now get 547 and 727 days. One of TOI-1231.01's
+  predicted transits lands on data with no dip in it, which rules its
+  period out for every pair; of the multiples left, 727 days (30 periods)
+  scores best. TOIs under 50 days given a period over 50 stay at 4 in
+  sectors 14 to 26 and go from 3 to 6 in 1 to 13 (the third is TOI-1230.01,
+  at twice its 25-day period, which counts as found; the search had given
+  it a third before).
+- **The ranking does not move beyond noise.** No average precision changes
+  by more than 0.011, and the new search is ahead in 31% to 93% of paired
+  resamples. On the training hosts' cross-validation the light-curve model
+  goes from 0.851 to 0.869 and from 0.831 to 0.823, and the model with the
+  centroid test from 0.894 to 0.895 and from 0.856 to 0.858.
+- **It costs search time.** These runs searched the 1,623 hosts in 100
+  minutes on 4 cores, against 72 before.
+
+So the search now finds 4 of the 6 long-period TOIs it missed only because
+the window held one transit, and a few shorter ones for the same reason, at
+no measurable cost to the ranking. As in the
+previous section, the change was made for the period, and the ranking
+numbers are reported as they came out, not tuned. Of the 32 long-period
+TOIs still missed, 20 have at most two transits on data, which takes more
+data rather than a better search.
 
 ### Ranking the open TOIs
 
@@ -1312,10 +1399,10 @@ Every benchmark above scores TOIs whose fate is already known. The point of
 a vetting model is the ones that are not: `--rank-open-tois` turns it on the
 4,059 stars of sectors 1 to 26 with a PC or APC TOI and no confirmed or
 known planet. They are searched exactly as the benchmark's hosts are (every
-sector of the star together, sectors 27 to 102 joined, the search of "One
-deep event against many transits") and scored by the light-curve model
+sector of the star together, sectors 27 to 102 joined, the search of the
+two sections above) and scored by the light-curve model
 trained on all 1,623 resolved hosts of sectors 1 to 26 at once, rather than
-on one half (cross-validated AP 0.861). The centroid test runs on the 200
+on one half (cross-validated AP 0.864). The centroid test runs on the 200
 best-ranked stars only, where a dip on another star matters most.
 
 ```bash
@@ -1344,22 +1431,26 @@ are planets. What can be said:
   is calibrated on resolved TOIs at their 51% planet rate, so it is the
   chance that a resolved TOI which looked like this one turned out a planet,
   not a forecast for this population.
-- **The search finds the catalogued period for 87%** (1,568 of the 1,810
+- **The search finds the catalogued period for 88%** (1,596 of the 1,810
   with one), as on the benchmark. Where it does not, the score describes the
-  signal the search found (TOI-6267.01, catalogued at 734 days, ranks 20th on
-  a 19.6-day signal); `period_recovered` in the table says which.
-- **1,142 (62%) are above the operating threshold**, P(planet) of 0.5. Of
-  the 1,605 PCs 64% are, at a median P(planet) of 0.63; of the 251 APCs,
-  candidates where follow-up has already raised a doubt, 45% are, at 0.46.
+  signal the search found (TOI-218.01, catalogued at 0.44 days, ranks 20th
+  on an 8.4-day signal); `period_recovered` in the table says which. The
+  pairs of dips of the previous section add 28 periods here and lose none,
+  and for TOIs over 27 days the share found goes from 71 to 86 of 172.
+  TOI-6267.01, catalogued at 734 days, ranked 20th on a 19.6-day signal
+  before that change; it is now found at 734 days and ranks 1,004th.
+- **1,156 (62%) are above the operating threshold**, P(planet) of 0.5. Of
+  the 1,605 PCs 65% are, at a median P(planet) of 0.63; of the 251 APCs,
+  candidates where follow-up has already raised a doubt, 46% are, at 0.45.
   The model never saw those dispositions, and it leans the same way.
-- **The top of the list is giant-planet depths.** 63 of the top 100 are
-  deeper than 0.5%, against 29% of the whole list, at a median period of 3.8
+- **The top of the list is giant-planet depths.** 71 of the top 100 are
+  deeper than 0.5%, against 29% of the whole list, at a median period of 3.7
   days. Among the training hosts, 71% of the TOIs that deep at under 10
   days were planets, against 51% of all of them.
-- **The centroid test** places the dip for 178 of the top 200: on the
-  target for 176 and off it for 2 (TOI-6777.01, ranked 151st, and
-  TOI-4451.01, 160th). For 18 the difference image is too weak to say, and
-  4 have too few cadences in transit or a centroid outside the window.
+- **The centroid test** places the dip for 184 of the top 200: on the
+  target for 182 and off it for 2 (TOI-4451.01, ranked 158th, and
+  TOI-6777.01, 161st). For 14 the difference image is too weak to say, and
+  for 2 the centroid falls outside the window.
 
 One check is possible all the same. Dispositions on ExoFOP lag the
 literature, so some open TOIs are already confirmed planets in the NASA
@@ -1371,35 +1462,35 @@ they sit in the ranking, against orderings by what follow-up itself favours:
 
 | Ordering | ROC-AUC, archive planets against the rest |
 |---|---|
-| model score | 0.621 |
+| model score | 0.628 |
 | TOI SNR | 0.505 |
 | TOI depth | 0.445 |
 | brightness | 0.482 |
 
-79% of them are above the threshold, against 61% of the rest and the 84% of
+82% of them are above the threshold, against 61% of the rest and the 84% of
 planets the model keeps out of fold in training. The model's AUC is above
 the SNR's in all of 2000 paired resamples. The rest still hold many planets,
-so 0.62 is a floor on the separation, not a measure of it, and the archive
+so 0.63 is a floor on the separation, not a measure of it, and the archive
 planets are the ones follow-up chose to confirm first. 11 are in the top 100,
-three of them in the top 25.
+four of them in the top 25.
 
 | Rank | TOI | Star | Disposition | Tmag | Period (d) | Depth (ppm) | P(planet) | Centroid | Archive |
 |---|---|---|---|---|---|---|---|---|---|
-| 1 | 2645.01 | TIC 372818426 | PC | 12.4 | 1.444 | 43,370 | 0.97 | on target | |
-| 2 | 202.01 | TIC 355509914 | PC | 14.7 | 1.739 | 13,711 | 0.96 | too weak | |
-| 3 | 2069.01 | TIC 198187049 | PC | 8.0 | 5.921 | 140 | 0.96 | too weak | |
-| 4 | 4283.01 | TIC 343952976 | PC | 11.2 | 3.013 | 13,660 | 0.96 | on target | |
-| 5 | 2082.01 | TIC 160039081 | PC | 7.8 | 30.200 | 520 | 0.95 | on target | |
-| 6 | 702.01 | TIC 237914496 | PC | 11.8 | 3.568 | 907 | 0.95 | on target | |
-| 7 | 2031.01 | TIC 470127886 | PC | 10.8 | 5.716 | 12,241 | 0.94 | on target | TOI-2031 A b |
-| 8 | 234.01 | TIC 12423815 | PC | 14.6 | 2.839 | 35,230 | 0.94 | on target | |
-| 9 | 3686.01 | TIC 13533330 | PC | 11.2 | 5.078 | 14,469 | 0.94 | on target | |
-| 10 | 1398.01 | TIC 66445643 | APC | 8.6 | 6.556 | 861 | 0.94 | on target | |
+| 1 | 2069.01 | TIC 198187049 | PC | 8.0 | 5.921 | 140 | 0.97 | too weak | |
+| 2 | 4283.01 | TIC 343952976 | PC | 11.2 | 3.013 | 13,660 | 0.97 | on target | |
+| 3 | 202.01 | TIC 355509914 | PC | 14.7 | 1.739 | 13,711 | 0.97 | too weak | |
+| 4 | 2645.01 | TIC 372818426 | PC | 12.4 | 1.444 | 43,370 | 0.96 | on target | |
+| 5 | 234.01 | TIC 12423815 | PC | 14.6 | 2.839 | 35,230 | 0.96 | on target | |
+| 6 | 2082.01 | TIC 160039081 | PC | 7.8 | 30.200 | 520 | 0.95 | on target | |
+| 7 | 1398.01 | TIC 66445643 | APC | 8.6 | 6.556 | 861 | 0.95 | on target | |
+| 8 | 1852.01 | TIC 219728669 | PC | 13.5 | 2.360 | 21,460 | 0.95 | on target | |
+| 9 | 3686.01 | TIC 13533330 | PC | 11.2 | 5.078 | 14,469 | 0.95 | on target | |
+| 10 | 2332.01 | TIC 286000547 | PC | 12.2 | 7.497 | 14,480 | 0.95 | on target | |
 
 So the list ranks the open TOIs by how much they look like the resolved
 planets, with a probability calibrated on those, and the one check available
 says it carries information that SNR, depth and brightness do not. It is not
-a measured precision, a 43,000 ppm dip at the top may yet be a grazing
+a measured precision, a 43,000 ppm dip near the top may yet be a grazing
 binary, and it says nothing about the 2,203 hosts without a TESS-SPOC curve.
 
 ---
@@ -2945,7 +3036,7 @@ Three further gaps:
   at the period the pipeline's own search found, the views add nothing to
   the pipeline's features (see "Views at the pipeline's own BLS period").
   Searching every sector of each star, its later ones included, brings the
-  pipeline's own model with the centroid test to 0.831 there (see "Later
+  pipeline's own model with the centroid test to 0.842 there (see "Later
   sectors, as more data").
 - **Labels.** Ground truth is known by construction here. On real data it has to
   come from a catalogue that inherits the selection function of the pipelines
@@ -2955,12 +3046,12 @@ Three further gaps:
   real TOI false positives only slightly better than a signal-to-noise
   ranking. Trained on the dispositions of other sectors, the same classifier
   does clearly better (0.75 against 0.60 for that ranking, 0.78 when each
-  star's sectors are searched together, and 0.811 with its later sectors
+  star's sectors are searched together, and 0.818 with its later sectors
   added), but those labels
   carry the follow-up programme's selection, so it is a ranker of TOIs like
   the resolved ones. On the 1,856 open TOI hosts with a light curve it puts
   the 101 that the literature has since confirmed above the rest (ROC-AUC
-  0.62, where the TOI's SNR gives 0.51), the one check of the open list
+  0.63, where the TOI's SNR gives 0.51), the one check of the open list
   possible before their dispositions arrive (see "Ranking the open TOIs").
 - **Sample size.** 96 positives in total and 34 in the test set. The bootstrap
   interval on average precision is [0.671, 0.819], roughly ±0.074, so the
@@ -3009,7 +3100,7 @@ transit-detection/
 │   ├── tls.py                  # Transit Least Squares as the search
 │   ├── search_benchmark.py     # BLS against TLS on the same planets
 │   ├── search.py               # iterative multi-planet search
-│   ├── single.py               # single and duo transits, found without folding
+│   ├── single.py               # single and duo transits, found without folding; dip pairs' periods
 │   ├── centroid.py             # difference-image and centroid-motion tests
 │   ├── model.py                # split, baselines, training, threshold, save/load
 │   ├── calibration.py          # Platt scaling on out-of-fold scores; Brier, ECE
@@ -3033,7 +3124,7 @@ transit-detection/
 │   ├── dashboard.py            # the batch's self-contained HTML dashboard
 │   ├── real_check.py           # known planets' fits and a real sector, against the archives
 │   └── plots.py                # figures (matplotlib Agg, no display)
-├── tests/                      # 566 tests, ~5 min
+├── tests/                      # 569 tests, ~5 min
 │   ├── test_generator.py       # imbalance is exact; injected physics is consistent
 │   ├── test_preprocess.py      # depth preservation; why the median was rejected; fit by segment
 │   ├── test_features.py        # recovery vs SNR; the vetting statistics fire
@@ -3042,7 +3133,7 @@ transit-detection/
 │   ├── test_search.py          # two planets found; noise yields nothing
 │   ├── test_single.py          # lone and duo transits found; ramps and noise are not
 │   ├── test_stitch.py          # sectors joined, period grid grows with them; pair detected
-│   ├── test_windowed_search.py # long curves: the densest stretch's peaks chosen on all of it
+│   ├── test_windowed_search.py # long curves: the densest stretch's peaks chosen on all of it; two dips
 │   ├── test_evaluation.py      # no test-set leakage into threshold or metrics
 │   ├── test_calibration.py     # Platt fit, ranking unchanged, proper scores
 │   ├── test_treeshap.py        # SHAP against brute force and the shap package

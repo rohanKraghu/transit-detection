@@ -360,6 +360,66 @@ def search_single_events(
     if lc.time.size < 20:
         return SingleEventSearch((), ())
     stats = _BoxStats(lc)
+    found, ramps = _strongest_events(lc, stats, config)
+    events = [
+        _with_min_period(stats, event, binned_noise_factor(lc, event.duration), config)
+        for event in found
+    ]
+    duos = []
+    ordered = sorted(events, key=lambda e: e.time)
+    for i, first in enumerate(ordered):
+        for second in ordered[i + 1:]:
+            if not _matching(first, second, config):
+                continue
+            beta = binned_noise_factor(lc, 0.5 * (first.duration + second.duration))
+            periods, ratios = duo_periods(stats, first, second, beta, config)
+            if periods:
+                duos.append(DuoCandidate(first, second, periods, ratios))
+    return SingleEventSearch(tuple(events), tuple(duos), tuple(ramps))
+
+
+def pair_periods(
+    lc: FlattenedLightCurve, min_period: float, config: SingleEventConfig | None = None
+) -> list[tuple[tuple[float, ...], float]]:
+    """Periods of at least ``min_period`` that pairs of the strongest dips allow.
+
+    For every two of the ``config.max_events`` strongest events that match in
+    depth and duration, their separation over each whole number down to
+    ``min_period``, kept where no transit it predicts lands on observed, flat
+    data (:func:`duo_periods`), with the pair's mean duration.  This is how
+    a search over years of sectors gets candidates for a signal with too few
+    transits in any one stretch to fold: two of them anywhere will do.  The
+    events' own minimum periods are not computed.
+    """
+    config = config or SingleEventConfig()
+    if lc.time.size < 20:
+        return []
+    stats = _BoxStats(lc)
+    events, _ = _strongest_events(lc, stats, config)
+    ordered = sorted(events, key=lambda e: e.time)
+    out = []
+    for i, first in enumerate(ordered):
+        for second in ordered[i + 1:]:
+            separation = second.time - first.time
+            if separation < min_period or not _matching(first, second, config):
+                continue
+            pair = replace(config, duo_max_harmonic=int(separation // min_period))
+            duration = 0.5 * (first.duration + second.duration)
+            beta = binned_noise_factor(lc, duration)
+            periods, _ = duo_periods(stats, first, second, beta, pair)
+            if periods:
+                out.append((periods, duration))
+    return out
+
+
+def _strongest_events(
+    lc: FlattenedLightCurve, stats: _BoxStats, config: SingleEventConfig
+) -> tuple[list[SingleEvent], list[float]]:
+    """The box scan and event selection of :func:`search_single_events`.
+
+    Returns the events, without their minimum periods, and the mid-times of
+    the dips set aside as ramps.
+    """
     centres = lc.time
     betas = {d: binned_noise_factor(lc, d) for d in config.durations_days}
     table = []
@@ -403,19 +463,8 @@ def search_single_events(
         if ramp_preference(lc, event, beta) > config.ramp_delta_chi2:
             ramps.append(centre)
             continue
-        events.append(_with_min_period(stats, event, beta, config))
-
-    duos = []
-    ordered = sorted(events, key=lambda e: e.time)
-    for i, first in enumerate(ordered):
-        for second in ordered[i + 1:]:
-            if not _matching(first, second, config):
-                continue
-            beta = binned_noise_factor(lc, 0.5 * (first.duration + second.duration))
-            periods, ratios = duo_periods(stats, first, second, beta, config)
-            if periods:
-                duos.append(DuoCandidate(first, second, periods, ratios))
-    return SingleEventSearch(tuple(events), tuple(duos), tuple(ramps))
+        events.append(event)
+    return events, ramps
 
 
 def _refine(
