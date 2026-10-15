@@ -325,6 +325,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "file; implies --benchmark-centroids; writes to results/toi_trained/pixels/).",
     )
     labels.add_argument(
+        "--star-features",
+        action="store_true",
+        help="With --train-sectors: also give the model the host star's TIC temperature, "
+        "density and radius, and the companion radius the dip implies (writes to a stars/ "
+        "subdirectory of the results).",
+    )
+    labels.add_argument(
         "--learning-curve",
         action="store_true",
         help="With --train-sectors: also train on random subsets of the training hosts, "
@@ -451,6 +458,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                 args.results_dir = args.results_dir / "pixels"
             if default_figures:
                 args.figures_dir = args.figures_dir / "pixels"
+        if args.star_features:
+            if default_results:
+                args.results_dir = args.results_dir / "stars"
+            if default_figures:
+                args.figures_dir = args.figures_dir / "stars"
         if args.rank_open_tois:
             if default_results:
                 args.results_dir = args.results_dir / "open_tois"
@@ -460,6 +472,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                 args.open_tpfs = Path(args.open_cache).parent / "open_tpfs"
     elif args.pixel_features:
         parser.error("--pixel-features needs --train-sectors: only TOI hosts come with pixels")
+    elif args.star_features:
+        parser.error("--star-features needs --train-sectors: it trains on TOI hosts")
     elif args.learning_curve:
         parser.error("--learning-curve needs --train-sectors: it trains on TOI hosts")
     if args.stitch and args.benchmark_tois is None:
@@ -655,6 +669,7 @@ def load_toi_hosts(
         load_or_fetch_stitched,
         load_or_fetch_tpfs,
         with_centroid_features,
+        with_star_features,
         with_tic_stars,
     )
 
@@ -723,6 +738,8 @@ def load_toi_hosts(
     dataset = build_benchmark_dataset(
         curves, preprocess=config.preprocess, bls=config.bls, n_jobs=args.n_jobs
     )
+    if args.star_features:
+        dataset = with_star_features(dataset)
     tests = None
     if centroids:
         tested = (
@@ -788,6 +805,8 @@ def benchmark_hosts(
     With the centroid test's results whenever a model of ``feature_names``
     needs them.
     """
+    from transitml.benchmark import CENTROID_FEATURE_NAMES
+
     spec = args.benchmark_sectors or str(args.sector if args.sector is not None else 14)
     return load_toi_hosts(
         args,
@@ -796,7 +815,8 @@ def benchmark_hosts(
         cache=args.benchmark_cache,
         tpfs=args.benchmark_tpfs,
         # A model with pixel features cannot be scored without them.
-        centroids=args.benchmark_centroids or tuple(feature_names) != FEATURE_NAMES,
+        centroids=args.benchmark_centroids
+        or bool(set(CENTROID_FEATURE_NAMES) & set(feature_names)),
         exclude_tics=exclude_tics,
     )
 
@@ -933,7 +953,7 @@ def run_toi_training(args: argparse.Namespace, config: Config, started: float) -
     every labelled host of ``--train-sectors`` and ranks the open ones
     (:func:`rank_open_tois`).
     """
-    from transitml.benchmark import CENTROID_FEATURE_NAMES
+    from transitml.benchmark import CENTROID_FEATURE_NAMES, STAR_FEATURE_NAMES
     from transitml.toi_training import (
         format_training_report,
         learning_curve,
@@ -961,7 +981,11 @@ def run_toi_training(args: argparse.Namespace, config: Config, started: float) -
         exclude_tics=benchmark_stars,
         training=True,
     )
-    names = FEATURE_NAMES + (CENTROID_FEATURE_NAMES if args.pixel_features else ())
+    names = (
+        FEATURE_NAMES
+        + (CENTROID_FEATURE_NAMES if args.pixel_features else ())
+        + (STAR_FEATURE_NAMES if args.star_features else ())
+    )
     evaluation = config.evaluation
     trained, split = train_on_hosts(
         hosts.dataset,
@@ -1038,7 +1062,7 @@ def run_toi_training(args: argparse.Namespace, config: Config, started: float) -
 
     hosts.dataset.save(results_dir / "dataset.npz")
     written = [results_dir / "metrics.json", results_dir / "report.txt"]
-    if args.pixel_features:
+    if names != FEATURE_NAMES:
         # vet computes the light-curve features only, so this model is not saved.
         payload["model"] = None
     else:
