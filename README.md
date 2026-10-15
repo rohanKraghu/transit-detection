@@ -3420,8 +3420,12 @@ on. Sizes are rough: S is a few hours, M a day or two, L longer.
 
 **Next**
 
-Every item on the original roadmap is built, and nothing is in progress;
-the next step has not been chosen yet.
+Every item on the original roadmap is built. What the results above point
+to next:
+
+| Item | Why | Size |
+| --- | --- | --- |
+| A second signal, in progress | Search each host again with its first signal masked and give the model the second signal's strength: TOI hosts with two or more TOIs are almost all planets, and this would let the pipeline see that from the light curve alone rather than from the catalogue's TOI count | M |
 
 ## References
 
