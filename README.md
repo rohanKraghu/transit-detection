@@ -3316,16 +3316,18 @@ on. Sizes are rough: S is a few hours, M a day or two, L longer.
   open TOIs of sectors 1 to 26, ranked by the light-curve model trained on
   all 1,623 resolved hosts. Checked against the 101 of them the NASA
   Exoplanet Archive already lists as planets (`--archive-planets`), the
-  model's ROC-AUC is 0.62 against 0.51 for TOI SNR.
+  model's ROC-AUC is 0.63 against 0.51 for TOI SNR.
+- Planets with one transit in the window (with `--join-sectors`): pairs of
+  the strongest single dips on the whole curve propose periods the windowed
+  search cannot fold, refined on the whole curve and ranked with the rest.
+  Periods found rise from 87.9% to 88.3% and 87.4% to 88.2%, and for TOIs
+  over 27 days from 18 to 20 of 36 and 19 to 21 of 37; the ranking is
+  unchanged within noise.
 
 **Next**
 
-Every item on the original roadmap is built. What the results above point
-to next:
-
-| Item | Why | Size |
-| --- | --- | --- |
-| Long-period recovery, in progress | Even with every sector joined, the search finds the catalogued period for only about half of the TOIs with periods longer than a sector (50% and 51%), against 87% to 88% overall | M |
+Every item on the original roadmap is built, and nothing is in progress;
+the next step has not been chosen yet.
 
 ## References
 
