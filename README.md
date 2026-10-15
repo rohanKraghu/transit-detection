@@ -1577,6 +1577,53 @@ would make it worse at the planets around those stars that follow-up has
 not reached. That is why it is an option and not the default, and why the
 open-TOI list above is the light-curve model's.
 
+### A second signal
+
+Hosts with two or more TOIs are almost all planets: 52 of the 766 hosts of
+sectors 14 to 26 and 70 of the 857 of 1 to 13, of which 97% and 96% are
+planet hosts (every one with three or more). False positives rarely come in
+pairs, which is why multiplicity is a standard argument for validating
+planets. Ranking the hosts by their number of TOIs in the catalogue, with
+the light-curve model's score breaking ties, gives average precision 0.857
+and 0.885, against the model's 0.818 and 0.858. That is about the most a
+second signal could add if the search found every second planet and nothing
+else.
+
+To see how much of that the light curve itself carries, a prototype (not
+kept in the pipeline) searched every host again with its first signal's
+transits left out of the detrend (one duration either side, as the second
+detrend pass does) and of the search (1.5 durations either side, as `vet`'s
+iterative search does). Each model is averaged over 20 seeds (the
+light-curve model's 0.818 and 0.858 above are one seed); the last two
+columns are the share of 2000 paired bootstrap resamples in which it scores
+higher than the light-curve model:
+
+| Inputs added | Scored on 14 to 26 | Scored on 1 to 13 | Ahead in, 14 to 26 | Ahead in, 1 to 13 |
+|---|---|---|---|---|
+| none (the light-curve model) | 0.814 | 0.860 | | |
+| the second signal's SDE and depth SNR, and whether its period is an alias of the first's | 0.813 | 0.874 | 49% | 98% |
+| the light-curve model's own score for the second signal (out of fold on the training hosts), and the alias flag | 0.818 | 0.875 | 80% | 100% |
+
+- **The search finds most second planets.** A strong second signal (depth
+  SNR 10 or more, at a period that is not an alias of the first) turns up
+  on 63% and 66% of the planet hosts with two or more TOIs, and the second
+  signal falls on one of the star's TOIs on 32 of 52 and 40 of 70 of the
+  hosts with two or more.
+- **Other stars leave one too.** So do 15% and 13% of false-positive hosts
+  and 13% and 11% of planet hosts with a single TOI, likely stellar
+  variability and eclipsing binaries leaving something behind once their
+  strongest signal is masked. Among hosts with a strong second signal the
+  share of planets is 0.56 and 0.63, against 0.49 and 0.54 among all hosts.
+- **The hosts it would help are already easy.** The light-curve model gives
+  planet hosts with two or more TOIs a mean score of 0.71 before any second
+  signal is added.
+
+So the second signal ties scored on 14 to 26 and adds about 0.015 on 1 to
+13, against the 0.04 and 0.03 the catalogue's TOI count would add. The
+model's-score variant was tried after the first had tied, so it is the less
+clean of the two. Neither is in the pipeline; `vet` still reports a star's
+further signals (`transitml.search.iterative_search`).
+
 ---
 
 ## Preprocessing: the part that decides whether anything else matters
