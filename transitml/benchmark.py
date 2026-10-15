@@ -78,6 +78,7 @@ from .evaluate import (
     score_curve,
 )
 from .features import FEATURE_NAMES
+from .fit import R_EARTH_PER_R_SUN
 from .model import BASELINES, TrainedModel
 
 #: Bins of the catalogue's TOI SNR.  That SNR comes from every sector the
@@ -549,6 +550,42 @@ def with_centroid_features(dataset: Dataset, tests: Sequence[dict[str, Any] | No
         raise ValueError(f"{len(tests)} centroid results for {len(dataset)} stars")
     extra = centroid_features(tests)
     extra.index = dataset.features.index
+    return Dataset(
+        features=pd.concat([dataset.features, extra], axis=1),
+        labels=dataset.labels,
+        meta=dataset.meta,
+    )
+
+
+#: The host star from the TIC as model inputs, for a model trained with star
+#: features: its temperature, density and radius, and the companion radius
+#: the dip implies.
+STAR_FEATURE_NAMES: tuple[str, ...] = (
+    "star_teff",
+    "star_log_density",
+    "star_log_radius",
+    "log_companion_radius_earth",
+)
+
+
+def with_star_features(dataset: Dataset) -> Dataset:
+    """``dataset`` with the :data:`STAR_FEATURE_NAMES` columns, from its TIC metadata.
+
+    The companion radius is sqrt(depth) * R_star from the search's depth, in
+    Earth radii.  A star the TIC has no value for gets NaN, which the
+    classifier learns a direction for.
+    """
+    radius = dataset.meta["r_star_rsun"].to_numpy(dtype=float)
+    depth = 10.0 ** dataset.features["log_depth"].to_numpy(dtype=float)
+    extra = pd.DataFrame(
+        {
+            "star_teff": dataset.meta["teff_k"].to_numpy(dtype=float),
+            "star_log_density": np.log10(dataset.meta["rho_star_cgs"].to_numpy(dtype=float)),
+            "star_log_radius": np.log10(radius),
+            "log_companion_radius_earth": np.log10(np.sqrt(depth) * radius * R_EARTH_PER_R_SUN),
+        },
+        index=dataset.features.index,
+    )
     return Dataset(
         features=pd.concat([dataset.features, extra], axis=1),
         labels=dataset.labels,

@@ -13,6 +13,7 @@ from sklearn.metrics import average_precision_score
 
 from transitml.benchmark import (
     CENTROID_FEATURE_NAMES,
+    STAR_FEATURE_NAMES,
     benchmark,
     build_benchmark_dataset,
     centroid_features,
@@ -20,6 +21,7 @@ from transitml.benchmark import (
     format_benchmark_report,
     tpf_cache_path,
     with_centroid_features,
+    with_star_features,
 )
 from transitml.calibration import PlattScaling, fit_platt
 from transitml.config import default_config
@@ -311,8 +313,12 @@ def test_training_flags_and_their_defaults(tmp_path):
 
     assert not args.learning_curve
     assert run_pipeline.parse_args([*base, "--learning-curve"]).learning_curve
+    stars = run_pipeline.parse_args([*base, "--pixel-features", "--star-features"])
+    assert stars.results_dir == run_pipeline.ROOT / "results" / "toi_trained" / "pixels" / "stars"
+    assert stars.train_cache == args.train_cache
     for bad in (
         ["--pixel-features"],
+        ["--star-features"],
         [*base[2:], "--learning-curve"],
         base[:4],
         [*base, "--inject-into", "targets.txt"],
@@ -320,6 +326,22 @@ def test_training_flags_and_their_defaults(tmp_path):
     ):
         with pytest.raises(SystemExit):
             run_pipeline.parse_args(bad)
+
+
+def test_star_features_are_the_tic_star_and_the_companion_it_implies():
+    features = pd.DataFrame(np.zeros((3, len(FEATURE_NAMES))), columns=list(FEATURE_NAMES))
+    features["log_depth"] = np.log10([1e-2, 1e-2, 1e-4])
+    meta = pd.DataFrame({"target_id": ["TIC 1", "TIC 2", "TIC 3"], "r_star_rsun": [1.0, 10.0, np.nan],
+                         "teff_k": [5800.0, 4800.0, np.nan], "rho_star_cgs": [1.41, 0.01, np.nan]})
+    dataset = with_star_features(Dataset(features=features, labels=np.array([1, 0, 1]), meta=meta))
+
+    stars = dataset.features[list(STAR_FEATURE_NAMES)]
+    np.testing.assert_array_equal(dataset.inputs(FEATURE_NAMES), features.to_numpy())
+    # A 1% dip is a Jupiter (about 11 Earth radii) on the Sun, a star on a giant ten times as big.
+    np.testing.assert_allclose(10 ** stars["log_companion_radius_earth"][:2], [10.9076, 109.076])
+    np.testing.assert_allclose(stars["star_log_radius"][:2], [0.0, 1.0])
+    assert stars["star_teff"][1] == 4800.0
+    assert stars.iloc[2].isna().all()
 
 
 def test_run_pipeline_trains_on_one_sector_and_scores_another(small_config, tmp_path, monkeypatch):

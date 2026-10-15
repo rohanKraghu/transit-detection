@@ -20,7 +20,7 @@ whose coverage is measured by injection.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python run_pipeline.py            # ~3 min on 4 cores
-pytest                            # ~5 min, 569 tests
+pytest                            # ~5 min, 570 tests
 ```
 
 It writes `results/metrics.json`, `results/report.txt`, the trained model
@@ -1492,6 +1492,90 @@ planets, with a probability calibrated on those, and the one check available
 says it carries information that SNR, depth and brightness do not. It is not
 a measured precision, a 43,000 ppm dip near the top may yet be a grazing
 binary, and it says nothing about the 2,203 hosts without a TESS-SPOC curve.
+
+### What the host star adds
+
+Every model above reads the light curve and, with pixel features, the
+centroid test. The star's TIC values enter only through the occultation
+allowance of the secondary-eclipse test. `--star-features` gives the model
+four more inputs from the TIC: the star's temperature, density and radius,
+and the companion radius the dip implies, sqrt(depth) times the star's
+radius (`STAR_FEATURE_NAMES` in `transitml/benchmark.py`). A 1% dip is a
+Jupiter on the Sun and a star the size of the Sun on a giant ten times as
+large, and the light curve alone cannot tell the two apart.
+
+```bash
+python run_pipeline.py --train-sectors 1-13 --benchmark-centroids --stitch \
+    --centroids-every-sector --join-sectors 27-102 --star-features \
+    --benchmark-tois data/toi_benchmark/exofop_toi_2026-10-06.csv --benchmark-sectors 14-26
+```
+
+It writes to `results/toi_trained/stitched/centroids_every_sector/joined_27-102/stars/`
+(`pixels/stars/` with `--pixel-features`). On the same stars, searched the
+same way, with models trained the same way (the last column is the share of
+2000 paired bootstrap resamples in which the model with the star scores
+higher):
+
+| Scored on | Inputs | Without the star | With it | Ahead in |
+|---|---|---|---|---|
+| *766 hosts of sectors 14 to 26* | | | | |
+| | light curve | 0.818 | 0.898 | 100% |
+| | light curve, centroid test as a veto | 0.840 | 0.907 | 100% |
+| | light curve and centroid test | 0.842 | 0.911 | 100% |
+| *857 hosts of sectors 1 to 13* | | | | |
+| | light curve | 0.858 | 0.915 | 100% |
+| | light curve, centroid test as a veto | 0.872 | 0.917 | 99.9% |
+| | light curve and centroid test | 0.876 | 0.924 | 100% |
+
+That is the largest gain of any change in these sections, and the one that
+most needs a second look. The model leans hardest on the temperature
+(shuffling it costs 0.051 and 0.043 of average precision), then the density;
+the companion radius costs 0.018 scored on 14 to 26 and 0.004 on 1 to
+13. The labels say why. With the light-curve model and the star model
+scored within groups of hosts (sectors 14 to 26 first, then 1 to 13):
+
+| Host star | Hosts | Share planets | Light curve | With the star |
+|---|---|---|---|---|
+| under 5,000 K | 154 / 188 | 0.73 / 0.71 | 0.910 / 0.941 | 0.932 / 0.947 |
+| 5,000 to 6,000 K | 254 / 322 | 0.62 / 0.62 | 0.846 / 0.919 | 0.894 / 0.926 |
+| 6,000 to 7,000 K | 251 / 256 | 0.37 / 0.42 | 0.832 / 0.844 | 0.888 / 0.863 |
+| 7,000 K and over | 100 / 81 | 0.10 / 0.22 | 0.742 / 0.681 | 0.746 / 0.786 |
+| under 1.5 solar radii | 458 / 561 | 0.63 / 0.65 | 0.855 / 0.932 | 0.907 / 0.939 |
+| 1.5 to 3 solar radii | 262 / 254 | 0.32 / 0.37 | 0.811 / 0.743 | 0.886 / 0.798 |
+| 3 solar radii and over | 37 / 31 | 0.05 / 0.03 | | |
+
+- **Most resolved TOIs on hot or large stars are false positives.** The
+  share of planets falls from about 0.7 below 5,000 K to 0.10 and 0.22 at
+  7,000 K and over, and to 0.05 and 0.03 on stars of three solar radii or
+  more (2 and 1 planets, too few to rank). Ranking the hosts by nothing but
+  which of the four temperature bins they fall in gives average precision
+  0.68 and 0.66, against chance 0.49 and 0.54.
+- **Within a temperature bin the gain is smaller, and uneven.** Below
+  7,000 K it is 0.02 to 0.06 scored on 14 to 26, and 0.006 to 0.02 on 1 to
+  13. Much of the overall rise is the model learning that base rate.
+- **The base rate is part astrophysics, part follow-up.** Hot and large
+  stars have more eclipsing binaries among their TOIs, and a dip of a given
+  depth on them implies a larger companion. But planets around hot,
+  fast-rotating stars are also hard to confirm by radial velocity, so they
+  stay candidates and never enter this benchmark as planets. Both read here
+  as "hot star, false positive", and the benchmark cannot tell them apart.
+- **The models' own cross-validation rises as much.** On their training
+  hosts the light-curve model goes from 0.869 to 0.944 (trained on 1 to 13)
+  and from 0.823 to 0.903 (14 to 26), and the model with the centroid test
+  from 0.895 to 0.951 and from 0.858 to 0.915.
+- **The open TOIs are reordered.** Ranked with the star (`stars/open_tois/`),
+  the list keeps 41 of the light-curve list's top 100, at a rank
+  correlation of 0.69. The APCs fall to a median P(planet) of 0.17 from
+  0.46, and the 101 open TOIs already confirmed in the archive rise to a
+  ROC-AUC of 0.714 against the rest, from 0.628. Those were confirmed by the
+  same follow-up, so this check cannot separate the two causes either.
+
+So the star makes the model a much better ranker of TOIs the way follow-up
+has resolved them, which is what this benchmark measures. It also teaches
+the model that hot and large stars rarely host confirmed planets, which
+would make it worse at the planets around those stars that follow-up has
+not reached. That is why it is an option and not the default, and why the
+open-TOI list above is the light-curve model's.
 
 ---
 
@@ -3049,7 +3133,9 @@ Three further gaps:
   star's sectors are searched together, and 0.818 with its later sectors
   added), but those labels
   carry the follow-up programme's selection, so it is a ranker of TOIs like
-  the resolved ones. On the 1,856 open TOI hosts with a light curve it puts
+  the resolved ones. Given the host star's TIC values as well it reaches
+  0.898, much of that from how rarely TOIs on hot or large stars were
+  resolved as planets (see "What the host star adds"). On the 1,856 open TOI hosts with a light curve it puts
   the 101 that the literature has since confirmed above the rest (ROC-AUC
   0.63, where the TOI's SNR gives 0.51), the one check of the open list
   possible before their dispositions arrive (see "Ranking the open TOIs").
@@ -3124,7 +3210,7 @@ transit-detection/
 │   ├── dashboard.py            # the batch's self-contained HTML dashboard
 │   ├── real_check.py           # known planets' fits and a real sector, against the archives
 │   └── plots.py                # figures (matplotlib Agg, no display)
-├── tests/                      # 569 tests, ~5 min
+├── tests/                      # 570 tests, ~5 min
 │   ├── test_generator.py       # imbalance is exact; injected physics is consistent
 │   ├── test_preprocess.py      # depth preservation; why the median was rejected; fit by segment
 │   ├── test_features.py        # recovery vs SNR; the vetting statistics fire
@@ -3142,7 +3228,7 @@ transit-detection/
 │   ├── test_toi.py             # TOI parsing, per-star labels, sector choice
 │   ├── test_benchmark.py       # the real-label benchmark, offline, from a cache
 │   ├── test_benchmark_centroids.py  # the centroid veto on synthetic pixel scenes
-│   ├── test_toi_training.py    # training on TOI labels: threshold, pixels, learning curve
+│   ├── test_toi_training.py    # training on TOI labels: threshold, pixels, star, learning curve
 │   ├── test_open_tois.py       # open TOIs selected, ranked and written, with no AP
 │   ├── test_toi_stitch.py      # every sector of a host fetched, joined, scored, pixels tested; later sectors added
 │   ├── test_cadence.py         # later sectors' faster photometry averaged to 30 minutes
