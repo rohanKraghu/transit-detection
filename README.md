@@ -3409,6 +3409,14 @@ on. Sizes are rough: S is a few hours, M a day or two, L longer.
   Periods found rise from 87.9% to 88.3% and 87.4% to 88.2%, and for TOIs
   over 27 days from 18 to 20 of 36 and 19 to 21 of 37; the ranking is
   unchanged within noise.
+- What the host star adds (`run_pipeline.py --star-features`, off by
+  default): the TOI-trained model also gets the star's TIC temperature,
+  density and radius and the implied companion radius. Light-curve AP rises
+  from 0.818 to 0.898 on sectors 14 to 26 and 0.858 to 0.915 on 1 to 13
+  (0.911 and 0.924 with the centroid test), and the open-TOI archive check
+  from ROC-AUC 0.628 to 0.714. Much of the gain is the base rate by star
+  type, part astrophysics and part follow-up selection, so it stays an
+  option.
 
 **Next**
 
