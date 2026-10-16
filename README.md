@@ -3528,6 +3528,12 @@ on. Sizes are rough: S is a few hours, M a day or two, L longer.
   two signals' durations fit one star separates planet hosts from false
   positives but still ties. No code or option was kept; see "A second
   signal" above.
+- Later sectors' pixel files in the centroid test (`--centroids-joined`,
+  an option): with `--join-sectors`, the centroid test also reads the
+  joined sectors' pixel files. The model with the centroid test goes from
+  0.842 to 0.867 on sectors 14 to 26 and 0.876 to 0.881 on 1 to 13; as a
+  veto, 0.840 to 0.843 and 0.872 to 0.877. It costs about 6,300 more
+  downloads, so it stays off by default.
 
 **Next**
 
