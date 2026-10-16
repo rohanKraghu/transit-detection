@@ -41,8 +41,9 @@ results/real_injection/base_curves.npz
 .DS_Store
 # Downloaded TOI-host curves for the real-label benchmark; rebuilt from the
 # TOI table in data/toi_benchmark/ by one run.
-results/**/toi_curves.npz
-results/**/toi_curves.tried.json
+# The _qlp ones are the hosts with no TESS-SPOC curve (--fallback-author QLP).
+results/**/toi_curves*.npz
+results/**/toi_curves*.tried.json
 results/tess_finetune/train_curves.npz
 results/tess_finetune/train_curves.tried.json
 results/tess_finetune/finetuned_cnn_models.pt
@@ -76,6 +77,6 @@ results/real_planets/reports/**/*.png
 # The full 34,032-TCE set and its CNN weights.
 results/kepler_dr25/full/training_set.npz
 results/kepler_dr25/full_cnn/cnn_models.pt
-results/**/open_curves.npz
-results/**/open_curves.tried.json
+results/**/open_curves*.npz
+results/**/open_curves*.tried.json
 results/**/open_tpfs/

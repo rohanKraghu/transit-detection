@@ -217,6 +217,7 @@ def load_or_fetch_stitched(
     author: str = "TESS-SPOC",
     exposure_time: int | None = 1800,
     n_workers: int = 8,
+    fallback_author: str | None = None,
 ) -> tuple[list[BenchmarkTarget], list[LightCurve]]:
     """Every one of ``sectors`` each target was observed in, joined into one curve.
 
@@ -232,6 +233,11 @@ def load_or_fetch_stitched(
     curve in ``sectors``: more data for it, never a star of its own, and never
     the sector it is moved to.  The curve's ``"sectors"`` then lists them
     too, and ``"selection_sectors"`` the ones of ``sectors`` alone.
+
+    ``fallback_author`` (``"QLP"``) is asked for a star ``author`` has no curve
+    of in ``sectors``: all of that star's curves come from it, kept in a cache
+    of their own beside ``cache`` (``toi_curves_qlp.npz``), so one star is
+    never joined from two pipelines' photometry.
     """
     order = {s: i for i, s in enumerate(sectors)}
     extra = {s: len(order) + i for i, s in enumerate(s for s in join if s not in order)}
@@ -270,6 +276,21 @@ def load_or_fetch_stitched(
         if extra:
             meta["selection_sectors"] = sorted(int(lc.meta["sector"]) for lc in selected)
         curves.append(replace(joined, meta=meta))
+    if fallback_author is not None:
+        cache = Path(cache)
+        more, extra_curves = load_or_fetch_stitched(
+            [t for t in targets if t.target_id not in found],
+            sectors,
+            cache.with_name(f"{cache.stem}_{fallback_author.lower()}{cache.suffix}"),
+            join=join,
+            author=fallback_author,
+            exposure_time=exposure_time,
+            n_workers=n_workers,
+        )
+        by_id = {t.target_id: t for t in more}
+        by_curve = {lc.target_id: lc for lc in [*curves, *extra_curves]}
+        moved = [by_id.get(t.target_id, t) for t in moved]
+        curves = [by_curve[t.target_id] for t in targets if t.target_id in by_curve]
     return moved, curves
 
 
@@ -773,6 +794,9 @@ class BenchmarkResult:
     stitched: bool = False
     #: Further sectors added to each star's curve (``--join-sectors``), if any.
     joined: str | None = None
+    #: The stars of each photometry pipeline scored on their own, when there are
+    #: several (``--fallback-author``).
+    by_author: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     @property
     def positive_rate(self) -> float:
@@ -807,6 +831,7 @@ class BenchmarkResult:
             "planet_recall_given_search": self.planet_recall_given_search,
             "recall_by_toi_snr": self.recall_by_toi_snr,
             "by_toi_depth": self.by_toi_depth,
+            **({"by_author": self.by_author} if self.by_author else {}),
             "missed_planets": self.missed_planets,
             "accepted_false_positives": self.accepted_false_positives,
             **({"centroid_veto": self.centroid.to_dict()} if self.centroid else {}),
@@ -990,12 +1015,39 @@ def benchmark(
             }
         )
 
+    authors = (
+        dataset.meta["author"].fillna("").astype(str).to_numpy()
+        if "author" in dataset.meta
+        else np.full(len(y), "")
+    )
+    by_author: dict[str, dict[str, Any]] = {}
+    for author in sorted(set(authors)) if len(set(authors)) > 1 else ():
+        mine = authors == author
+        part: dict[str, Any] = {
+            "n_stars": int(mine.sum()),
+            "n_planets": int(y[mine].sum()),
+            "chance_average_precision": float(y[mine].mean()),
+            "average_precision": None,
+            "best_baseline": None,
+            "best_baseline_average_precision": None,
+        }
+        if 0 < y[mine].sum() < mine.sum():
+            aps = {c.name: fast_average_precision(y[mine], c.scores[mine]) for c in baseline_curves}
+            best = max(aps, key=aps.__getitem__)
+            part |= {
+                "average_precision": fast_average_precision(y[mine], scores[mine]),
+                "best_baseline": best,
+                "best_baseline_average_precision": aps[best],
+            }
+        by_author[author] = part
+
     feats = dataset.features
 
     def row(i: int) -> dict[str, Any]:
         out = _row(
             rows[i], float(scores[i]), float(bls_period[i]), bool(recovered[i]), feats.iloc[i]
         )
+        out["author"] = authors[i] or None
         if reasons[i] is not None:
             out["false_positive_reason"] = reasons[i]
         if centroids is not None:
@@ -1010,6 +1062,7 @@ def benchmark(
     return BenchmarkResult(
         stitched=stitched,
         joined=joined,
+        by_author=by_author,
         sectors=list(sectors),
         selection=dict(selection),
         n_without_curve=int(n_without_curve),
@@ -1144,6 +1197,13 @@ def format_benchmark_report(result: BenchmarkResult) -> str:
     )
     for key, value in result.precision_at_k.items():
         add(f"  precision of {key:<30s} {_fmt(value)}")
+    for author, part in result.by_author.items():
+        add(
+            f"  {author or 'no author'}'s stars alone: {part['n_stars']} ({part['n_planets']} "
+            f"planets), chance {part['chance_average_precision']:.3f}, model AP "
+            f"{_fmt(part['average_precision'] or float('nan'))}, best baseline "
+            f"({part['best_baseline']}) {_fmt(part['best_baseline_average_precision'] or float('nan'))}"
+        )
     if result.centroid is not None:
         add("")
         _centroid_section(add, result)
