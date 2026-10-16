@@ -1603,6 +1603,7 @@ higher than the light-curve model:
 | none (the light-curve model) | 0.814 | 0.860 | | |
 | the second signal's SDE and depth SNR, and whether its period is an alias of the first's | 0.813 | 0.874 | 49% | 98% |
 | the light-curve model's own score for the second signal (out of fold on the training hosts), and the alias flag | 0.818 | 0.875 | 80% | 100% |
+| the first row's inputs, and how far the two durations are from fitting one star | 0.818 | 0.880 | 71% | 99.8% |
 
 - **The search finds most second planets.** A strong second signal (depth
   SNR 10 or more, at a period that is not an alias of the first) turns up
@@ -1617,12 +1618,20 @@ higher than the light-curve model:
 - **The hosts it would help are already easy.** The light-curve model gives
   planet hosts with two or more TOIs a mean score of 0.71 before any second
   signal is added.
+- **Checking that both signals fit one star separates them, and still
+  ties.** For two planets of one star with similar impact parameters, the
+  ratio of the durations is the cube root of the ratio of the periods, so
+  the last row adds |log10(D2/D1) - log10(P2/P1)/3|. Among strong second
+  signals its median is 0.16 and 0.14 on planet hosts against 0.33 and
+  0.35 on false-positive hosts, but the model still ties scored on 14 to 26
+  and gains 0.020 on 1 to 13.
 
-So the second signal ties scored on 14 to 26 and adds about 0.015 on 1 to
-13, against the 0.04 and 0.03 the catalogue's TOI count would add. The
-model's-score variant was tried after the first had tied, so it is the less
-clean of the two. Neither is in the pipeline; `vet` still reports a star's
-further signals (`transitml.search.iterative_search`).
+So the second signal ties scored on 14 to 26 and adds 0.014 to 0.020 on 1
+to 13, against the 0.04 and 0.03 the catalogue's TOI count would add. The
+second and third rows were tried after the first had tied (the duration
+check's inputs were fixed before it ran), so the first row is the cleanest
+test. None is in the pipeline; `vet` still reports a star's further signals
+(`transitml.search.iterative_search`).
 
 ---
 
