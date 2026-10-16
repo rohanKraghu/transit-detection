@@ -4,7 +4,7 @@ Finding transiting exoplanets is a needle-in-a-haystack detection problem: a few
 per cent of stars host a detectable transiting planet, the signal is a 0.05–1%
 dip lasting a few hours, and it sits on top of stellar variability ten to a
 hundred times deeper. This repository is an end-to-end pipeline for that
-problem — generate the photometry, detrend it, search it, classify it, and
+problem: generate the photometry, detrend it, search it, classify it, and
 evaluate it the way an imbalanced detection problem has to be evaluated.
 It also vets single real stars: `python -m transitml.vet "TIC ..."` downloads,
 detrends, searches and scores one target and writes a one-page report, and
@@ -14,7 +14,7 @@ transit model to its candidates and reports the planet's size, impact
 parameter and the stellar density the transit implies, with intervals
 whose coverage is measured by injection.
 
-**One command reproduces everything in this README:**
+One command reproduces everything in this README:
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
@@ -46,7 +46,7 @@ ranking the same light curves by BLS signal-to-noise gets 2.
 
 Intervals are 68% bootstrap intervals over 2000 paired resamples of the test
 set. With 34 positives the point estimate carries ±0.07, so the third decimal
-means nothing — but the model out-scores the baseline in **100.0%** of paired
+means nothing, but the model out-scores the baseline in **100.0%** of paired
 resamples, so the gap does. The version before the occultation change (see the
 TOI benchmark below) scored 0.802 on this same split. Repeated 5-fold
 cross-validation over all 2400 curves puts that version at 0.744 and this one
@@ -75,13 +75,13 @@ At the chosen operating threshold, on the 840 held-out light curves:
 
 At a 4% positive rate, the classifier `return 0` scores **96% accuracy** and
 finds nothing. Any metric a constant function can win is not measuring the
-thing we care about, so accuracy is not computed anywhere in this project —
+thing we care about, so accuracy is not computed anywhere in this project;
 `tests/test_pipeline.py` asserts the string never appears in the report.
 
 ROC-AUC is reported, and it is not the headline either. The false-positive-rate
 axis has ~800 negatives in its denominator on the test set. Going from 5 false
-positives to 50 — the difference between a candidate list a telescope-time
-allocation committee will fund and one it will not — moves FPR by 5 percentage
+positives to 50 (the difference between a candidate list a telescope-time
+allocation committee will fund and one it will not) moves FPR by 5 percentage
 points and barely bends the curve. **Precision** has the number of *flagged*
 objects in its denominator, which is the quantity that converts into nights of
 follow-up, so precision-recall is the right plane and **average precision** is
@@ -101,8 +101,8 @@ Wilson lower confidence bound*, and then frozen.
 
 The 0.50 target comes from what the decision costs. A candidate above the
 threshold buys a follow-up campaign: seeing-limited ground-based photometry to
-check the event is on-target, high-resolution imaging, then radial velocities —
-nights of telescope time each. A missed planet costs nothing today; it is still
+check the event is on-target, high-resolution imaging, then radial velocities,
+at nights of telescope time each. A missed planet costs nothing today; it is still
 in the archive and the next sector will find it. So the sensible policy is to
 cap the waste rate and take whatever recall that buys. Precision ≥ 0.50 means
 at most one wasted campaign per confirmed planet.
@@ -145,8 +145,8 @@ test number would reintroduce exactly the bias it is meant to remove.
 ## The data
 
 **The demo runs on synthetic photometry, because labelled real data requires
-injection-recovery.** The generator is astrophysically motivated
-rather than decorative — each light curve is built from the components that
+injection-recovery.** The generator is astrophysically motivated.
+Each light curve is built from the components that
 appear in a real one:
 
 ```
@@ -281,8 +281,8 @@ number to expect, with or without systematics.
 knows whether a curve was simulated or downloaded. There are two
 implementations:
 
-- `transitml/data/synthetic.py` — `SyntheticTESSSource`, used by the demo.
-- `transitml/data/mast.py` — `MASTLightCurveSource`, which pulls real TESS or
+- `transitml/data/synthetic.py`: `SyntheticTESSSource`, used by the demo.
+- `transitml/data/mast.py`: `MASTLightCurveSource`, which pulls real TESS or
   Kepler photometry from MAST through `lightkurve`. It implements the same
   interface. The synthetic demo does not use it, because real light curves
   need labels; the real-photometry injection run below and the `vet` command
@@ -1637,13 +1637,13 @@ test. None is in the pipeline; `vet` still reports a star's further signals
 
 ## Preprocessing: the part that decides whether anything else matters
 
-This is the crux, and it is where most of the engineering went. A detrender that
-quietly eats 40% of the transit depth still produces a plausible-looking
-pipeline with a quietly worse answer.
+Most of the engineering went here. A detrender that
+silently eats 40% of the transit depth still produces a plausible-looking
+pipeline with a worse answer.
 
 ![Light curves](figures/01_light_curves.png)
 
-The trend model is **one robust fit**:
+The trend model is one robust fit:
 
 ```
 trend(t) = cubic B-spline(t) + Fourier terms at the star's rotation period
@@ -1658,25 +1658,25 @@ stage gets to claim which signal.
 ### Why not a running median
 
 A running median is the obvious choice, and it is wrong in a way that is easy
-to miss. **The median of a window over a monotone series is that window's centre
-value — exactly.** On a star varying fast enough that its trend moves by more
+to miss. **The median of a window over a monotone series is exactly that window's
+centre value.** On a star varying fast enough that its trend moves by more
 than the photometric noise across one window, the running median therefore
 reproduces the data, noise and transit included, and removing it removes the
 transit.
 
-This is not hypothetical: it is what the first version of this module did. On a
+The first version of this module did exactly this. On a
 0.8% variable carrying a 3000 ppm transit, a 0.75 d running median recovers
-**41%** of the injected depth. The robust spline fit recovers **101%** — unbiased
+**41%** of the injected depth. The robust spline fit recovers **101%**, unbiased
 to within the measurement's own ~2% noise. Both numbers are asserted in
 `test_running_median_eats_the_transit_on_a_steep_star`, which also asserts the
-mechanism directly — on steep stretches the median residual is *identically
+mechanism directly: on steep stretches the median residual is *identically
 zero*.
 
 The robust fit has no such failure mode because it never tries to pass through
 the data. The transit becomes a cluster of large, one-sided residuals, the
 biweight drives their weights to zero, and the trend ends up fitted to
 out-of-transit cadences only. This is the "mask the transit, then fit the
-baseline" recipe that Kepler and TESS pipelines apply explicitly — here the mask
+baseline" recipe that Kepler and TESS pipelines apply explicitly; here the mask
 is discovered rather than supplied.
 `test_robust_fit_ignores_the_transit_by_zero_weighting_it` asserts that
 in-transit cadences end with weight < 0.05 while out-of-transit cadences keep
@@ -1694,9 +1694,9 @@ knots to 0.05 d and asserts that less than 70% of the depth survives.
 
 That floor is also why the Fourier terms exist: no safe knot spacing can follow
 a 12-hour rotator, so fast rotation gets a parametric model instead. Its period
-comes from a Lomb-Scargle peak — computed on *winsorised* residuals, because a
+comes from a Lomb-Scargle peak (computed on *winsorised* residuals, because a
 deep transit is itself a periodic signal and will otherwise define the peak of
-an otherwise quiet star — and its harmonic aliases are resolved by BIC at
+an otherwise quiet star), and its harmonic aliases are resolved by BIC at
 matched bandwidth. A spotted star is not a sinusoid: with two spot groups on
 opposite hemispheres the tallest periodogram peak sits at *half* the rotation
 period, and modelling the star there leaves the fundamental standing for the
@@ -1707,15 +1707,15 @@ being given a spurious rotation model aimed at its planet.
 ### Clipping is upward only
 
 Flares and cosmic rays are positive excursions; transits are negative ones. A
-symmetric sigma clip — the default in most tutorials — deletes exactly the
+symmetric sigma clip, the default in most tutorials, deletes exactly the
 cadences the search depends on, and deletes them hardest for the deepest, most
 detectable transits. `test_clipping_is_upward_only` injects three 2% flares and
 asserts that every in-transit cadence survives and the depth is still recovered
 to 6%.
 
 **Result:** injected depth is preserved to within 5% across a grid of
-variability amplitudes from 0 to 0.8% and periods from 0.5 to 20 days — 20
-parametrised test cases — and the detrended scatter comes back at the injected
+variability amplitudes from 0 to 0.8% and periods from 0.5 to 20 days (20
+parametrised test cases), and the detrended scatter comes back at the injected
 white-noise floor.
 
 ### A second pass, with the transits masked
@@ -1761,16 +1761,16 @@ log-spaced grid of 2000 periods from 0.5 d to half the baseline (more when the
 baseline is longer than one sector), and turns the result into 23 features in
 four groups:
 
-- **Detection strength** — `bls_sde` (robust periodogram peak significance),
+- **Detection strength**: `bls_sde` (robust periodogram peak significance),
   `bls_depth_snr`, `bls_depth_over_scatter`, `delta_loglike`, `power_contrast`
   (peak power over the best power at an unrelated period).
-- **Geometry / physical plausibility** — `log_depth`, `bls_duration`,
+- **Geometry / physical plausibility**: `log_depth`, `bls_duration`,
   `duration_over_period`, and `log_duration_ratio`: the measured duration
   against the longest duration Kepler's third law permits at that period for a
   solar-density star. An event much longer than that cannot be a planet transit,
   whatever its depth. This is the same fitted-stellar-density consistency check
   real vetting pipelines apply.
-- **False-positive discriminants** — `odd_even_sigma`, `secondary_sigma`,
+- **False-positive discriminants**: `odd_even_sigma`, `secondary_sigma`,
   `half_period_depth_ratio`, `flat_bottom_fraction` (a trapezoid fit's T23/T14,
   ~0.8 for a box and ~0 for a V), `harmonic_delta_loglike`.
   The two significances are divided by the red-noise β (below, floored at 1)
@@ -1781,14 +1781,14 @@ four groups:
   shows why the event scatter matters). `secondary_sigma` also counts only the
   part of the phase-0.5 dip deeper than the planet's own occultation could be
   around its star.
-- **Noise characterisation** — `red_noise_beta` (the Pont, Zucker & Queloz 2006
+- **Noise characterisation**: `red_noise_beta` (the Pont, Zucker & Queloz 2006
   beta factor: binned scatter over the white-noise expectation, so β ≫ 1 means
   the light curve has structure on exactly the timescale a transit lives on and
   the nominal depth SNR is overstated by that factor), `log_scatter`,
   `max_single_event_fraction`, `flux_skew`, `clipped_fraction`.
 
 The classifier is `HistGradientBoostingClassifier` with shallow trees, strong
-L2, `class_weight="balanced"`, and NaN handled natively — a missing odd/even
+L2, `class_weight="balanced"`, and NaN handled natively: a missing odd/even
 test means "too few transits to run the test", which is information, not
 something to impute away.
 
@@ -1882,7 +1882,7 @@ on depth.
 
 ### Why not a 1D CNN on folded light curves
 
-The honest answer is sample size. This demo has 96 positives, 62 of them in the
+The main reason is sample size. This demo has 96 positives, 62 of them in the
 training split. AstroNet (Shallue & Vanderburg 2018) trained on ~15,000
 labelled Kepler TCEs; ExoMiner used ~35,000. A convolutional network with 10⁵–10⁶
 parameters trained on 62 positives memorises them. Gradient boosting on 23
@@ -1891,12 +1891,12 @@ applies to any real single-sector study.
 
 Two secondary reasons: the sensitivity gain in transit detection comes from
 phase-folding N transits together, and BLS already does that optimally for a box
-model — a CNN on unfolded curves has to rediscover folding from data, and a CNN
+model; a CNN on unfolded curves has to rediscover folding from data, and a CNN
 on folded curves needs BLS first anyway. And every feature here maps onto a test
 a human vetter or the Kepler Robovetter applies, so when the model says no, the
 importances say why.
 
-**The counterpoint stands:** with 10⁵ real light curves, a CNN on global+local
+With 10⁵ real light curves, though, a CNN on global+local
 folded views does beat this, because transit *shape* carries information that a
 handful of scalars throws away. The choice here is a consequence of the data
 volume, not a claim about architectures.
@@ -3031,7 +3031,7 @@ TIC densities are within 30% of the published ones.
 ![Diagnostics](figures/03_diagnostics.png)
 
 Recall is not one number. A planet is missed either because the **search** never
-found its period — no classifier can rescue that — or because the search found
+found its period (no classifier can rescue that) or because the search found
 it and the **classifier** rejected it. Those have different fixes, and reporting
 only their product hides which one binds:
 
@@ -3130,10 +3130,10 @@ astrophysical false positives.
 detrender provably preserves transit depth to 5% while removing variability ten
 times deeper; the search recovers every held-out injection above SNR 40 and 88%
 above SNR 20; the classifier beats a strong single-statistic baseline by 4.2× in
-average precision on data it has never seen — in 100% of paired bootstrap
-resamples — with the threshold frozen from training-split cross-validation. The evaluation protocol — average precision against the
+average precision on data it has never seen, in 100% of paired bootstrap
+resamples, with the threshold frozen from training-split cross-validation. The evaluation protocol (average precision against the
 positive-rate null, threshold from CV, recall decomposed into search and
-classifier — is exactly what one would use on real data, and
+classifier) is exactly what one would use on real data, and
 `tests/test_evaluation.py` asserts that corrupting the training rows changes no
 reported number while corrupting the test rows does.
 
@@ -3202,8 +3202,8 @@ Three further gaps:
   baselines is meaningful. The pipeline reports the interval so this cannot
   be over-read.
 
-The honest summary: this demonstrates the *method* — correct detrending, correct
-features, correct metric, correct protocol, honest failure analysis — on data
+In summary, this demonstrates the *method* (correct detrending, features,
+metric and protocol, and an honest failure analysis) on data
 whose noise is easier than reality. Injection-recovery into genuine TESS
 photometry, which keeps the systematics real while keeping the labels
 trustworthy, has now been run on sector 14 (see "Injection-recovery on real
@@ -3488,11 +3488,11 @@ the next step has not been chosen yet.
 
 ## References
 
-- Kovács, Zucker & Mazeh (2002) — Box Least Squares.
-- Pont, Zucker & Queloz (2006) — the red-noise β factor.
-- Vanderburg & Johnson (2014) — robust spline detrending with iterative outlier
+- Kovács, Zucker & Mazeh (2002): Box Least Squares.
+- Pont, Zucker & Queloz (2006): the red-noise β factor.
+- Vanderburg & Johnson (2014): robust spline detrending with iterative outlier
   rejection.
-- Shallue & Vanderburg (2018) — AstroNet; the CNN comparison point.
+- Shallue & Vanderburg (2018): AstroNet; the CNN comparison point.
 - Bryson et al. (2013): difference-image centroid offsets for Kepler false
   positives.
 - Twicken et al. (2018): the Kepler data validation tests, including the
