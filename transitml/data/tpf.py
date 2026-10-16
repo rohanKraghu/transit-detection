@@ -412,8 +412,11 @@ def download_tpfs(
     exposure_time: int | None = None,
     sector: int | None = None,
     quality_bitmask: str = "default",
+    download_dir: str | None = None,
 ) -> list[TargetPixelData]:
     """Every matching target pixel file for one star from MAST; ``[]`` if none or on failure.
+
+    The FITS files go to ``download_dir``, lightkurve's own cache when None.
 
     Checked against the real archive on TOI benchmark hosts, where it returns
     the same pixels as the TESS-SPOC files fetched directly; the tests use a
@@ -431,7 +434,7 @@ def download_tpfs(
         )
         if len(search) == 0:
             return []
-        collection = search.download_all(quality_bitmask=quality_bitmask)
+        collection = search.download_all(quality_bitmask=quality_bitmask, download_dir=download_dir)
         return [from_lightkurve(tpf, target_id) for tpf in collection]
     except Exception as exc:  # noqa: BLE001 - network and FITS errors vary
         warnings.warn(

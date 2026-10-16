@@ -328,7 +328,7 @@ def test_sector_pixel_files_are_fetched_once_each(three_sectors, tmp_path, monke
     cache, _ = three_sectors
     asked: list[tuple[str, int]] = []
 
-    def fake_download(target_id, *, author, exposure_time, sector):
+    def fake_download(target_id, *, author, exposure_time, sector, download_dir):
         asked.append((target_id, sector))
         path = tpf_cache_path(cache, target_id, sector)
         return [load_tpf(path)] if path.exists() else []
@@ -356,7 +356,7 @@ def test_files_cached_without_their_orientation_are_fetched_again(
                  tpf_cache_path(fresh, "TIC 4242", s))
     asked: list[int] = []
 
-    def fake_download(target_id, *, author, exposure_time, sector):
+    def fake_download(target_id, *, author, exposure_time, sector, download_dir):
         asked.append(sector)
         return [load_tpf(tpf_cache_path(cache, target_id, sector))] if sector == 20 else []
 

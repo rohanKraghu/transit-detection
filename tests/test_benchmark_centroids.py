@@ -174,9 +174,11 @@ def test_pixel_cache_fetches_only_what_it_has_not_tried(scenes, tmp_path, monkey
     _, targets, cache = scenes
     asked: list[tuple[str, int]] = []
 
-    def fake_download(target_id, *, author, exposure_time, sector):
+    def fake_download(target_id, *, author, exposure_time, sector, download_dir):
         asked.append((target_id, sector))
         assert (author, exposure_time) == ("TESS-SPOC", 1800)
+        # The raw FITS go to a scratch directory, not lightkurve's cache.
+        assert Path(download_dir).is_dir()
         if target_id == targets[2].target_id:
             return []  # MAST has nothing for this star
         return [load_tpf(tpf_cache_path(cache, target_id, sector))]

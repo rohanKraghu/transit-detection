@@ -287,6 +287,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "subdirectory of the stitched results.",
     )
     bench.add_argument(
+        "--centroids-joined",
+        action="store_true",
+        help="With --join-sectors and --centroids-every-sector: also run the centroid test on "
+        "the pixel files of the joined sectors; writes to a centroids_joined/ subdirectory.",
+    )
+    bench.add_argument(
         "--benchmark-comments",
         type=Path,
         default=None,
@@ -452,6 +458,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                     args.results_dir = args.results_dir / name
                 if default_figures:
                     args.figures_dir = args.figures_dir / name
+            if args.centroids_joined:
+                if default_results:
+                    args.results_dir = args.results_dir / "centroids_joined"
+                if default_figures:
+                    args.figures_dir = args.figures_dir / "centroids_joined"
         if args.pixel_features:
             args.benchmark_centroids = True
             if default_results:
@@ -493,6 +504,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             parse_sector_spec(args.join_sectors)
         except ValueError as exc:
             parser.error(f"--join-sectors: {exc}")
+    if args.centroids_joined and not (args.join_sectors and args.centroids_every_sector):
+        parser.error(
+            "--centroids-joined tests the sectors --join-sectors adds; give --join-sectors and "
+            "--centroids-every-sector"
+        )
     if args.sky_offsets and not args.centroids_every_sector:
         parser.error(
             "--sky-offsets combines the sectors --centroids-every-sector tests; "
@@ -755,13 +771,13 @@ def load_toi_hosts(
         paths: dict[str, Path] | dict[str, list[Path]]
         if args.centroids_every_sector:
             # Every sector the star's curve was joined from; one sector has no
-            # list.  Sectors added by --join-sectors are data for the search only.
+            # list.  Sectors added by --join-sectors are data for the search only,
+            # unless --centroids-joined.
+            chosen = "sectors" if args.centroids_joined else "selection_sectors"
             joined = {
                 lc.target_id: [
                     int(s)
-                    for s in lc.meta.get(
-                        "selection_sectors", lc.meta.get("sectors", [lc.meta["sector"]])
-                    )
+                    for s in lc.meta.get(chosen, lc.meta.get("sectors", [lc.meta["sector"]]))
                 ]
                 for lc in curves
                 if lc.target_id in tested
