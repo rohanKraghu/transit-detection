@@ -20,7 +20,7 @@ One command reproduces everything in this README:
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python run_pipeline.py            # ~3 min on 4 cores
-pytest                            # ~5 min, 571 tests
+pytest                            # ~5 min, 574 tests
 ```
 
 It writes `results/metrics.json`, `results/report.txt`, the trained model
@@ -1425,7 +1425,8 @@ are planets. What can be said:
 - **Half the open hosts have no light curve here.** 1,856 of the 4,059 have
   a TESS-SPOC curve in sectors 1 to 26. The rest, fainter at a median TESS
   magnitude of 12.9, have none in those sectors, and TESS-SPOC is the only
-  photometry this pipeline reads.
+  photometry this ranking reads (QLP's fills them in with `--fallback-author
+  QLP`, in "Fainter stars, on QLP photometry").
 - **The open TOIs are harder than the resolved ones.** Their median TESS
   magnitude is 11.15 against 10.43, their TOI SNR 19 against 29, their depth
   2,100 against 2,550 ppm and their period 5.6 against 3.9 days. P(planet)
@@ -1680,6 +1681,104 @@ So the later pixels help the model with the centroid test on one half of
 the benchmark and tie on the other, for about 6,300 more downloads. MAST
 takes about 12 seconds to answer each query, so `--download-workers` sets
 how long that takes. It stays an option.
+
+### Fainter stars, on QLP photometry
+
+TESS-SPOC makes full-frame light curves for a selected set of stars, so 524
+of the 2,147 resolved TOI hosts of sectors 1 to 26 had no curve here, and
+2,203 of the 4,059 open ones. MIT's Quick-Look Pipeline (QLP) makes curves
+from the same full-frame images for every star to TESS magnitude 13.5, and
+all 48 of a sample of the open hosts without a TESS-SPOC curve have one.
+`--fallback-author QLP` (with `--stitch`) takes such a host from QLP
+instead: all of its sectors, so one star's curve is never joined from two
+pipelines' photometry.
+
+```bash
+python run_pipeline.py --train-sectors 1-13 --benchmark-centroids --stitch \
+    --centroids-every-sector --join-sectors 27-102 --centroids-joined --fallback-author QLP \
+    --benchmark-tois data/toi_benchmark/exofop_toi_2026-10-06.csv --benchmark-sectors 14-26
+```
+
+It writes to a `with_qlp/` subdirectory of the run it extends (here
+`.../joined_27-102/centroids_joined/with_qlp/`) and keeps QLP's curves in
+their own cache, `toi_curves_qlp.npz` beside `toi_curves.npz`. The pipeline
+reads QLP's simple aperture flux and detrends it like any other curve, less
+the cadences QLP itself flags as low precision (bit 13 of its quality
+field): with them, a scattered-light ramp outscored an 8,000 ppm transit in
+one of the two QLP planet curves checked by hand before any run. There is
+no centroid test for these hosts, since QLP has no pixel files and
+TESS-SPOC has none of these stars. The benchmark report scores each
+pipeline's stars on their own, and `open_tois.csv` gains an `author` column.
+
+The fainter hosts are a different population. 64 of the 524 are planets
+(12%), against 51% of the TESS-SPOC hosts; their median TESS magnitude is
+12.2 and 12.4 on the two halves against 10.4 and 10.5, and their median
+catalogued depth 5,100 and 4,600 ppm against 1,900 and 3,100. Scored on
+their own, by a model trained on each half's hosts with its QLP ones added
+(the rows trained without them are "The later sectors' pixels" on the same
+stars). The QLP hosts have no centroid test, so in the last column they are
+scored by the model that takes one, with those inputs missing:
+
+| Scored on | Stars (planets) | Chance | Light curve | Light curve and centroid test |
+|---|---|---|---|---|
+| *Hosts of sectors 14 to 26* | | | | |
+| TESS-SPOC, trained without QLP hosts | 766 (376) | 0.491 | 0.818 | 0.867 |
+| TESS-SPOC, trained with them | 766 (376) | 0.491 | 0.824 | 0.871 |
+| QLP | 236 (29) | 0.123 | 0.491 | 0.514 |
+| *Hosts of sectors 1 to 13* | | | | |
+| TESS-SPOC, trained without QLP hosts | 857 (459) | 0.536 | 0.858 | 0.881 |
+| TESS-SPOC, trained with them | 857 (459) | 0.536 | 0.838 | 0.885 |
+| QLP | 287 (35) | 0.122 | 0.300 | 0.366 |
+
+- **The model sorts the fainter hosts too.** Against a chance of 0.12 it
+  scores 0.49 and 0.30 on the light curve alone, ahead of the best
+  single-feature baseline (0.24 on both halves). The search finds the
+  catalogued period for 87% and 90% of them, against 89% of the TESS-SPOC
+  hosts. At the frozen threshold it keeps 18 of 29 and 10 of 35 planets and
+  rejects 173 of 207 and 225 of 252 false positives.
+- **The features carry over from TESS-SPOC photometry.** A model trained on
+  TESS-SPOC hosts alone scores the QLP hosts at 0.40 and 0.31 (means of 20
+  seeds; the table's runs use one), so most of the separation does not
+  need QLP examples.
+- **Training on the QLP hosts helps one half and costs the other.** Over 20
+  seeds of the light-curve model, adding sectors 1 to 13's 287 QLP hosts to
+  training lifts the 14 to 26 TESS-SPOC hosts from 0.813 to 0.823 and the
+  QLP ones from 0.398 to 0.476, in every seed. Adding sectors 14 to 26's
+  236 QLP hosts lowers the 1 to 13 TESS-SPOC hosts from 0.859 to 0.839 in
+  every seed and the QLP ones from 0.308 to 0.293. With the centroid test
+  as features the loss is gone (0.881 to 0.885). This was measured after
+  the runs, and the option keeps the QLP hosts in training as built.
+
+For the open TOIs, the "Ranking the open TOIs" command with
+`--fallback-author QLP` added (written to
+`.../joined_27-102/with_qlp/open_tois/`) scores 4,053 of the 4,059 open
+hosts, up from 1,856: 2,197 of them on QLP curves, and the last 6 have a
+curve from neither pipeline. The model now trains on all 2,146 resolved
+hosts, 523 of them QLP's, so its planet rate falls from 51% to 42% and its
+probabilities drop across the board; compare ranks, not the share above
+the threshold. Against the open TOIs already confirmed in the NASA
+Exoplanet Archive, scored within each pipeline, since confirmed planets are
+five times as common among the brighter TESS-SPOC stars (5.4% against
+1.1%):
+
+| Open hosts | Stars (confirmed) | Model ROC-AUC | TOI SNR | Brightness |
+|---|---|---|---|---|
+| TESS-SPOC, model trained without QLP hosts | 1,856 (101) | 0.628 | 0.505 | 0.482 |
+| TESS-SPOC, trained with them | 1,856 (101) | 0.641 | 0.505 | 0.482 |
+| QLP | 2,197 (25) | 0.757 | 0.673 | 0.730 |
+
+The TESS-SPOC stars keep nearly the same order (Spearman 0.89 between the
+two models' scores). Among the QLP stars the model is only a little ahead
+of brightness alone, on 25 confirmed planets. Pooled, the AUC is 0.718,
+but brightness alone gets 0.670 there, so most of that lead is bright stars
+being both confirmed more often and scored higher. QLP stars hold 9 of the
+top 100 and 33 of the top 200. They get no centroid test, so it runs on
+167 stars instead of 200 and again places 2 dips off target.
+
+So QLP photometry roughly doubles the open TOIs that can be ranked and
+scores the fainter resolved ones well above chance, at about 0.3 to 0.5 AP
+where most of them are false positives. Training on them is a wash, and the
+option stays off by default.
 
 ---
 
@@ -3314,7 +3413,7 @@ transit-detection/
 │   ├── dashboard.py            # the batch's self-contained HTML dashboard
 │   ├── real_check.py           # known planets' fits and a real sector, against the archives
 │   └── plots.py                # figures (matplotlib Agg, no display)
-├── tests/                      # 571 tests, ~5 min
+├── tests/                      # 574 tests, ~5 min
 │   ├── test_generator.py       # imbalance is exact; injected physics is consistent
 │   ├── test_preprocess.py      # depth preservation; why the median was rejected; fit by segment
 │   ├── test_features.py        # recovery vs SNR; the vetting statistics fire
@@ -3334,8 +3433,8 @@ transit-detection/
 │   ├── test_benchmark_centroids.py  # the centroid veto on synthetic pixel scenes
 │   ├── test_toi_training.py    # training on TOI labels: threshold, pixels, star, learning curve
 │   ├── test_open_tois.py       # open TOIs selected, ranked and written, with no AP
-│   ├── test_toi_stitch.py      # every sector of a host fetched, joined, scored, pixels tested; later sectors (and their pixels) added
-│   ├── test_cadence.py         # later sectors' faster photometry averaged to 30 minutes
+│   ├── test_toi_stitch.py      # every sector of a host fetched, joined, scored, pixels tested; later sectors (and their pixels) added; QLP for hosts without TESS-SPOC
+│   ├── test_cadence.py         # later sectors' faster photometry averaged to 30 minutes; QLP's quality mask
 │   ├── test_stars.py           # host-star parameters and the occultation allowance
 │   ├── test_files.py           # CSV and npz input
 │   ├── test_model_io.py        # saved model reloads with threshold, calibration, features
