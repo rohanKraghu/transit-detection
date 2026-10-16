@@ -3464,6 +3464,11 @@ on. Sizes are rough: S is a few hours, M a day or two, L longer.
   from ROC-AUC 0.628 to 0.714. Much of the gain is the base rate by star
   type, part astrophysics and part follow-up selection, so it stays an
   option.
+- A second signal (tried and dropped): searching each host again with its
+  first signal masked and giving the model the second signal's strength
+  ties on sectors 14 to 26 (0.813 and 0.818 against 0.814) and adds about
+  0.015 on 1 to 13, against the 0.04 and 0.03 the catalogue's TOI count
+  would add. No code or option was kept; see "A second signal" above.
 
 **Next**
 
@@ -3472,7 +3477,7 @@ to next:
 
 | Item | Why | Size |
 | --- | --- | --- |
-| A second signal, in progress | Search each host again with its first signal masked and give the model the second signal's strength: TOI hosts with two or more TOIs are almost all planets, and this would let the pipeline see that from the light curve alone rather than from the catalogue's TOI count | M |
+| Do two signals imply the same star, being tested | Check whether a host's first and second signals' durations imply the same star density, as two planets of one star should; a mismatch could flag the false positives that leave a second signal behind | S |
 
 ## References
 
