@@ -3475,18 +3475,16 @@ on. Sizes are rough: S is a few hours, M a day or two, L longer.
   option.
 - A second signal (tried and dropped): searching each host again with its
   first signal masked and giving the model the second signal's strength
-  ties on sectors 14 to 26 (0.813 and 0.818 against 0.814) and adds about
-  0.015 on 1 to 13, against the 0.04 and 0.03 the catalogue's TOI count
-  would add. No code or option was kept; see "A second signal" above.
+  ties on sectors 14 to 26 and adds 0.014 to 0.020 on 1 to 13, against the
+  0.04 and 0.03 the catalogue's TOI count would add. Checking whether the
+  two signals' durations fit one star separates planet hosts from false
+  positives but still ties. No code or option was kept; see "A second
+  signal" above.
 
 **Next**
 
-Every item on the original roadmap is built. What the results above point
-to next:
-
-| Item | Why | Size |
-| --- | --- | --- |
-| Do two signals imply the same star, being tested | Check whether a host's first and second signals' durations imply the same star density, as two planets of one star should; a mismatch could flag the false positives that leave a second signal behind | S |
+Every item on the original roadmap is built, and nothing is in progress;
+the next step has not been chosen yet.
 
 ## References
 
