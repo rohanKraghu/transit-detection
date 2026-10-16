@@ -20,7 +20,7 @@ One command reproduces everything in this README:
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python run_pipeline.py            # ~3 min on 4 cores
-pytest                            # ~5 min, 570 tests
+pytest                            # ~5 min, 571 tests
 ```
 
 It writes `results/metrics.json`, `results/report.txt`, the trained model
@@ -1158,7 +1158,8 @@ and averaged to 30 minutes as in "More labels, from later sectors". Of the
 766 hosts of sectors 14 to 26, 606 gain at least one sector (median 3, up to
 28), and of the 857 of 1 to 13, 693 (median 2, up to 22): about 5,800 more
 curves, and baselines of up to five years. The sectors of the range still
-choose the stars, and the centroid test still reads only their pixel files.
+choose the stars, and the centroid test still reads only their pixel files
+(unless `--centroids-joined`, in "The later sectors' pixels").
 Two things had to change for curves that long.
 
 - **The search.** A grid keeping the joined search's 0.05-day drift would
@@ -1632,6 +1633,53 @@ second and third rows were tried after the first had tied (the duration
 check's inputs were fixed before it ran), so the first row is the cleanest
 test. None is in the pipeline; `vet` still reports a star's further signals
 (`transitml.search.iterative_search`).
+
+### The later sectors' pixels
+
+`--join-sectors` adds each host's later light curves to the search, but the
+centroid test read only the pixel files of the range's sectors.
+`--centroids-joined` (with `--join-sectors` and `--centroids-every-sector`)
+tests the joined sectors' pixel files too and combines them with the rest
+the same way.
+
+```bash
+python run_pipeline.py --train-sectors 1-13 --benchmark-centroids --stitch \
+    --centroids-every-sector --join-sectors 27-102 --centroids-joined \
+    --benchmark-tois data/toi_benchmark/exofop_toi_2026-10-06.csv --benchmark-sectors 14-26
+```
+
+It writes to `results/toi_trained/stitched/centroids_every_sector/joined_27-102/centroids_joined/`
+(`pixels/` with `--pixel-features`). The pixel files tested rise from 2,399
+to 5,578 for the hosts of sectors 14 to 26 and from 2,001 to 4,617 for those
+of 1 to 13: about 6,300 more downloads, each about 1 MB once averaged to 30
+minutes. A later sector's raw file is tens of megabytes, so each is now
+downloaded to a temporary directory and only the averaged copy kept. On the
+same stars, searched the same way (the last column is the share of 2000
+paired bootstrap resamples in which the joined sectors' pixels score
+higher):
+
+| Scored on | Inputs | Range's pixel files | Joined sectors' too | Ahead in |
+|---|---|---|---|---|
+| *766 hosts of sectors 14 to 26* | | | | |
+| | light curve, centroid test as a veto | 0.840 | 0.843 | 70% |
+| | light curve and centroid test | 0.842 | 0.867 | 99.5% |
+| *857 hosts of sectors 1 to 13* | | | | |
+| | light curve, centroid test as a veto | 0.872 | 0.877 | 85% |
+| | light curve and centroid test | 0.876 | 0.881 | 74% |
+
+- **More stars get a usable difference image.** Hosts whose difference
+  image was too weak to place the dip fall from 97 to 47 and from 78 to 46.
+- **The veto flags more of both.** It flags 151 of 390 and 143 of 398
+  false-positive hosts, up from 133 and 113, but also 11 of 376 and 16 of
+  459 planet hosts, up from 5 and 9, so as a veto it gains little.
+- **The model gains more than the veto.** Given the combined test as
+  features, it can weigh a small offset against the light curve instead of
+  rejecting on it: 0.025 more scored on 14 to 26, 0.005 on 1 to 13.
+
+So the later pixels help the model with the centroid test on one half of
+the benchmark and tie on the other, for about 6,300 more downloads. MAST
+takes about 12 seconds to answer each query, so `--download-workers` sets
+how long that takes. It stays an option.
 
 ---
 
@@ -3266,7 +3314,7 @@ transit-detection/
 │   ├── dashboard.py            # the batch's self-contained HTML dashboard
 │   ├── real_check.py           # known planets' fits and a real sector, against the archives
 │   └── plots.py                # figures (matplotlib Agg, no display)
-├── tests/                      # 570 tests, ~5 min
+├── tests/                      # 571 tests, ~5 min
 │   ├── test_generator.py       # imbalance is exact; injected physics is consistent
 │   ├── test_preprocess.py      # depth preservation; why the median was rejected; fit by segment
 │   ├── test_features.py        # recovery vs SNR; the vetting statistics fire
@@ -3286,7 +3334,7 @@ transit-detection/
 │   ├── test_benchmark_centroids.py  # the centroid veto on synthetic pixel scenes
 │   ├── test_toi_training.py    # training on TOI labels: threshold, pixels, star, learning curve
 │   ├── test_open_tois.py       # open TOIs selected, ranked and written, with no AP
-│   ├── test_toi_stitch.py      # every sector of a host fetched, joined, scored, pixels tested; later sectors added
+│   ├── test_toi_stitch.py      # every sector of a host fetched, joined, scored, pixels tested; later sectors (and their pixels) added
 │   ├── test_cadence.py         # later sectors' faster photometry averaged to 30 minutes
 │   ├── test_stars.py           # host-star parameters and the occultation allowance
 │   ├── test_files.py           # CSV and npz input

@@ -157,6 +157,12 @@ def test_stitch_flag_and_its_defaults(tmp_path):
         [*base, "--stitch", "--pixel-features", "--centroids-every-sector", "--join-sectors", "27-102"]
     )
     assert joined.results_dir == args.results_dir / "centroids_every_sector" / "joined_27-102" / "pixels"
+    assert not joined.centroids_joined
+    later = run_pipeline.parse_args(
+        [*base, "--stitch", "--pixel-features", "--centroids-every-sector", "--join-sectors", "27-102",
+         "--centroids-joined"]
+    )
+    assert later.results_dir == joined.results_dir.parent / "centroids_joined" / "pixels"
     assert joined.train_cache == one.train_cache and joined.train_tpfs == one.train_tpfs
     assert run_pipeline.apply_overrides(default_config(), joined).bls.max_search_baseline_days == (
         run_pipeline.JOINED_SEARCH_BASELINE_DAYS
@@ -166,7 +172,9 @@ def test_stitch_flag_and_its_defaults(tmp_path):
                   ["--stitch", "--centroids-every-sector"],  # no centroid test to change
                   ["--stitch", "--benchmark-centroids", "--sky-offsets"],  # one sector each
                   ["--join-sectors", "27-102"],  # nothing to add them to
-                  ["--stitch", "--join-sectors", "x"]):
+                  ["--stitch", "--join-sectors", "x"],
+                  ["--stitch", "--centroids-every-sector", "--benchmark-centroids",
+                   "--centroids-joined"]):  # no joined sectors to test
         with pytest.raises(SystemExit):
             run_pipeline.parse_args([*base, *wrong])
 
@@ -314,7 +322,15 @@ def _scene_hosts(n: int, *, tic0: int, sector: int, again: int, cache):
     return curves, tois
 
 
-def test_run_pipeline_tests_the_pixels_of_every_joined_sector(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    ("again", "extra"),
+    [
+        ((14, 16), []),
+        # Seen again in sector 60, outside both ranges: tested only with --centroids-joined.
+        ((60, 60), ["--join-sectors", "60", "--centroids-joined"]),
+    ],
+)
+def test_run_pipeline_tests_the_pixels_of_every_joined_sector(tmp_path, monkeypatch, again, extra):
     """``--centroids-every-sector``: one pixel file per sector a star was joined from."""
     import run_pipeline
     import transitml.data.tic as tic_module
@@ -322,8 +338,8 @@ def test_run_pipeline_tests_the_pixels_of_every_joined_sector(tmp_path, monkeypa
 
     results = tmp_path / "results"
     tpfs = results / "toi_tpfs"
-    train_curves, train_tois = _scene_hosts(40, tic0=6000, sector=13, again=14, cache=tpfs)
-    test_curves, test_tois = _scene_hosts(16, tic0=8000, sector=15, again=16, cache=tpfs)
+    train_curves, train_tois = _scene_hosts(40, tic0=6000, sector=13, again=again[0], cache=tpfs)
+    test_curves, test_tois = _scene_hosts(16, tic0=8000, sector=15, again=again[1], cache=tpfs)
     table = tmp_path / "exofop_toi.csv"
     table.write_text(
         "TIC ID,TOI,TFOPWG Disposition,Period (days),Planet SNR,Sectors\n"
@@ -357,6 +373,7 @@ def test_run_pipeline_tests_the_pixels_of_every_joined_sector(tmp_path, monkeypa
             "--stitch",
             "--pixel-features",
             "--centroids-every-sector",
+            *extra,
         ]
     )
     assert args.results_dir == results  # an explicit directory is kept as given

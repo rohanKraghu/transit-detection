@@ -215,7 +215,7 @@ def test_download_goes_through_lightkurve_search(monkeypatch):
         def __len__(self):
             return 1
 
-        def download_all(self, quality_bitmask):
+        def download_all(self, quality_bitmask, download_dir):
             calls["quality_bitmask"] = quality_bitmask
             return [FakeLightkurveTPF()]
 

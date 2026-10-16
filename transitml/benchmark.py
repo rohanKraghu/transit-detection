@@ -23,6 +23,7 @@ against its own chance level.
 from __future__ import annotations
 
 import json
+import tempfile
 from collections import Counter
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from concurrent.futures import ProcessPoolExecutor
@@ -330,7 +331,11 @@ def _fetch_tpf(
     from .data.mast import fetch_exposure_seconds
 
     fetch = fetch_exposure_seconds(author, exposure_time, sector)
-    tpfs = download_tpfs(target_id, author=author, exposure_time=fetch, sector=sector)
+    # The npz at dest is the cache; a later sector's raw FITS (tens of MB) is not kept.
+    with tempfile.TemporaryDirectory() as tmp:
+        tpfs = download_tpfs(
+            target_id, author=author, exposure_time=fetch, sector=sector, download_dir=tmp
+        )
     if not tpfs:
         return False
     tpf = tpfs[0]
