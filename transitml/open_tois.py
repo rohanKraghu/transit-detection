@@ -57,6 +57,7 @@ OPEN_COLUMNS: tuple[str, ...] = (
     "open_tois",
     "disposition",
     "sector",
+    "author",
     "tess_mag",
     "toi_period_days",
     "toi_depth_ppm",
@@ -318,6 +319,7 @@ def rank_open_hosts(
     toi_period = np.array([t.reference.period for t in rows], dtype=float)
     recovered = period_recovered(bls_period, toi_period)
     feats = dataset.features
+    authors = dataset.meta["author"].tolist() if "author" in dataset.meta else [None] * len(ids)
 
     out: list[dict[str, Any]] = []
     for i, target in enumerate(rows):
@@ -333,6 +335,7 @@ def rank_open_hosts(
                 ),
                 "disposition": ref.disposition,
                 "sector": target.sector,
+                "author": authors[i] if isinstance(authors[i], str) else None,
                 "tess_mag": ref.tess_mag,
                 "toi_period_days": ref.period,
                 "toi_depth_ppm": ref.depth_ppm,

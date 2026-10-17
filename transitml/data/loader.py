@@ -110,6 +110,7 @@ _META_COLUMNS: tuple[str, ...] = (
     "target_id",
     "kind",
     "label",
+    "author",
     "true_snr",
     "period",
     "epoch",

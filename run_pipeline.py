@@ -293,6 +293,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "the pixel files of the joined sectors; writes to a centroids_joined/ subdirectory.",
     )
     bench.add_argument(
+        "--fallback-author",
+        default=None,
+        metavar="AUTHOR",
+        help="With --stitch: take a host --author has no curve of from this pipeline instead, "
+        "e.g. QLP for the fainter hosts TESS-SPOC leaves out (no centroid test for them); "
+        "writes to a with_AUTHOR/ subdirectory.",
+    )
+    bench.add_argument(
         "--benchmark-comments",
         type=Path,
         default=None,
@@ -463,6 +471,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                     args.results_dir = args.results_dir / "centroids_joined"
                 if default_figures:
                     args.figures_dir = args.figures_dir / "centroids_joined"
+            if args.fallback_author is not None:
+                name = f"with_{args.fallback_author.lower()}"
+                if default_results:
+                    args.results_dir = args.results_dir / name
+                if default_figures:
+                    args.figures_dir = args.figures_dir / name
         if args.pixel_features:
             args.benchmark_centroids = True
             if default_results:
@@ -509,6 +523,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "--centroids-joined tests the sectors --join-sectors adds; give --join-sectors and "
             "--centroids-every-sector"
         )
+    if args.fallback_author is not None and not args.stitch:
+        parser.error("--fallback-author fills in hosts of the curves --stitch joins; give --stitch")
     if args.sky_offsets and not args.centroids_every_sector:
         parser.error(
             "--sky-offsets combines the sectors --centroids-every-sector tests; "
@@ -735,6 +751,7 @@ def load_toi_hosts(
                 author=args.author,
                 exposure_time=args.exposure_time,
                 n_workers=args.download_workers,
+                fallback_author=args.fallback_author,
             )
         else:
             fetched, curves = fetch_with_fallback(targets, sectors, fetch)
@@ -747,9 +764,11 @@ def load_toi_hosts(
         curves = fetch(targets)
     curves = with_tic_stars(curves, args.benchmark_stars)
     n_known = sum(1 for lc in curves if all(np.isfinite(lc.star)))
+    own = {lc.target_id for lc in curves if lc.meta.get("author", args.author) == args.author}
     print(
-        f"  {len(curves)} have a light curve, {n_known} a TIC temperature or density; "
-        "searching them ..."
+        f"  {len(curves)} have a light curve"
+        + (f" ({len(curves) - len(own)} {args.fallback_author}'s)" if len(own) < len(curves) else "")
+        + f", {n_known} a TIC temperature or density; searching them ..."
     )
     dataset = build_benchmark_dataset(
         curves, preprocess=config.preprocess, bls=config.bls, n_jobs=args.n_jobs
@@ -763,6 +782,8 @@ def load_toi_hosts(
             if test_only is not None
             else {str(i) for i in dataset.meta["target_id"]}
         )
+        # A --fallback-author host has no pixel files of --author's to test.
+        tested &= own
         download = {
             "author": args.author,
             "exposure_time": args.exposure_time,

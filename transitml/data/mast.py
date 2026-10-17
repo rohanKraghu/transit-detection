@@ -54,6 +54,11 @@ _LIGHTKURVE_HINT = (
 #: Pipelines whose light curves come from the full-frame images, at their cadence.
 FFI_AUTHORS: frozenset[str] = frozenset({"TESS-SPOC", "QLP"})
 
+#: QLP's own quality bit (13, value 4096) for cadences it left out of its search
+#: because their precision was low for many stars at once.  lightkurve's default
+#: mask keeps them; with them a ramp can outscore the transit.
+QLP_LOW_PRECISION = 4096
+
 
 def ffi_exposure_seconds(sector: int) -> int:
     """TESS's full-frame-image cadence in ``sector``: 30 minutes, then 10, then 200 seconds."""
@@ -197,13 +202,19 @@ class MASTLightCurveSource(LightCurveSource):
             )
             if len(search) == 0:
                 return [], None
-            collection = search.download_all(quality_bitmask=self.quality_bitmask)
+            collection = search.download_all(quality_bitmask=self.bitmask(lk))
             curves = [self._to_lightcurve(lc, target_id, label) for lc in collection]
             if self.stitch_sectors and len(curves) > 1:
                 return [stitch_light_curves(curves)], None
             return curves, None
         except Exception as exc:  # noqa: BLE001 - network and FITS errors vary
             return [], f"{type(exc).__name__}: {exc}"
+
+    def bitmask(self, lk) -> str | int:
+        """The quality mask to read with: ``quality_bitmask``, and QLP's low-precision flag."""
+        if self.author == "QLP" and self.quality_bitmask == "default":
+            return int(lk.utils.TessQualityFlags.DEFAULT_BITMASK) | QLP_LOW_PRECISION
+        return self.quality_bitmask
 
     def _to_lightcurve(self, lc, target_id: str, label: int | None) -> LightCurve:
         """Convert one ``lightkurve.LightCurve`` into our container.

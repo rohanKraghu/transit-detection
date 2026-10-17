@@ -122,6 +122,53 @@ def test_joined_sectors_add_data_to_a_star_but_never_a_star(tmp_path, monkeypatc
     assert "selection_sectors" not in plain[0].meta
 
 
+def test_a_star_without_a_curve_is_taken_whole_from_the_fallback_author(tmp_path, monkeypatch):
+    def made(tic, sector, author, seed=0):
+        lc = curve(tic, sector, seed=seed)
+        return replace(lc, meta={**lc.meta, "author": author})
+
+    served = {
+        "TESS-SPOC": {("TIC 1", 15): made(1, 15, "TESS-SPOC")},
+        "QLP": {
+            ("TIC 1", 16): made(1, 16, "QLP"),  # TESS-SPOC has star 1, so never asked for
+            ("TIC 2", 14): made(2, 14, "QLP", seed=2),
+            ("TIC 2", 40): made(2, 40, "QLP", seed=2),
+        },
+    }
+    asked: list[tuple[str, tuple[str, int]]] = []
+
+    def fetch(wanted, *, author, **_):
+        asked.extend((author, (t.target_id, t.sector)) for t in wanted)
+        return [served[author][key] for t in wanted if (key := (t.target_id, t.sector)) in served[author]]
+
+    monkeypatch.setattr(bench, "fetch_benchmark_curves", fetch)
+    targets = [target(1, (15, 16)), target(2, (14, 40), label=0), target(3, (14,))]
+    cache = tmp_path / "toi_curves.npz"
+
+    def load():
+        return bench.load_or_fetch_stitched(
+            targets, range(14, 27), cache, join=range(27, 103), fallback_author="QLP"
+        )
+
+    moved, curves = load()
+    assert {key for author, key in asked if author == "QLP"} == {
+        ("TIC 2", 14), ("TIC 3", 14), ("TIC 2", 40)
+    }
+    assert [t.sector for t in moved] == [15, 14, 14]
+    assert [(lc.target_id, lc.meta["author"]) for lc in curves] == [
+        ("TIC 1", "TESS-SPOC"), ("TIC 2", "QLP")
+    ]
+    assert sorted(curves[1].meta["sectors"]) == [14, 40]
+    assert curves[1].meta["selection_sectors"] == [14] and curves[1].label == 0
+    # Each pipeline's curves are cached on their own.
+    assert (tmp_path / "toi_curves_qlp.npz").exists()
+    n_asked = len(asked)
+    assert [lc.target_id for lc in load()[1]] == ["TIC 1", "TIC 2"] and len(asked) == n_asked
+    assert [lc.target_id for lc in bench.load_or_fetch_stitched(targets, range(14, 27), cache)[1]] == [
+        "TIC 1"
+    ]
+
+
 def test_stitch_flag_and_its_defaults(tmp_path):
     import run_pipeline
 
@@ -163,6 +210,9 @@ def test_stitch_flag_and_its_defaults(tmp_path):
          "--centroids-joined"]
     )
     assert later.results_dir == joined.results_dir.parent / "centroids_joined" / "pixels"
+    qlp = run_pipeline.parse_args([*base, "--stitch", "--pixel-features", "--fallback-author", "QLP"])
+    assert qlp.results_dir == args.results_dir / "with_qlp" / "pixels"
+    assert qlp.train_cache == one.train_cache and args.fallback_author is None
     assert joined.train_cache == one.train_cache and joined.train_tpfs == one.train_tpfs
     assert run_pipeline.apply_overrides(default_config(), joined).bls.max_search_baseline_days == (
         run_pipeline.JOINED_SEARCH_BASELINE_DAYS
@@ -174,7 +224,8 @@ def test_stitch_flag_and_its_defaults(tmp_path):
                   ["--join-sectors", "27-102"],  # nothing to add them to
                   ["--stitch", "--join-sectors", "x"],
                   ["--stitch", "--centroids-every-sector", "--benchmark-centroids",
-                   "--centroids-joined"]):  # no joined sectors to test
+                   "--centroids-joined"],  # no joined sectors to test
+                  ["--fallback-author", "QLP"]):  # nothing joined to fill in
         with pytest.raises(SystemExit):
             run_pipeline.parse_args([*base, *wrong])
 
@@ -292,6 +343,51 @@ def test_run_pipeline_adds_later_sectors_as_data(tmp_path, monkeypatch):
     assert json.loads((results / "metrics.json").read_text())["training"]["joined"] == "60"
     assert "every sector of 60 it was observed in added" in (results / "report.txt").read_text()
     assert "with its sectors of 60 added" in (results / "toi_benchmark.txt").read_text()
+
+
+def test_run_pipeline_fills_in_hosts_from_the_fallback_author(tmp_path, monkeypatch):
+    """``--fallback-author``: a host --author has no curve of is scored on the fallback's."""
+    import run_pipeline
+    from transitml.data.injection import load_curves, save_curves
+
+    config, argv, results, (train_curves, _), (test_curves, _) = _joined_hosts(
+        tmp_path, monkeypatch
+    )
+    # Two training hosts and three benchmark hosts have QLP photometry only.
+    qlp = {lc.target_id for lc in (*train_curves[2:4], *test_curves[2:5])}
+    cache = results / "toi_curves.npz"
+    curves = load_curves(cache)
+    cache.with_suffix(".tried.json").write_text(
+        json.dumps([f"{lc.target_id}:{lc.meta['sector']}" for lc in curves])
+    )
+    for path, mine in ((cache, False), (results / "toi_curves_qlp.npz", True)):
+        author = "QLP" if mine else "TESS-SPOC"
+        save_curves([replace(lc, meta={**lc.meta, "author": author})
+                     for lc in curves if (lc.target_id in qlp) == mine], path)
+    tested: set[str] = set()
+
+    def no_pixels(joined, *_, **__):
+        tested.update(joined)
+        return {}
+
+    monkeypatch.setattr(bench, "load_or_fetch_sector_tpfs", no_pixels)
+    args = run_pipeline.parse_args(
+        [*argv, "--fallback-author", "QLP", "--benchmark-centroids", "--centroids-every-sector"]
+    )
+    assert run_pipeline.run_toi_training(args, config, started=0.0) == 0
+
+    assert json.loads((results / "metrics.json").read_text())["dataset"]["n_curves"] == 60
+    scored = json.loads((results / "toi_benchmark.json").read_text())
+    assert scored["n_stars"] == 24
+    assert {a: part["n_stars"] for a, part in scored["by_author"].items()} == {
+        "QLP": 3, "TESS-SPOC": 21
+    }
+    assert {s["target_id"] for s in scored["stars"] if s["author"] == "QLP"} == {
+        lc.target_id for lc in test_curves[2:5]
+    }
+    # QLP hosts have no TESS-SPOC pixel files to test.
+    assert len(tested) == 21 and not tested & qlp
+    assert "QLP's stars alone: 3" in (results / "toi_benchmark.txt").read_text()
 
 
 def _scene_hosts(n: int, *, tic0: int, sector: int, again: int, cache):

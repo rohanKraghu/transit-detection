@@ -81,6 +81,17 @@ def test_ffi_cadence_by_sector_and_what_is_asked_of_mast():
     assert fetch_exposure_seconds("TESS-SPOC", None, 40) is None
 
 
+def test_qlp_curves_are_read_without_the_cadences_qlp_calls_low_precision():
+    from types import SimpleNamespace
+
+    from transitml.data.mast import QLP_LOW_PRECISION, MASTLightCurveSource
+
+    lk = SimpleNamespace(utils=SimpleNamespace(TessQualityFlags=SimpleNamespace(DEFAULT_BITMASK=175)))
+    assert MASTLightCurveSource([], author="QLP").bitmask(lk) == 175 | QLP_LOW_PRECISION == 4271
+    assert MASTLightCurveSource([], author="TESS-SPOC").bitmask(lk) == "default"
+    assert MASTLightCurveSource([], author="QLP", quality_bitmask="none").bitmask(lk) == "none"
+
+
 def test_a_later_sector_is_fetched_at_its_cadence_and_averaged(monkeypatch):
     from transitml import benchmark as bench
 
