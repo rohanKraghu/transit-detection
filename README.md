@@ -3633,6 +3633,14 @@ on. Sizes are rough: S is a few hours, M a day or two, L longer.
   0.842 to 0.867 on sectors 14 to 26 and 0.876 to 0.881 on 1 to 13; as a
   veto, 0.840 to 0.843 and 0.872 to 0.877. It costs about 6,300 more
   downloads, so it stays off by default.
+- Fainter stars, on QLP photometry (`--fallback-author QLP`, an option):
+  TOI hosts with no TESS-SPOC curve are scored on Quick-Look Pipeline
+  curves. The open-TOI ranking covers 4,053 of the 4,059 open hosts, up
+  from 1,856. On the QLP hosts alone the light-curve AP is 0.491 and 0.300
+  against a chance of 0.12, and the archive check gives ROC-AUC 0.757
+  (brightness alone 0.730). Training with QLP hosts moves the TESS-SPOC
+  hosts from 0.818 to 0.824 and 0.858 to 0.838 (0.867 to 0.871 and 0.881
+  to 0.885 with the centroid test).
 
 **Next**
 
