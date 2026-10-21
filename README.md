@@ -29,7 +29,34 @@ Fixed seed (42), pinned dependencies, deterministic output.
 
 ---
 
-## Headline result
+## On real TESS data
+
+Everything below the synthetic benchmark was also run on real TESS photometry,
+downloaded from MAST with lightkurve, and scored against labels nobody in this
+project chose. In short:
+
+| Test on real data | Result |
+|---|---|
+| 746 TESS Objects of Interest (sectors 14 to 26) resolved by follow-up as planet or false positive, model trained on synthetic curves | AP **0.61** against 0.60 for ranking by BLS SNR (chance 0.50): barely better |
+| Same 746 stars, model trained on the real dispositions of the other TESS year | AP **0.818** with each star's later sectors joined, **0.842** with the centroid test |
+| The other direction: 857 stars of sectors 1 to 13 | AP **0.858**, and **0.876** with the centroid test (chance 0.54) |
+| 1,856 open TOIs ranked; 101 have since been confirmed in the NASA Exoplanet Archive | Model puts them higher: ROC-AUC **0.63**, against 0.51 for the TOI's own SNR |
+| 15 known TESS planets fitted from one sector each, against published values | 69% of radius, impact, duration and density within 1 sigma, 95% within 3; LHS 3844 b found at twice its period |
+| Synthetic planets injected into real sector 14 noise | AP falls from 0.74 to 0.46: real noise is much harder than the simulator |
+
+The first row is the honest part: a model that only ever saw simulated
+planets does not transfer to real ones, which is why the later models learn
+from real follow-up labels. Those labels carry the follow-up programme's
+choices, so the 0.8s measure how well it ranks TOIs like the resolved ones,
+not survey precision. Details, caveats and the commands that reproduce each
+row: "Benchmark against real labels", "Later sectors, as more data",
+"Ranking the open TOIs", "Checked against real planets" and
+"Injection-recovery on real photometry" below. One real star end to end:
+`python -m transitml.vet "TIC 100100827"` (WASP-18).
+
+---
+
+## Synthetic benchmark
 
 2400 light curves, 4.0% of them hosting a transiting planet, 35% held out.
 
