@@ -38,7 +38,7 @@ project chose. In short:
 | Test on real data | Result |
 |---|---|
 | 746 TESS Objects of Interest (sectors 14 to 26) resolved by follow-up as planet or false positive, model trained on synthetic curves | AP **0.61** against 0.60 for ranking by BLS SNR (chance 0.50): barely better |
-| Same 746 stars, model trained on the real dispositions of the other TESS year | AP **0.818** with each star's later sectors joined, **0.842** with the centroid test |
+| The 766 resolved hosts of sectors 14 to 26, model trained on the real dispositions of the other TESS year | AP **0.818** with each star's later sectors joined, **0.842** with the centroid test (chance 0.49) |
 | The other direction: 857 stars of sectors 1 to 13 | AP **0.858**, and **0.876** with the centroid test (chance 0.54) |
 | 1,856 open TOIs ranked; 101 have since been confirmed in the NASA Exoplanet Archive | Model puts them higher: ROC-AUC **0.63**, against 0.51 for the TOI's own SNR |
 | 15 known TESS planets fitted from one sector each, against published values | 69% of radius, impact, duration and density within 1 sigma, 95% within 3; LHS 3844 b found at twice its period |
